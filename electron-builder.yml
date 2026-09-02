@@ -1,0 +1,26 @@
+appId: app.pincer.desktop
+productName: Pincer
+asar: true
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - LICENSE
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Pincer-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+publish:
+  provider: github
+  owner: ZitZdorovo
+  repo: Pincer
+  releaseType: release

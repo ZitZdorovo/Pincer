@@ -1,0 +1,66 @@
+const ru = {
+  title: 'Подключение к OpenClaw', subtitle: 'Существующий Gateway · без локального OpenClaw',
+  url: 'Адрес Gateway', urlHelp: 'wss:// для сервера; ws://127.0.0.1 для локального туннеля.',
+  authMode: 'Авторизация', token: 'Токен', password: 'Пароль', show: 'Показать секрет', hide: 'Скрыть секрет',
+  secureStorage: 'Секрет и ключ устройства шифруются средствами операционной системы.',
+  savedCredential: 'Сохранён в защищённом хранилище', connect: 'Подключить', connecting: 'Подключение…',
+  disconnect: 'Отключить', retry: 'Повторить подключение', preview: 'Открыть оболочку',
+  fingerprint: 'Отпечаток TLS-сертификата (необязательно)', fingerprintHelp: 'SHA-256, полученный доверенным способом. Для самоподписанного сертификата.',
+  advanced: 'Параметры сертификата', device: 'Устройство', operator: 'Управление', node: 'Нода',
+  disconnected: 'Отключено', connected: 'Подключено', reconnecting: 'Восстановление связи…',
+  'pairing-required': 'Ожидает подтверждения', 'auth-error': 'Ошибка авторизации', incompatible: 'Несовместимый протокол', error: 'Ошибка',
+  pairingHelp: 'Подтверди запрос этого устройства в интерфейсе Gateway, затем нажми «Повторить подключение».',
+  requestId: 'Запрос', incompatibleHelp: 'Нужен совместимый выпуск Pincer. Автообновление будет подключено к новому каналу релизов, не к OpenX.',
+  readyTitle: 'Соединение установлено', stageTitle: 'Начинаем с подключения',
+  readyText: 'Pincer подключён напрямую как клиент управления и нода. Старый backend OpenX не используется.',
+  stageText: 'Сейчас реализовано только подключение. Чат, память и остальные возможности будут добавляться отдельно, по твоему указанию.',
+  settings: 'Настройки', connection: 'Подключение', newChat: 'Новый чат', search: 'Поиск',
+  models: 'Модели', agents: 'Агенты', channels: 'Каналы', skills: 'Навыки', cron: 'Задачи',
+  pinned: 'Закреплённое', projects: 'Проекты', sessions: 'Чаты', later: 'Пока не подключено',
+  file: 'Файл', edit: 'Правка', view: 'Вид', help: 'Справка', minimize: 'Свернуть', maximize: 'Развернуть', restore: 'Восстановить', close: 'Закрыть',
+  sidebar: 'Показать / скрыть боковую панель', back: 'Назад', forward: 'Вперёд', theme: 'Сменить тему', language: 'Switch to English',
+  protocol: 'Протокол', version: 'Версия сервера', granted: 'Выданные права', permissions: 'Максимальные права управления запрошены; фактически выданные права определяет Gateway.',
+  commands: 'Реализованные команды ноды', commandsHelp: 'Права и набор команд — разные вещи. Выполнение команд ОС и работа с файлами ещё не добавлены.',
+  loading: 'Загрузка…', startupError: 'Не удалось связаться с основным процессом Electron.',
+  INVALID_URL: 'Укажи корректный адрес ws:// или wss://.', URL_CONTAINS_CREDENTIALS: 'Секреты, параметры запроса и фрагменты в адресе не допускаются. Используй поле авторизации.',
+  TLS_REQUIRED: 'Для удалённого сервера требуется wss://. Незашифрованное соединение разрешено только с локальным туннелем.',
+  CREDENTIAL_REQUIRED: 'Введи токен или пароль для этого Gateway.', INVALID_AUTH_MODE: 'Недопустимый способ авторизации.',
+  INVALID_CREDENTIAL: 'Некорректный токен или пароль.', INVALID_TLS_PIN: 'Нужен SHA-256 отпечаток из 64 шестнадцатеричных символов и адрес wss://.',
+};
+const en: Record<keyof typeof ru, string> = {
+  title: 'Connect to OpenClaw', subtitle: 'Existing Gateway · no local OpenClaw',
+  url: 'Gateway address', urlHelp: 'wss:// for a server; ws://127.0.0.1 for a local tunnel.',
+  authMode: 'Authentication', token: 'Token', password: 'Password', show: 'Show secret', hide: 'Hide secret',
+  secureStorage: 'The secret and device key are encrypted by your operating system.',
+  savedCredential: 'Saved in secure storage', connect: 'Connect', connecting: 'Connecting…',
+  disconnect: 'Disconnect', retry: 'Retry connection', preview: 'Open application shell',
+  fingerprint: 'TLS certificate fingerprint (optional)', fingerprintHelp: 'SHA-256 obtained through a trusted channel. For self-signed certificates.',
+  advanced: 'Certificate settings', device: 'Device', operator: 'Operator', node: 'Node',
+  disconnected: 'Disconnected', connected: 'Connected', reconnecting: 'Reconnecting…',
+  'pairing-required': 'Awaiting approval', 'auth-error': 'Authentication failed', incompatible: 'Incompatible protocol', error: 'Error',
+  pairingHelp: 'Approve this device request in the Gateway UI, then choose Retry connection.',
+  requestId: 'Request', incompatibleHelp: 'A compatible Pincer release is required. Updates will use a new release channel, never OpenX.',
+  readyTitle: 'Connection established', stageTitle: 'Start with a connection',
+  readyText: 'Pincer connects directly as an operator and node. The old OpenX backend is not used.',
+  stageText: 'Only connection is implemented at this stage. Chat, memory and other features will be added separately, at your direction.',
+  settings: 'Settings', connection: 'Connection', newChat: 'New chat', search: 'Search',
+  models: 'Models', agents: 'Agents', channels: 'Channels', skills: 'Skills', cron: 'Tasks',
+  pinned: 'Pinned', projects: 'Projects', sessions: 'Chats', later: 'Not connected yet',
+  file: 'File', edit: 'Edit', view: 'View', help: 'Help', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', close: 'Close',
+  sidebar: 'Show / hide sidebar', back: 'Back', forward: 'Forward', theme: 'Toggle theme', language: 'Переключить на русский',
+  protocol: 'Protocol', version: 'Server version', granted: 'Granted scopes', permissions: 'Full operator authority is requested; the Gateway determines actual grants.',
+  commands: 'Implemented node commands', commandsHelp: 'Permissions and implemented commands are different. OS command execution and file access are not implemented yet.',
+  loading: 'Loading…', startupError: 'Unable to reach the Electron main process.',
+  INVALID_URL: 'Enter a valid ws:// or wss:// address.', URL_CONTAINS_CREDENTIALS: 'Credentials, query parameters and fragments are not allowed in the URL. Use the authentication field.',
+  TLS_REQUIRED: 'Remote servers require wss://. Plaintext connections are only allowed for a local tunnel.',
+  CREDENTIAL_REQUIRED: 'Enter a token or password for this Gateway.', INVALID_AUTH_MODE: 'Invalid authentication mode.',
+  INVALID_CREDENTIAL: 'Invalid token or password.', INVALID_TLS_PIN: 'Use a 64-character hexadecimal SHA-256 fingerprint with a wss:// address.',
+};
+export type Language = 'ru' | 'en';
+export type TextKey = keyof typeof ru;
+export function translator(language: Language): (key: TextKey) => string {
+  return (key) => (language === 'ru' ? ru : en)[key];
+}
+export function translatedError(language: Language, code: string, fallback: string): string {
+  return Object.hasOwn(ru, code) ? translator(language)(code as TextKey) : fallback;
+}

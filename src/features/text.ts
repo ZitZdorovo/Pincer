@@ -1,0 +1,25 @@
+import type { Language } from '../i18n';
+const text = {
+  chat: ['Чат', 'Chat'], memory: ['Память', 'Memory'], updates: ['Обновления', 'Updates'],
+  greeting: ['С чего начнём?', 'Where shall we start?'], message: ['Напиши сообщение…', 'Write a message…'], send: ['Отправить', 'Send'], stop: ['Остановить', 'Stop'],
+  thinking: ['Думает…', 'Thinking…'], tools: ['Инструмент', 'Tool'], agent: ['Агент', 'Agent'], full: ['Полный доступ запрошен', 'Full access requested'],
+  offline: ['Подключись к Gateway, чтобы продолжить.', 'Connect to the Gateway to continue.'], newChat: ['Новый чат', 'New chat'], refresh: ['Обновить список', 'Refresh list'], more: ['Ранние сообщения', 'Earlier messages'],
+  memoryHelp: ['Память хранится на Gateway. Pincer не запускает memory sync или локальный OpenClaw.', 'Memory lives on the Gateway. Pincer does not run memory sync or local OpenClaw.'],
+  read: ['Загрузить память', 'Load memory'], save: ['Сохранить память', 'Save memory'], saved: ['Сохранено. Индексацией управляет Gateway.', 'Saved. The Gateway manages indexing.'],
+  probe: ['Проверить семантический поиск', 'Check semantic search'], search: ['Искать в памяти', 'Search memory'], query: ['Что вспомнить?', 'What should I remember?'],
+  ready: ['Семантический поиск доступен', 'Semantic search is ready'], notReady: ['Семантический поиск не готов', 'Semantic search is not ready'], unknown: ['Готовность ещё не проверена', 'Readiness has not been checked'],
+  provider: ['Провайдер embeddings', 'Embedding provider'], keyword: ['Поиск по словам — не семантический', 'Keyword search — not semantic'],
+  verifySearch: ['Тип поиска не указан сервером', 'The server did not identify the search mode'],
+  check: ['Проверить обновления', 'Check for updates'], install: ['Обновить', 'Update'],
+  updateTitle: ['Установка обновления', 'Installing update'], restart: ['Pincer перезапустится после завершения установки.', 'Pincer will restart when installation is complete.'],
+  preparing: ['Подготовка…', 'Preparing…'], downloading: ['Загрузка', 'Downloading'], checking: ['Проверка…', 'Checking…'], current: ['Установлена последняя версия', 'You are up to date'], available: ['Доступно обновление', 'Update available'],
+  development: ['Автообновление работает в установленной версии Pincer. Здесь запущена сборка для разработки.', 'Auto-update works in installed Pincer. This is a development build.'],
+  updateHelp: ['Обновления Pincer и ноды поставляются вместе из ZitZdorovo/Pincer. OpenClaw на сервере не изменяется.', 'Pincer and its node update together from ZitZdorovo/Pincer. Server OpenClaw is not modified.'],
+  unsaved: ['Сначала сохрани память и отправь или очисти черновик сообщения.', 'Save memory and send or clear your message draft first.'],
+  updateError: ['Не удалось обновить Pincer. Приложение не удалено. Проверь доступ к GitHub и повтори проверку.', 'Pincer could not update. The app has not been removed. Check access to GitHub and try checking again.'],
+  dismiss: ['Закрыть', 'Close'], nodeVersion: ['Версия SDK ноды', 'Node SDK version'], loadFailed: ['Не удалось загрузить данные', 'Could not load data'],
+  conflict: ['Память изменена на сервере. Скопируй свои правки и заново загрузи файл.', 'Memory changed on the server. Copy your changes, then reload the file.'],
+  discard: ['Загрузить файл с сервера и отменить несохранённые правки?', 'Reload from the server and discard unsaved edits?'],
+  selectChat: ['Выбери чат или создай новый.', 'Select a chat or create a new one.'],
+} as const;
+export const featureText = (language: Language) => (key: keyof typeof text): string => text[key][language === 'ru' ? 0 : 1];

@@ -1,0 +1,6 @@
+  .titlebar-button {
+    @apply flex h-7 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10 disabled:opacity-40;
+  }
+  .window-control {
+    @apply flex h-full w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10;
+  }

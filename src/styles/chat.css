@@ -1,0 +1,10 @@
+.chat-markdown p + p { margin-top: 1rem; }
+.chat-markdown { user-select: text; -webkit-user-select: text; }
+.chat-markdown pre { overflow-x: auto; padding: 1rem; border-radius: .75rem; background: hsl(var(--muted)); }
+.chat-markdown code { font-family: ui-monospace, monospace; font-size: .85em; }
+.chat-markdown ul, .chat-markdown ol { padding-left: 1.5rem; }
+.chat-markdown ul { list-style: disc; }
+.chat-markdown ol { list-style: decimal; }
+.chat-markdown table { display: block; overflow-x: auto; border-collapse: collapse; }
+.chat-markdown td, .chat-markdown th { border: 1px solid hsl(var(--border)); padding: .35rem .7rem; }
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 { font-weight: 600; margin: 1rem 0 .5rem; }
