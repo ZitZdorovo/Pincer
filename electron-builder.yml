@@ -28,5 +28,4 @@ publish:
   repo: Pincer
   releaseType: release
 releaseInfo:
-  releaseName: Pincer ${version}
   releaseNotesFile: RELEASE_NOTES.md
