@@ -31,7 +31,11 @@ export class GatewayService {
   private generation = 0;
   private listeners = new Set<(state: GatewayState) => void>();
   private eventListeners = new Set<(event: EventFrame) => void>();
+  private methods: string[] = [];
+  operatorMethods(): string[] { return [...this.methods]; }
   private state: GatewayState;
+  private limits = { maxPayload: 25 * 1024 * 1024, maxBytes: 20 * 1024 * 1024, maxImageBytes: 6 * 1024 * 1024 };
+  attachmentLimits() { return { ...this.limits }; }
 
   constructor(private readonly vault: Vault, version: string, private readonly factory: ClientFactory = (options) => new GatewayClient(options)) {
     this.state = {
@@ -93,7 +97,7 @@ export class GatewayService {
         deviceFamily: process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'Mac' : 'Linux',
         mode: role === 'node' ? 'node' : 'ui', role,
         scopes: role === 'operator' ? [...OPERATOR_SCOPES] : [],
-        caps: role === 'node' ? ['device'] : ['tool-events'],
+        caps: role === 'node' ? ['device'] : ['tool-events', 'approvals'],
         commands: role === 'node' ? [...NODE_COMMANDS] : undefined,
         minProtocol: role === 'node' ? MIN_NODE_PROTOCOL_VERSION : PROTOCOL_VERSION,
         maxProtocol: PROTOCOL_VERSION,
@@ -104,6 +108,10 @@ export class GatewayService {
         notifyOnStartupRetry: true,
         onHelloOk: (hello) => {
           if (!current()) return;
+          if (role === 'operator') {
+            this.methods = [...hello.features.methods];
+            this.limits = { maxPayload: hello.policy.maxPayload, maxBytes: hello.policy.attachments?.maxBytes ?? 20 * 1024 * 1024, maxImageBytes: hello.policy.attachments?.maxImageBytes ?? 6 * 1024 * 1024 };
+          }
           this.set(role, {
             phase: 'connected', serverVersion: hello.server.version, protocol: hello.protocol,
             grantedScopes: hello.auth?.scopes ?? [], connectedAt: Date.now(),

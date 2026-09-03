@@ -23,14 +23,14 @@ export function UpdateModal({ state, language }: { state: UpdateState | null; la
   const dialog = useRef<HTMLDialogElement>(null);
   const active = state?.phase === 'downloading' || state?.phase === 'installing';
   useEffect(() => { if (active) dialog.current?.showModal(); else dialog.current?.close(); }, [active]);
-  return <dialog ref={dialog} onCancel={(event) => event.preventDefault()} aria-labelledby="update-heading" aria-describedby="update-description" className="w-[420px] max-w-[90vw] rounded-[20px] border border-white/5 bg-[#2b2b2b] p-5 text-[#f2f2f2] shadow-2xl backdrop:bg-black/30">
+  return <dialog ref={dialog} onCancel={(event) => event.preventDefault()} aria-labelledby="update-heading" aria-describedby="update-description" className="w-[420px] max-w-[90vw] rounded-[20px] border border-border bg-surface-modal p-5 text-foreground shadow-2xl backdrop:bg-black/20 dark:backdrop:bg-black/40">
     <h2 id="update-heading" className="text-lg font-semibold">{t('updateTitle')}</h2>
-    <p id="update-description" className="mt-1 text-xs leading-5 text-[#aaa]">{t('restart')}</p>
+    <p id="update-description" className="mt-1 text-xs leading-5 text-muted-foreground">{t('restart')}</p>
     <div className="mt-4 flex items-center gap-3">
-      <div role="progressbar" aria-label={t('updateTitle')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={state?.percent} className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
-        <motion.div className="h-full rounded-full bg-[#3c73c8]" animate={state?.percent !== undefined ? { width: `${state.percent}%`, x: '0%' } : { width: '33%', x: reduced ? '100%' : ['-100%', '300%'] }} transition={state?.percent !== undefined ? { duration: .2 } : { duration: reduced ? 0 : 1.5, repeat: reduced ? 0 : Infinity }} />
+      <div role="progressbar" aria-label={t('updateTitle')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={state?.percent} className="h-2 flex-1 overflow-hidden rounded-full bg-foreground/10">
+        <motion.div key={state?.percent !== undefined ? 'determinate' : 'indeterminate'} initial={false} className="h-full rounded-full bg-primary" animate={!active ? { width: '0%', x: '0%' } : state?.percent !== undefined ? { width: `${state.percent}%`, x: '0%' } : { width: '33%', x: reduced ? '100%' : ['-100%', '300%'] }} transition={state?.percent !== undefined ? { duration: .2 } : { duration: reduced ? 0 : 1.5, repeat: active && !reduced ? Infinity : 0 }} />
       </div>
-      <span className="text-xs font-medium text-[#bcbcbc]" aria-live="polite">{state?.percent === undefined ? t('preparing') : `${Math.round(state.percent)}%`}</span>
+      <span className="text-xs font-medium text-muted-foreground" aria-live="polite">{state?.percent === undefined ? t('preparing') : `${Math.round(state.percent)}%`}</span>
     </div>
   </dialog>;
 }

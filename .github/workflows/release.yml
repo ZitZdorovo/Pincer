@@ -2,23 +2,37 @@ name: Release Pincer
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Существующий тег вида v0.2.0'
+        required: true
+        type: string
+concurrency:
+  group: pincer-release-${{ github.ref }}
+  cancel-in-progress: false
 permissions:
   contents: write
 jobs:
   windows:
+    name: Проверка и публикация Windows-релиза
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.19.0'
           cache: npm
       - run: npm ci
       - name: Verify release version
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag and package version differ' }
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { $env:GITHUB_REF_NAME }
+          if ($tag -ne "v$version") { throw "Tag $tag and package version $version differ" }
       - run: npm test
       - run: npm run test:e2e
       - run: npx electron-builder --win nsis --x64 --publish always

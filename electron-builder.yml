@@ -8,7 +8,10 @@ files:
   - dist-electron/**/*
   - package.json
   - LICENSE
+  - docs/licenses/**/*
 win:
+  # Re-enable when an Authenticode certificate is configured.
+  signAndEditExecutable: false
   target:
     - target: nsis
       arch: [x64]
@@ -24,3 +27,6 @@ publish:
   owner: ZitZdorovo
   repo: Pincer
   releaseType: release
+releaseInfo:
+  releaseName: Pincer ${version}
+  releaseNotesFile: RELEASE_NOTES.md

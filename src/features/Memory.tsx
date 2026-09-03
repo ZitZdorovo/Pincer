@@ -4,7 +4,8 @@ import type { Language } from '../i18n';
 import { featureText } from './text';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-export function Memory({ state, language, connected, onDirty }: { state: WorkspaceState | null; language: Language; connected: boolean; onDirty(value: boolean): void }) {
+import { MemoryConfiguration } from './Configuration';
+export function Memory({ state, language, connected, onDirty, embedded = false }: { state: WorkspaceState | null; language: Language; connected: boolean; onDirty(value: boolean): void; embedded?: boolean }) {
   const t = featureText(language);
   const [agent, setAgent] = useState(''); const [file, setFile] = useState<MemoryFile | null>(null);
   const [content, setContent] = useState(''); const [query, setQuery] = useState('');
@@ -15,8 +16,9 @@ export function Memory({ state, language, connected, onDirty }: { state: Workspa
   useEffect(() => { generation.current++; setFile(null); setContent(''); setHealth(null); setSearch(null); setError(''); }, [selected]);
   const run = async (action: () => Promise<void>) => { setBusy(true); setError(''); setNotice(''); try { await action(); } catch (error) { setError(error instanceof Error ? error.message : t('loadFailed')); } finally { setBusy(false); } };
   const load = () => run(async () => { const current = generation.current; const result = await window.pincer.memory.read(selected); if (current !== generation.current) return; if (result.ok) { setFile(result.value); setContent(result.value.content); } else setError(result.error.message); });
-  return <div className="mx-auto max-w-3xl space-y-5 p-8" data-testid="memory-page">
-    <h1 className="text-2xl font-semibold">{t('memory')}</h1><p className="text-sm leading-6 text-muted-foreground">{t('memoryHelp')}</p>
+  return <div className={embedded ? 'space-y-5' : 'mx-auto max-w-3xl space-y-5 p-8'} data-testid="memory-page">
+    <h1 className={embedded ? 'text-xl font-semibold' : 'text-2xl font-semibold'}>{t('memory')}</h1><p className="text-sm leading-6 text-muted-foreground">{t('memoryHelp')}</p>
+    <MemoryConfiguration connected={connected && !busy} saved={() => { setHealth(null); setNotice(language === 'ru' ? 'Настройки сохранены. После переподключения проверьте семантический поиск.' : 'Settings saved. Check semantic search after reconnecting.'); }} />
     <select aria-label={t('agent')} value={selected} disabled={dirty || busy || !connected} onChange={(event) => setAgent(event.target.value)} className="rounded-lg border border-input bg-background px-3 py-2 text-sm">{state?.agents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
     <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!connected || !selected || busy} onClick={() => { if (!dirty || window.confirm(t('discard'))) void load(); }}>{t('read')}</Button><Button variant="outline" disabled={!connected || !selected || busy} onClick={() => void run(async () => { const result = await window.pincer.memory.status(selected, true); if (result.ok) setHealth(result.value); else setError(result.error.message); })}>{t('probe')}</Button></div>
     {health && <div role="status" className="rounded-xl border border-border p-4 text-sm"><p>{t(health.ready ? 'ready' : health.checked ? 'notReady' : 'unknown')}</p><p className="mt-1 text-muted-foreground">{t('provider')}: {health.provider ?? '—'}</p>{health.error && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">{health.error}</p>}</div>}

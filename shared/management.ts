@@ -1,0 +1,26 @@
+export type ManagementPage = 'models' | 'agents' | 'channels' | 'skills' | 'cron' | 'subagents';
+export type AgentEdit = { name: string; workspace?: string; model?: string; emoji?: string };
+export type JobEdit = { name: string; agentId: string; enabled: boolean; schedule: { kind: 'cron'; expr: string; tz?: string } | { kind: 'every'; everyMs: number } | { kind: 'at'; at: string }; message: string };
+export type JsonRecord = Record<string, unknown>;
+export type ManagementApi = {
+  cancelSubagent(id: string): Promise<import('./contract').Result<void>>;
+  usage(range: '7d' | '30d' | 'all'): Promise<import('./contract').Result<JsonRecord>>;
+  quotas(force?: boolean): Promise<import('./contract').Result<import('./quotas').QuotaSnapshot>>;
+  quotaSource(): Promise<import('./contract').Result<import('./quotas').QuotaSource>>;
+  saveQuotaSource(input: import('./quotas').QuotaSourceInput): Promise<import('./contract').Result<import('./quotas').QuotaSource>>;
+  list(page: ManagementPage, agentId?: string): Promise<import('./contract').Result<JsonRecord>>;
+  saveAgent(agentId: string | null, input: AgentEdit): Promise<import('./contract').Result<void>>;
+  deleteAgent(agentId: string): Promise<import('./contract').Result<void>>;
+  agentFile(agentId: string, name: string): Promise<import('./contract').Result<{ content: string; hash: string }>>;
+  saveAgentFile(agentId: string, name: string, content: string, hash: string): Promise<import('./contract').Result<void>>;
+  setSkill(skillKey: string, enabled: boolean): Promise<import('./contract').Result<void>>;
+  searchSkills(query: string): Promise<import('./contract').Result<JsonRecord>>;
+  installSkill(slug: string, agentId: string): Promise<import('./contract').Result<void>>;
+  channelAction(channel: string, accountId: string, action: 'start' | 'stop' | 'logout'): Promise<import('./contract').Result<void>>;
+  saveJob(id: string | null, input: JobEdit): Promise<import('./contract').Result<void>>;
+  toggleJob(id: string, enabled: boolean): Promise<import('./contract').Result<void>>;
+  deleteJob(id: string): Promise<import('./contract').Result<void>>;
+  runJob(id: string): Promise<import('./contract').Result<void>>;
+  jobRuns(id: string): Promise<import('./contract').Result<JsonRecord>>;
+  probeModel(provider: string, agentId: string): Promise<import('./contract').Result<JsonRecord>>;
+};

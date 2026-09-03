@@ -1,55 +1,65 @@
-import { useEffect, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
-import { Bot, Boxes, ChevronDown, Clock, MessageSquare, Network, Plus, Settings, Shapes, Brain, Download, RefreshCw } from 'lucide-react';
-import type { GatewayState, UpdateState, WorkspaceState } from '../../shared/contract';
-import { translator, type Language } from '../i18n';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { usePreferences } from '../preferences';
+import type { GatewayState, UpdateState, WorkspaceState, ChatLocation } from '../../shared/contract';
+import type { Language } from '../i18n';
 import { Chat } from '../features/Chat';
 import { Memory } from '../features/Memory';
 import { UpdatesPage } from '../features/Updates';
-import { featureText } from '../features/text';
-export function Shell({ state, language, collapsed, configure, updates }: { state: GatewayState; language: Language; collapsed: boolean; configure(): void; updates: UpdateState | null }) {
-  const t = translator(language); const f = featureText(language); const reducedMotion = useReducedMotion();
+import { Agents } from '../donor/Agents';
+import { Skills } from '../donor/Skills';
+import { Cron } from '../donor/Cron';
+import { Channels } from '../donor/Channels';
+import { Models } from '../donor/Models';
+import { Sidebar } from '../donor/Sidebar';
+import { DonorProvider } from '../donor/adapter';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Files } from '../features/Files';
+import { Modal } from './ui/modal';
+import { Button } from './ui/button';
+
+export function Shell({ state, language, updates, onDirty, active }: { state: GatewayState; language: Language; configure(): void; openSettings(): void; updates: UpdateState | null; onDirty(value: boolean): void; active: boolean }) {
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
-  const [view, setView] = useState<'chat' | 'memory' | 'updates'>('chat');
-  const [chatDirty, setChatDirty] = useState(false); const [memoryDirty, setMemoryDirty] = useState(false);
-  const [error, setError] = useState(''); const [creating, setCreating] = useState(false); const ready = state.operator.phase === 'connected';
+  const location = useLocation(); const navigate = useNavigate();
+  const view = location.pathname === '/' ? 'chat' : location.pathname.slice(1);
+  const preferences = usePreferences(); const previousRun = useRef<WorkspaceState | null>(null);
   useEffect(() => {
-    let active = true;
-    const accept = (next: WorkspaceState) => { if (active) setWorkspace((previous) => !previous || next.revision >= previous.revision ? next : previous); };
+    const previous = previousRun.current; previousRun.current = workspace;
+    if (preferences.responseNotifications && (!active || view !== 'chat') && previous?.activeRun && workspace && !workspace.activeRun && !workspace.loading && previous.selected === workspace.selected && previous.scope === workspace.scope && workspace.messages.length > previous.messages.length && workspace.messages.at(-1)?.role === 'assistant') toast.info(language === 'ru' ? 'Ответ готов' : 'Response ready');
+  }, [workspace, preferences.responseNotifications, active, view, language]);
+  const setView = (page: string) => navigate(page === 'chat' ? '/' : `/${page}`);
+  const [chatDirty, setChatDirty] = useState(false); const [memoryDirty, setMemoryDirty] = useState(false);
+  const [fileKey, setFileKey] = useState<string | null>(null); const [filesDirty, setFilesDirty] = useState(false);
+  const [newLocation, setNewLocation] = useState<ChatLocation | undefined>(undefined);
+  const [newChat, setNewChat] = useState(false); const [newAgent, setNewAgent] = useState('');
+  const [error, setError] = useState(''); const [creating, setCreating] = useState(false); const ready = state.operator.phase === 'connected';
+  useEffect(() => { onDirty(chatDirty || memoryDirty || filesDirty); }, [chatDirty, memoryDirty, filesDirty, onDirty]);
+  useEffect(() => {
+    let mounted = true;
+    const accept = (next: WorkspaceState) => { if (mounted) setWorkspace((previous) => !previous || next.revision >= previous.revision ? next : previous); };
     const off = window.pincer.chat.onState(accept);
-    void window.pincer.chat.snapshot().then(accept).catch(() => setError(f('loadFailed')));
-    return () => { active = false; off(); };
+    void window.pincer.chat.snapshot().then(accept).catch(() => setError(language === 'ru' ? 'Не удалось загрузить чаты' : 'Unable to load chats'));
+    return () => { mounted = false; off(); };
   }, []);
-  const create = async () => {
-    if (!workspace?.agentId || creating) return;
+  const create = async (agent = workspace?.agentId, location?: ChatLocation) => {
+    if (!workspace?.agentId || creating || !active) return;
     setCreating(true); setError('');
-    try { const result = await window.pincer.chat.create(workspace.agentId); if (!result.ok) setError(result.error.message); else setView('chat'); }
+    try { const result = await window.pincer.chat.create(agent || workspace.agentId, location); if (!result.ok) setError(result.error.message); else { setView('chat'); setNewChat(false); } }
     finally { setCreating(false); }
   };
-  return <div className="relative flex min-h-0 flex-1 overflow-hidden bg-surface-sidebar" data-testid="main-layout">
-    <motion.aside initial={false} animate={{ width: collapsed ? 0 : 260, opacity: collapsed ? 0 : 1 }} transition={{ duration: reducedMotion ? 0 : 0.2 }} className="relative flex shrink-0 flex-col overflow-hidden" inert={collapsed}>
-      <div className="flex h-full w-[260px] flex-col pr-1.5">
-        <div className="flex h-11 items-center px-4 pt-1"><span className="text-base font-bold tracking-tight">Pincer</span></div>
-        <div className="px-2"><button onClick={() => void create()} disabled={!ready || !workspace?.agentId || creating} className="sidebar-nav-text flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/5"><Plus className="h-3.5 w-3.5" />{t('newChat')}</button></div>
-        <nav className="flex flex-col px-2" aria-label="Pincer">
-          <button onClick={() => setView('memory')} className={`sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 ${view === 'memory' ? 'bg-black/5 dark:bg-white/5' : ''}`}><Brain className="h-3.5 w-3.5" />{f('memory')}</button>
-          {([{ key: 'models', icon: Boxes }, { key: 'agents', icon: Bot }, { key: 'channels', icon: MessageSquare }, { key: 'skills', icon: Shapes }, { key: 'cron', icon: Clock }] as const).map(({ key, icon: Icon }) => <button key={key} disabled title={t('later')} className="sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1 text-foreground/40"><Icon className="h-3.5 w-3.5" /><span>{t(key)}</span></button>)}
-        </nav>
-        <div className="mt-5 flex min-h-0 flex-1 flex-col overflow-auto px-2">
-          <div className="mb-2 flex items-center px-1 text-meta font-semibold text-foreground/70"><ChevronDown className="mr-1 h-3 w-3" /><span>{t('sessions')}</span><button disabled={!ready || workspace?.loading} onClick={() => void window.pincer.chat.refresh()} aria-label={f('refresh')} className="ml-auto p-1"><RefreshCw size={12} /></button></div>
-          {workspace?.sessions.map((session) => <button key={session.key} onClick={() => { setView('chat'); void window.pincer.chat.select(session.key); }} className={`sidebar-nav-text truncate rounded-lg px-3 py-2 text-left hover:bg-black/5 dark:hover:bg-white/5 ${workspace.selected === session.key && view === 'chat' ? 'bg-black/5 dark:bg-white/5' : ''}`} title={session.title}>{session.title}</button>)}
-        </div>
-        <div className="mt-auto p-2"><button onClick={() => setView('updates')} className="sidebar-nav-text flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-black/5 dark:hover:bg-white/5"><Download className="h-4 w-4" />{f('updates')}{updates?.phase === 'available' && <span className="ml-auto h-2 w-2 rounded-full bg-primary" />}</button><div className="flex items-center gap-1">
-          <button onClick={configure} className="sidebar-nav-text flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-black/5 dark:hover:bg-white/5"><Settings className="h-4 w-4" /><span>{t('settings')}</span></button>
-          <button onClick={configure} title={t('connection')} aria-label={t('connection')} className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"><Network className="h-4 w-4" /><span className={`absolute right-1 top-1 h-2 w-2 rounded-full ring-2 ring-surface-sidebar ${ready && state.node.phase === 'connected' ? 'bg-green-500' : 'bg-amber-500'}`} /></button>
-        </div></div>
-      </div><div className="pointer-events-none absolute bottom-2 right-0 top-2 w-px bg-border/60" />
-    </motion.aside>
-    <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background/40" data-testid="main-content">
-      {error && <p role="alert" className="p-3 text-sm text-destructive">{error}</p>}
-      <div className={view === 'chat' ? 'h-full' : 'hidden'}><Chat state={workspace} language={language} connected={ready} onDirty={setChatDirty} /></div>
+  return <DonorProvider gateway={state} workspace={workspace} updates={updates} newChat={(location) => { if (!active) return; setNewLocation(location); if (!ready) { setView('chat'); return; } if ((workspace?.agents.length || 0) > 1) { setNewAgent(workspace?.agentId || ''); setError(''); setNewChat(true); } else void create(undefined, location); }}><div className="relative flex min-h-0 flex-1 overflow-hidden bg-surface-sidebar" data-testid="main-layout">
+    <Sidebar active={active} />
+    <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background p-6" data-testid="main-content">
+      {error && <p role="alert" className="absolute left-6 right-6 top-2 z-30 rounded-lg bg-surface-modal p-3 text-sm text-destructive" onClick={() => setError('')}>{error}</p>}
+      <div className={view === 'chat' ? '-m-6 flex h-[calc(100%+3rem)]' : 'hidden'}><div className="min-w-0 flex-1"><Chat creating={creating} state={workspace} language={language} connected={ready} onDirty={setChatDirty} active={active && view === 'chat'} filesOpen={Boolean(fileKey)} openFiles={() => { if (workspace?.selected && (!filesDirty || fileKey === workspace.selected || window.confirm(language === 'ru' ? 'Отменить изменения файла?' : 'Discard file changes?'))) setFileKey(workspace.selected); }} /></div>{fileKey && <Files key={fileKey} sessionKey={fileKey} close={() => setFileKey(null)} onDirty={setFilesDirty} />}</div>
       <div className={view === 'memory' ? 'h-full overflow-auto' : 'hidden'}><Memory state={workspace} language={language} connected={ready} onDirty={setMemoryDirty} /></div>
-      {view === 'updates' && <UpdatesPage state={updates} language={language} dirty={chatDirty || memoryDirty} nodeVersion={state.nodeVersion} />}
+      {view === 'updates' && <div className="h-full overflow-auto"><UpdatesPage state={updates} language={language} dirty={chatDirty || memoryDirty || filesDirty} nodeVersion={state.nodeVersion} /></div>}
+      {view === 'agents' && <Agents workspace={workspace} connected={ready} />}
+      {view === 'skills' && <Skills workspace={workspace} connected={ready} />}
+      {view === 'cron' && <Cron workspace={workspace} connected={ready} />}
+      {view === 'channels' && <Channels workspace={workspace} connected={ready} />}
+      {view === 'models' && <Models connected={ready} />}
     </main>
-  </div>;
+    <Modal open={newChat} title={language === 'ru' ? 'Новый чат' : 'New chat'} close={() => { if (!creating) setNewChat(false); }} description={language === 'ru' ? 'Выберите агента для нового разговора. Существующие чаты и черновики сохранятся.' : 'Choose an agent for the new conversation. Existing chats and drafts are preserved.'}><form onSubmit={(event) => { event.preventDefault(); void create(newAgent, newLocation); }}><label className="block text-sm">{language === 'ru' ? 'Агент' : 'Agent'}<select aria-label={language === 'ru' ? 'Агент нового чата' : 'New chat agent'} value={newAgent} onChange={(event) => setNewAgent(event.target.value)} className="mt-2 block w-full rounded-lg border border-border bg-surface-input p-2">{workspace?.agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.name}</option>)}</select></label>{error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}<Button className="mt-4" disabled={creating || !ready || !newAgent}>{language === 'ru' ? 'Создать чат' : 'Create chat'}</Button></form></Modal>
+  </div></DonorProvider>;
 }

@@ -1,0 +1,67 @@
+name: Проверка и сборка Pincer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pincer-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Тесты и Windows-сборка
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Получить исходники
+        uses: actions/checkout@v4
+
+      - name: Подготовить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Проверить типы
+        run: npm run typecheck
+
+      - name: Запустить модульные и интеграционные тесты
+        run: npm test
+
+      - name: Запустить Electron E2E
+        run: npm run test:e2e
+
+      - name: Собрать установщик Windows
+        run: npx electron-builder --win nsis --x64 --publish never
+
+      - name: Сохранить готовую сборку
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pincer-Windows-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/Pincer-Setup-*.exe
+            release/Pincer-Setup-*.exe.blockmap
+            release/latest.yml
+
+      - name: Сохранить отчёт при ошибке интерфейсных тестов
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pincer-test-results-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            test-results/**
+            playwright-report/**

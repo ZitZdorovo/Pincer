@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Native-desktop arrow throughout; selection and keyboard focus stay enabled. */
+html, body, body * { cursor: default !important; }
+
+/* Embedded Gateway sections use the same bounded page surface as chat. */
+.settings-content .openx-page-root { height: auto; min-height: 0; margin: 0; overflow: visible; }
+.settings-content .openx-page-frame { max-width: none; padding: 0; }
+.settings-content .openx-page-title { font-size: 1.5rem; line-height: 1.3; }
+.settings-content .openx-section-title { font-size: 1.25rem; line-height: 1.4; }
+
 /* ──────────────────────────────────────────────────────────────────────────
  * OpenX design tokens — CSS variable layer
  * ──────────────────────────────────────────────────────────────────────────
@@ -512,6 +521,22 @@ select optgroup {
 :root[data-interface-font-size='small'] { font-size: 14px; }
 :root[data-interface-font-size='default'] { font-size: 16px; }
 :root[data-interface-font-size='large'] { font-size: 18px; }
+:root[data-interface-font-size='xl'] { font-size: 20px; }
+:root[data-interface-font-size='xxl'] { font-size: 22.4px; }
+:root[data-interface-font='sans'] body { font-family: 'Segoe UI', Arial, sans-serif; }
+:root[data-interface-font='serif'] body { font-family: Georgia, 'Times New Roman', serif; }
+:root[data-interface-font='mono'] body { font-family: Consolas, 'Courier New', monospace; }
+:root[data-chat-font='sans'] .chat-markdown { font-family: 'Segoe UI', Arial, sans-serif; }
+:root[data-chat-font='serif'] .chat-markdown { font-family: Georgia, 'Times New Roman', serif; }
+:root[data-chat-font='mono'] .chat-markdown { font-family: Consolas, 'Courier New', monospace; }
+:root[data-accent-color='orange'] { --primary: 24 90% 39%; --ring: var(--primary); }
+:root[data-accent-color='green'] { --primary: 155 75% 29%; --ring: var(--primary); }
+:root[data-accent-color='violet'] { --primary: 265 75% 53%; --ring: var(--primary); }
+:root[data-accent-color='rose'] { --primary: 340 75% 43%; --ring: var(--primary); }
+:root.dark[data-accent-color='orange'] { --primary: 28 90% 63%; --primary-foreground: 0 0% 7%; }
+:root.dark[data-accent-color='green'] { --primary: 155 65% 55%; --primary-foreground: 0 0% 7%; }
+:root.dark[data-accent-color='violet'] { --primary: 265 85% 73%; --primary-foreground: 0 0% 7%; }
+:root.dark[data-accent-color='rose'] { --primary: 340 80% 68%; --primary-foreground: 0 0% 7%; }
 
 :root[data-reduced-motion='on'] *,
 :root[data-reduced-motion='on'] *::before,

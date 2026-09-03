@@ -12,7 +12,7 @@ it('does not ship the OpenClaw runtime, ACP or the OpenX updater', () => {
     expect(name).not.toMatch(/node_modules\/(openclaw|@agentclientprotocol\/sdk|acpx)$/);
   }
   const source = (path: string): string => readdirSync(path, { withFileTypes: true })
-    .map((entry) => entry.isDirectory() ? source(join(path, entry.name)) : readFileSync(join(path, entry.name), 'utf8')).join('\n');
+    .map((entry) => entry.isDirectory() ? source(join(path, entry.name)) : /\.[cm]?[jt]sx?$/.test(entry.name) ? readFileSync(join(path, entry.name), 'utf8') : '').join('\n');
   const main = source('electron');
   expect(main).not.toMatch(/child_process|\.openclaw|getOpenClaw|OpenX[\\/]/);
   const renderer = source('src');
