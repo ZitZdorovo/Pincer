@@ -43,6 +43,7 @@ export type WorkspaceState = {
   activeRun: string | null; stream: string; tool: string | null; hasMore: boolean; error: Failure | null;
   models: ModelInfo[]; model: string | null; thinking: string | null;
   projects: Project[]; projectError: string | null;
+  draftLocation?: ChatLocation;
   permissionMode?: PermissionMode | null; effectivePermissionMode?: PermissionMode;
   thinkingOptions?: string[]; spawnDepth?: number;
   runStartedAt?: number; runPhase?: RunPhase; liveTools?: ToolCall[]; contextTokens?: number; contextWindow?: number;
@@ -77,6 +78,7 @@ export type PincerApi = {
     snapshot(): Promise<WorkspaceState>;
     refresh(): Promise<Result<void>>;
     select(key: string): Promise<Result<void>>;
+    prepare(location?: ChatLocation): Promise<Result<void>>;
     create(agentId: string, location?: ChatLocation): Promise<Result<void>>;
     registerProject(name: string, path: string): Promise<Result<void>>;
     removeProject(id: string): Promise<Result<void>>;

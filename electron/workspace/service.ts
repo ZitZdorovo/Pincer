@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { EventFrame } from '@openclaw/gateway-protocol';
-import { validateSessionsCreateParams, validateProjectsRemoveParams, validateSessionsPatchParams } from '@openclaw/gateway-protocol';
+import { validateSessionsCreateParams, validateSessionsPatchParams } from '@openclaw/gateway-protocol';
 import type { ChatMessage, MemoryFile, MemoryHealth, MemorySearch, WorkspaceState } from '../../shared/contract';
 import { GatewayService } from '../gateway/service';
 import { isRecord } from '../gateway/validation';
@@ -9,6 +9,7 @@ import { messageFiles } from './messages';
 import { projectTranscript, tokenUsage, metric, timestamp, toolInput } from './transcript';
 import { RunTiming } from './run-timing';
 import { activityText } from './activity';
+import { ProjectStore } from './projects';
 
 const record = (value: unknown): Record<string, unknown> => isRecord(value) ? value : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -43,7 +44,7 @@ export class WorkspaceService {
   private sending = false;
   private runsBySession = new Map<string, { id: string; startedAt?: number; phase: import('../../shared/contract').RunPhase }>();
   private historyLoad: { epoch: number; changed: boolean } | null = null;
-  constructor(private gateway: GatewayService, private redact: (message: string) => string, private timing = new RunTiming()) {
+  constructor(private gateway: GatewayService, private redact: (message: string) => string, private timing = new RunTiming(), private projects = new ProjectStore()) {
     gateway.onOperatorEvent((event) => this.event(event));
     gateway.subscribe((state) => {
       const endpoint = JSON.stringify(state.profile);
@@ -51,7 +52,7 @@ export class WorkspaceService {
         this.endpoint = endpoint;
         this.state.scope = createHash('sha256').update(endpoint).digest('hex');
         ++this.epoch;
-        this.state = { ...this.state, agents: [], agentId: '', sessions: [], selected: null, messages: [], activeRun: null, stream: '', tool: null, error: null, hasMore: false, models: [], model: null, thinking: null, projects: [], projectError: null };
+        this.state = { ...this.state, agents: [], agentId: '', sessions: [], selected: null, messages: [], activeRun: null, stream: '', tool: null, error: null, hasMore: false, models: [], model: null, thinking: null, projects: [], projectError: null, draftLocation: undefined };
         this.sequence.clear(); this.runsBySession.clear(); this.rawHistory = []; this.state.liveTools = []; this.state.runStartedAt = undefined; this.state.permissionMode = 'full'; this.state.effectivePermissionMode = 'full'; this.state.contextTokens = undefined; this.state.contextWindow = undefined; this.state.thinkingOptions = []; this.state.spawnDepth = undefined;
         this.timing.clearActive(); this.state.runPhase = undefined; this.state.liveActivity = []; this.state.compaction = undefined;
         this.emit();
@@ -98,13 +99,8 @@ export class WorkspaceService {
         const model = record(entry); const provider = string(model.provider); const id = string(model.id);
         return { id: provider && !id.startsWith(`${provider}/`) ? `${provider}/${id}` : id, name: string(model.name) || id, provider, contextWindow: typeof model.contextWindow === 'number' ? model.contextWindow : undefined, reasoning: model.reasoning === true };
       }).filter((model) => model.id);
-      try {
-        const projects = record(await this.rpc('projects.list'));
-        if (epoch !== this.epoch) return;
-        if (!Array.isArray(projects.projects)) throw new Error('PROJECTS_UNAVAILABLE');
-        this.state.projects = projects.projects.map((entry) => { const project = record(entry); return { id: string(project.id), name: string(project.displayName), path: string(project.repoRoot) }; }).filter((project) => project.id);
-        this.state.projectError = null;
-      } catch (error) { if (epoch === this.epoch) this.state.projectError = this.redact(error instanceof Error ? error.message : 'PROJECTS_UNAVAILABLE'); }
+      try { this.state.projects = this.projects.list(this.state.scope); this.state.projectError = null; }
+      catch (error) { if (epoch === this.epoch) this.state.projectError = this.redact(error instanceof Error ? error.message : 'PROJECTS_UNAVAILABLE'); }
       // Subscription is re-established after every transport reconnect.
       await this.rpc('sessions.subscribe', { limit: 100 });
       if (epoch !== this.epoch) return;
@@ -118,6 +114,7 @@ export class WorkspaceService {
     const previousRun = this.state.activeRun; const previousTools = this.state.liveTools; const previousActivity = this.state.liveActivity; const previousCompaction = this.state.compaction;
     const epoch = ++this.epoch;
     this.state.selected = selected;
+    this.state.draftLocation = undefined;
     this.historyLoad = { epoch, changed: false };
     this.state.loading = true; this.state.error = null;
     if (previous !== selected) { this.state.messages = []; this.state.activeRun = null; this.state.stream = ''; this.state.tool = null; this.state.runStartedAt = undefined; this.state.runPhase = undefined; this.state.liveTools = []; this.state.liveActivity = []; this.state.compaction = undefined; }
@@ -172,6 +169,20 @@ export class WorkspaceService {
       if (epoch === this.epoch) { this.state.loading = false; this.emit(); }
     }
   }
+  async prepare(location: unknown = {}): Promise<void> {
+    if (!isRecord(location) || Object.keys(location).some((key) => !['projectId', 'cwd'].includes(key))) throw new Error('INVALID_INPUT');
+    const projectId = location.projectId === undefined ? undefined : bounded(location.projectId, 128);
+    const cwd = location.cwd === undefined ? undefined : bounded(location.cwd, 8192);
+    const previous = this.state.selected;
+    ++this.epoch;
+    this.state.selected = null; this.state.draftLocation = { ...(projectId ? { projectId } : {}), ...(cwd ? { cwd } : {}) };
+    this.state.messages = []; this.state.activeRun = null; this.state.stream = ''; this.state.tool = null; this.state.hasMore = false; this.state.error = null;
+    this.state.model = null; this.state.thinking = null; this.state.runStartedAt = undefined; this.state.runPhase = undefined; this.state.liveTools = []; this.state.liveActivity = []; this.state.compaction = undefined;
+    this.rawHistory = []; this.historyLoad = null; this.emit();
+    if (previous) {
+      try { await this.rpc('sessions.messages.unsubscribe', { key: previous }); } catch { /* A local draft must remain usable after a transient disconnect. */ }
+    }
+  }
   async more(): Promise<void> {
     if (!this.state.selected || !this.state.hasMore || this.state.loading) return;
     const epoch = this.epoch;
@@ -199,13 +210,12 @@ export class WorkspaceService {
     this.emit();
   }
   async registerProject(name: unknown, path: unknown): Promise<void> {
-    await this.rpc('projects.register', { name: bounded(name, 128), path: bounded(path, 8192) });
-    await this.refresh();
+    this.projects.add(this.state.scope, name, path);
+    this.state.projects = this.projects.list(this.state.scope); this.state.projectError = null; this.emit();
   }
   async removeProject(id: unknown): Promise<void> {
-    const params = { id: bounded(id, 64), deleteCheckout: false };
-    if (!validateProjectsRemoveParams(params)) throw new Error('INVALID_INPUT');
-    await this.rpc('projects.remove', params); await this.refresh();
+    this.projects.remove(this.state.scope, id);
+    this.state.projects = this.projects.list(this.state.scope); this.state.projectError = null; this.emit();
   }
   async send(text: unknown, idempotencyKey: unknown, attachments?: unknown, targetAgentId?: unknown): Promise<void> {
     const message = bounded(text, 100000, true);

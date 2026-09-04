@@ -308,20 +308,7 @@ interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 function SelectField({ className, children, ...props }: SelectFieldProps) {
-  return (
-    <div className="relative">
-      <Select
-        className={cn(
-          'h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-background text-meta pr-10 [background-image:none] appearance-none',
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </Select>
-      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-    </div>
-  );
+  return <Select className={cn('h-10 w-full rounded-xl text-meta', className)} {...props}>{children}</Select>;
 }
 
 // Create/Edit Task Dialog

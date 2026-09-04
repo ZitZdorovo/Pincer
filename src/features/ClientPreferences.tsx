@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { setPreferences, usePreferences } from '../preferences';
 import { Switch } from '../components/ui/switch';
+import { Select } from '../components/ui/select';
 import { cn } from '../lib/utils';
 
 export function SettingRow({ label, description, children }: { label: string; description?: string; children: ReactNode }) {
@@ -10,7 +11,7 @@ export function AppearanceExtras() {
   const p = usePreferences(); const ru = p.language === 'ru';
   const fonts = [['system', ru ? 'По умолчанию' : 'Default'], ['sans', 'Segoe UI'], ['serif', 'Georgia'], ['mono', 'Consolas']] as const;
   return <div className="divide-y divide-border rounded-2xl border border-border bg-surface-modal px-5" id="settings-typography">
-    {(['interfaceFont', 'chatFont'] as const).map(key => <SettingRow key={key} label={key === 'chatFont' ? ru ? 'Шрифт текста чата' : 'Chat font' : ru ? 'Шрифт интерфейса' : 'Interface font'} description={ru ? 'Сохраняется только в Pincer на этом устройстве.' : 'Saved only in Pincer on this device.'}><select aria-label={key === 'chatFont' ? ru ? 'Шрифт чата' : 'Chat font' : ru ? 'Шрифт интерфейса' : 'Interface font'} value={p[key]} onChange={e => setPreferences({ [key]: e.target.value })} className="h-9 rounded-lg border border-border bg-surface-input px-3 text-sm">{fonts.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></SettingRow>)}
+    {(['interfaceFont', 'chatFont'] as const).map(key => <SettingRow key={key} label={key === 'chatFont' ? ru ? 'Шрифт текста чата' : 'Chat font' : ru ? 'Шрифт интерфейса' : 'Interface font'} description={ru ? 'Сохраняется только в Pincer на этом устройстве.' : 'Saved only in Pincer on this device.'}><Select aria-label={key === 'chatFont' ? ru ? 'Шрифт чата' : 'Chat font' : ru ? 'Шрифт интерфейса' : 'Interface font'} value={p[key]} onChange={e => setPreferences({ [key]: e.target.value })}>{fonts.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</Select></SettingRow>)}
     <SettingRow label={ru ? 'Акцентный цвет' : 'Accent color'} description={ru ? 'Кнопки, индикаторы и выделение активных элементов.' : 'Buttons, indicators and selected controls.'}><div className="flex gap-2">{([
       ['default', ru ? 'Синий' : 'Blue', 'bg-blue-500'], ['orange', ru ? 'Оранжевый' : 'Orange', 'bg-orange-500'], ['green', ru ? 'Зелёный' : 'Green', 'bg-emerald-500'], ['violet', ru ? 'Фиолетовый' : 'Violet', 'bg-violet-500'], ['rose', ru ? 'Розовый' : 'Rose', 'bg-rose-500'],
     ] as const).map(([id, text, color]) => <button key={id} aria-label={text} title={text} aria-pressed={p.accentColor === id} onClick={() => setPreferences({ accentColor: id })} className={cn('h-6 w-6 rounded-full border-2 border-surface-modal ring-offset-2 ring-offset-surface-modal', color, p.accentColor === id && 'ring-2 ring-foreground')} />)}</div></SettingRow>

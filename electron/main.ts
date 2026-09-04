@@ -12,6 +12,7 @@ import { QuotaService } from './workspace/quotas';
 import { ManagementService } from './workspace/management';
 import { WorkspaceFilesService } from './workspace/files';
 import { DraftStore } from './workspace/drafts';
+import { ProjectStore } from './workspace/projects';
 import { ConfigurationService } from './workspace/configuration';
 import { GatewaySettingsService } from './workspace/settings';
 import { GatewayAdminService } from './workspace/gateway-admin';
@@ -56,7 +57,8 @@ async function start(): Promise<void> {
   gateway = new GatewayService(vault, app.getVersion());
   const service = gateway;
   const timing = new RunTiming({ path: join(app.getPath('userData'), 'run-timing.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
-  const workspace = new WorkspaceService(service, (message) => vault.redact(message), timing);
+  const projects = new ProjectStore({ path: join(app.getPath('userData'), 'projects.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
+  const workspace = new WorkspaceService(service, (message) => vault.redact(message), timing, projects);
   const management = new ManagementService(service);
   const quotas = new QuotaService(() => service.operatorRequest('usage.status', {}), () => JSON.stringify(service.snapshot().profile), { path: join(app.getPath('userData'), 'quota-sources.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
   const files = new WorkspaceFilesService(service);
@@ -96,6 +98,7 @@ async function start(): Promise<void> {
   operation('approvals:resolve', (id, token, decision) => approvals.resolve(id, token, decision), true);
   operation('chat:refresh', () => workspace.refresh());
   operation('chat:select', (key) => workspace.select(key));
+  operation('chat:prepare', (location) => workspace.prepare(location));
   operation('chat:create', (agent, location) => workspace.create(agent, location), true);
   operation('chat:project-register', (name, path) => workspace.registerProject(name, path), true);
   operation('chat:project-remove', (id) => workspace.removeProject(id), true);

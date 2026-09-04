@@ -8,6 +8,7 @@ import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
+import { Select } from '../components/ui/select';
 import { Separator } from '../components/ui/separator';
 import { cn } from '../lib/utils';
 import { setPreferences, usePreferences } from '../preferences';
@@ -296,24 +297,24 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   <Label htmlFor="interface-font-size" className="text-sm font-medium text-foreground/80">{t('appearance.fontSize')}</Label>
                   <p className="mt-1 text-meta text-muted-foreground">{t('appearance.fontSizeDesc')}</p>
                 </div>
-                <select id="interface-font-size" value={interfaceFontSize} onChange={(event) => setInterfaceFontSize(event.target.value as typeof interfaceFontSize)} className="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground">
+                <Select id="interface-font-size" value={interfaceFontSize} onChange={(event) => setInterfaceFontSize(event.target.value as typeof interfaceFontSize)} className="h-8">
                   <option value="small">{t('appearance.fontSizeSmall')}</option>
                   <option value="default">{t('appearance.fontSizeDefault')}</option>
                   <option value="large">{t('appearance.fontSizeLarge')}</option>
                   <option value="xl">XL · 125%</option>
                   <option value="xxl">XXL · 140%</option>
-                </select>
+                </Select>
               </div>
               <div id="settings-reduced-motion" className="flex items-center justify-between gap-6">
                 <div>
                   <Label htmlFor="reduced-motion" className="text-sm font-medium text-foreground/80">{t('appearance.reducedMotion')}</Label>
                   <p className="mt-1 text-meta text-muted-foreground">{t('appearance.reducedMotionDesc')}</p>
                 </div>
-                <select id="reduced-motion" value={reducedMotion} onChange={(event) => setReducedMotion(event.target.value as typeof reducedMotion)} className="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground">
+                <Select id="reduced-motion" value={reducedMotion} onChange={(event) => setReducedMotion(event.target.value as typeof reducedMotion)}>
                   <option value="system">{t('appearance.reducedMotionSystem')}</option>
                   <option value="on">{t('appearance.reducedMotionOn')}</option>
                   <option value="off">{t('appearance.reducedMotionOff')}</option>
-                </select>
+                </Select>
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -327,17 +328,17 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   <Label htmlFor="agent-badge-mode" className="text-sm font-medium text-foreground/80">{t('appearance.agentBadge')}</Label>
                   <p className="mt-1 text-meta text-muted-foreground">{t('appearance.agentBadgeDesc')}</p>
                 </div>
-                <select
+                <Select
                   id="agent-badge-mode"
                   value={agentBadgeMode}
                   onChange={(event) => setAgentBadgeMode(event.target.value as typeof agentBadgeMode)}
-                  className="h-9 w-full max-w-sm rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full max-w-sm"
                 >
                   <option value="full">{t('appearance.agentBadgeFull')}</option>
                   <option value="initial">{t('appearance.agentBadgeInitial')}</option>
                   <option value="hidden">{t('appearance.agentBadgeHidden')}</option>
                   <option value="custom">{t('appearance.agentBadgeCustom')}</option>
-                </select>
+                </Select>
                 {agentBadgeMode === 'custom' && (
                   <div className="max-w-xl space-y-2">
                     {agents.map((agent) => (
@@ -403,10 +404,10 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   <Label htmlFor="send-shortcut" className="text-sm font-medium text-foreground">{t('chat.sendShortcut')}</Label>
                   <p className="mt-1 text-meta text-muted-foreground">{t('chat.sendShortcutDesc')}</p>
                 </div>
-                <select id="send-shortcut" value={sendShortcut} onChange={(event) => setSendShortcut(event.target.value as typeof sendShortcut)} className="h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground">
+                <Select id="send-shortcut" value={sendShortcut} onChange={(event) => setSendShortcut(event.target.value as typeof sendShortcut)}>
                   <option value="enter">{t('chat.sendWithEnter')}</option>
                   <option value="ctrl-enter">{t('chat.sendWithCtrlEnter')}</option>
-                </select>
+                </Select>
               </div>
               <div id="settings-chat-search" className="flex items-center justify-between gap-6 border-t border-border pt-5">
                 <div>

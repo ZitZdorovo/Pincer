@@ -11,6 +11,10 @@ let page: Page;
 let directory: string;
 let mock: MockGateway;
 let pageErrors: string[];
+async function chooseSelect(control: ReturnType<Page['locator']>, option: string) {
+  await control.click();
+  await page.getByRole('option', { name: option, exact: true }).click();
+}
 test('settings share the main sidebar width and bounded chat surface; preferences really apply', async () => {
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
@@ -23,7 +27,7 @@ test('settings share the main sidebar width and bounded chat surface; preference
   await expect(page.getByTestId('settings-theme-light')).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: 'artifacts/pincer-donor/settings-new-light.png' });
   await page.getByTestId('settings-theme-dark').click();
-  await page.getByLabel('Шрифт чата', { exact: true }).selectOption('serif');
+  await chooseSelect(page.getByLabel('Шрифт чата', { exact: true }), 'Georgia');
   await page.getByRole('button', { name: 'Фиолетовый', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-accent-color', 'violet');
   await expect(page.locator('html')).toHaveAttribute('data-chat-font', 'serif');
@@ -42,15 +46,15 @@ test('complete Gateway settings are edited inside Pincer with profile, devices a
   mock.config = { ...mock.config, ui: { enabled: false } };
   await connect(); await page.keyboard.press('Control+,');
   await expect(page.getByTestId('settings-content').locator('header')).toHaveCount(0);
-  await expect(page.getByTestId('gateway-settings-root')).toHaveValue('ui');
-  await page.getByLabel('ui.enabled', { exact: true }).selectOption('true');
+  await expect(page.getByTestId('gateway-settings-root')).toHaveAttribute('data-value', 'ui');
+  await chooseSelect(page.getByLabel('ui.enabled', { exact: true }), 'Включено');
   await page.getByRole('button', { name: 'Сохранить на Gateway', exact: true }).click();
   await page.getByRole('button', { name: 'Применить изменения', exact: true }).click();
   await expect.poll(() => (mock.config.ui as { enabled?: boolean }).enabled).toBe(true);
   await page.getByTestId('settings-nav-profile').click(); await expect(page.getByRole('textbox', { name: 'Отображаемое имя' })).toHaveValue('Test User');
   await page.getByTestId('settings-nav-devices').click(); await expect(page.getByText('Связанные устройства · 0')).toBeVisible();
   await page.getByTestId('settings-nav-logs').click(); await expect(page.getByText('Gateway ready')).toBeVisible();
-  await page.getByTestId('settings-nav-advanced').click(); await expect(page.getByTestId('gateway-settings-root').locator('option')).toHaveCount(3);
+  await page.getByTestId('settings-nav-advanced').click(); await page.getByTestId('gateway-settings-root').click(); await expect(page.getByRole('option')).toHaveCount(3); await page.keyboard.press('Escape');
   await page.screenshot({ path: 'artifacts/pincer-donor/settings-complete-schema.png' });
 });
 test('connection settings use one surface and separate connection from Gateway configuration', async () => {
@@ -59,7 +63,7 @@ test('connection settings use one surface and separate connection from Gateway c
   await expect(page.getByTestId('connection-status')).toBeVisible(); await expect(page.getByTestId('gateway-settings-root')).toHaveCount(0);
   await page.screenshot({ path: 'artifacts/pincer-donor/settings-connection.png' });
   await page.getByRole('tab', { name: 'Параметры Gateway', exact: true }).click();
-  await expect(page.getByTestId('gateway-settings-root')).toHaveValue('gateway');
+  await expect(page.getByTestId('gateway-settings-root')).toHaveAttribute('data-value', 'gateway');
   await expect(page.getByTestId('connection-status')).toHaveCount(0);
 });
 test('update modal changes surface and text colors in light and dark modes', async () => {
@@ -314,6 +318,7 @@ test('validates in Main, rejects unsafe URLs and keeps controls usable at minimu
 test('donor sidebar resizing, search and real rename/pin/delete', async () => {
 
  await connect(); await page.getByTestId('sidebar-new-chat').click();
+ await page.getByTestId('chat-composer-input').fill('Создай чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
  const handle = page.getByTestId('sidebar-resize-handle'); await handle.focus(); await page.keyboard.press('ArrowRight');
  await expect.poll(() => page.getByTestId('sidebar-layout-slot').evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(330);
  const key = (await page.evaluate(() => window.pincer.chat.snapshot())).selected!;
@@ -335,7 +340,7 @@ test('settings preserve draft, sending shortcut and theme; chat find locates tex
   const editor = page.getByTestId('chat-composer-input'); await editor.fill('Keep my draft');
   await page.getByTestId('sidebar-nav-settings').click();
   await page.getByTestId('settings-theme-dark').click(); await expect(page.locator('html')).toHaveClass('dark');
-  await page.locator('#send-shortcut').selectOption('ctrl-enter');
+  await chooseSelect(page.locator('#send-shortcut'), 'Ctrl+Enter');
   await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
   await expect(editor).toHaveValue('Keep my draft'); await editor.press('Enter');
   expect(mock.responses.filter((item) => item.method === 'chat.send')).toHaveLength(0);
@@ -381,16 +386,20 @@ test('project creates a chat in its actual Gateway workspace', async () => {
  await connect(); await page.getByRole('button', { name: 'Новый проект', exact: true }).click();
  const editor = page.getByRole('dialog'); await editor.getByRole('textbox').first().fill('Research project'); await page.getByTestId('project-path').fill('C:/Research');
  await editor.getByRole('button', { name: 'Создать', exact: true }).click();
- await page.getByTestId('sidebar-project-project-0').click({ button: 'right' });
+ const project = page.locator('[data-testid^="sidebar-project-"]').filter({ hasText: 'Research project' });
+ await project.click({ button: 'right' });
  await page.getByTestId('node-context-menu').getByRole('button', { name: 'Новый чат', exact: true }).click();
+ expect(mock.sessions).toHaveLength(0);
+ await page.getByTestId('chat-composer-input').fill('Research'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
  await expect.poll(() => mock.sessions[0]?.execCwd).toBe('C:/Research');
- expect(mock.responses.find((item) => item.method === 'sessions.create')?.params).toMatchObject({ projectId: 'project-0' });
+ expect(mock.responses.find((item) => item.method === 'sessions.create')?.params).toMatchObject({ cwd: 'C:/Research' });
  await expect(page.getByTestId('chat-page')).toContainText('Research');
 
 });
 
 test('workspace files read, save and preserve remote conflicts', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
+  await page.getByTestId('chat-composer-input').fill('Открой рабочую область'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
   await page.getByRole('button', { name: 'Рабочая область', exact: true }).click();
   await page.getByTestId('workspace-files').getByRole('button', { name: /README.md/ }).click();
   await expect(page.getByTestId('file-preview-content')).toHaveCSS('user-select', 'text');
@@ -419,13 +428,12 @@ test('attachments are sent as validated content exactly once', async () => {
 
 test('text drafts survive restart and are encrypted on disk', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
-  const key = (await page.evaluate(() => window.pincer.chat.snapshot())).selected!;
+  const key = 'new';
   await page.getByTestId('chat-composer-input').fill('PRIVATE_DRAFT_67f112');
   await expect.poll(async () => { const state = await page.evaluate(() => window.pincer.chat.snapshot()); const result = await page.evaluate((scope) => window.pincer.drafts.read(scope), state.scope); return result.ok ? result.value[key] : ''; }).toBe('PRIVATE_DRAFT_67f112');
   expect(readFileSync(join(directory, 'drafts.vault')).includes('PRIVATE_DRAFT_67f112')).toBe(false);
   await application.close(); application = await launchApplication(); page = await application.firstWindow();
   await expect(page.getByTestId('main-layout')).toBeVisible();
-  await page.getByTestId(`sidebar-session-${key}`).click();
   await expect(page.getByTestId('chat-composer-input')).toHaveValue('PRIVATE_DRAFT_67f112');
 });
 
@@ -484,11 +492,12 @@ test('standing permissions show the full action scope and a second confirmation'
 test('new chats use the selected agent without altering existing conversations', async () => {
   mock.agents.push({ id: 'research', name: 'Research' });
   await connect(); await page.getByTestId('sidebar-new-chat').click();
-  const form = page.getByRole('dialog', { name: 'Новый чат', exact: true });
-  await form.getByLabel('Агент нового чата').selectOption('research');
-  await form.getByRole('button', { name: 'Создать чат' }).click();
-  await expect(form).not.toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Новый чат', exact: true })).toHaveCount(0);
+  expect(mock.sessions).toHaveLength(0);
+  await page.getByTestId('chat-header-agent').click(); await page.getByTestId('chat-header-agent-menu').getByRole('button', { name: 'Research', exact: true }).click();
   await expect(page.getByTestId('chat-page')).toContainText('Research');
+  await page.getByTestId('chat-composer-input').fill('Start research'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect.poll(() => mock.sessions.length).toBe(1);
   expect(mock.responses.find((item) => item.method === 'sessions.create')?.params).toMatchObject({ agentId: 'research' });
 });
 
@@ -506,8 +515,9 @@ test('attachment-only messages remain visible after history reload', async () =>
 test('custom agent badges, setting search and donor switches work', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
   await expect(page.getByTestId('chat-composer-input')).toBeEnabled();
+  await page.getByTestId('chat-composer-input').fill('Создай чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
   await page.getByTestId('sidebar-nav-settings').click();
-  await page.getByLabel('Подпись агента в списке чатов', { exact: true }).selectOption('custom');
+  await chooseSelect(page.getByLabel('Подпись агента в списке чатов', { exact: true }), 'Своё имя для каждого агента');
   await page.getByPlaceholder('Assistant').fill('Помощник');
   await page.locator('#settings-dev-mode').click();
   await expect(page.locator('#settings-dev-mode')).toHaveAttribute('aria-checked', 'true');
@@ -571,9 +581,11 @@ test('donor model picker and presets use actual session settings; hidden shortcu
   await connect(); await page.getByTestId('sidebar-new-chat').click();
   await page.getByTestId('chat-model-picker-button').click();
   await page.locator('[data-testid^="chat-model-picker-option-"]').first().click();
-  await expect.poll(() => mock.sessions[0]?.model).toBe('test/test-model');
   await page.getByTestId('chat-thinking-picker-button').click();
   await page.getByTestId('chat-thinking-picker-menu').getByRole('button').last().click();
+  expect(mock.sessions).toHaveLength(0);
+  await page.getByTestId('chat-composer-input').fill('Проверка модели'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect.poll(() => mock.sessions[0]?.model).toBe('test/test-model');
   await expect.poll(() => mock.sessions[0]?.thinkingLevel).toBe('high');
   await page.getByTestId('chat-model-picker-button').click();
   await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'Пресет', exact: true }).click();
@@ -623,10 +635,11 @@ test('tool cards, token footer, quotas and text selection are confined to the co
 test('one live thinking indicator and permission choices change Gateway policy', async () => {
   mock.holdRun = true; await connect(); await page.getByTestId('sidebar-new-chat').click();
   await page.getByTestId('chat-access-button').click(); await page.getByTestId('chat-access-read-only').click();
-  await expect.poll(() => mock.sessions[0]?.permissionMode).toBe('read-only');
+  expect(mock.sessions).toHaveLength(0);
   await expect(page.getByTestId('chat-access-button')).toHaveAttribute('aria-label', 'Только чтение');
   await page.getByTestId('chat-access-button').click(); await page.screenshot({ path: 'artifacts/pincer-donor/permissions.png' }); await page.keyboard.press('Escape');
   await page.getByTestId('chat-composer-input').fill('Подумай'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect.poll(() => mock.sessions[0]?.permissionMode).toBe('read-only');
   await expect(page.getByTestId('chat-run-status')).toHaveCount(1);
   await expect(page.getByTestId('chat-run-status')).toContainText(/\d+ с/);
   await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
@@ -635,10 +648,11 @@ test('one live thinking indicator and permission choices change Gateway policy',
 
 test('a running chat stays marked while another session is selected', async () => {
   mock.holdRun = true; mock.deltaDelayMs = 60000; await connect(); await page.getByTestId('sidebar-new-chat').click();
-  const running = mock.sessions[0].key; await page.getByTestId('chat-composer-input').fill('Работай в фоне'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await page.getByTestId('chat-composer-input').fill('Работай в фоне'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect.poll(() => mock.sessions.length).toBe(1); const running = mock.sessions[0].key;
   await expect(page.getByTestId(`sidebar-session-${running}`)).toContainText('В работе');
-  await page.getByTestId('sidebar-new-chat').click(); await expect.poll(() => mock.sessions.length).toBe(2);
+  await page.getByTestId('sidebar-new-chat').click(); expect(mock.sessions).toHaveLength(1);
   await expect(page.getByTestId(`sidebar-session-${running}`)).toContainText('В работе');
+  await page.getByTestId('chat-composer-input').fill('Другой чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect.poll(() => mock.sessions.length).toBe(2);
   await page.screenshot({ path: 'artifacts/pincer-donor/background-run-other-chat.png' });
   await page.getByTestId(`sidebar-session-${running}`).click(); await expect(page.getByTestId('chat-run-status')).toBeVisible();
   await page.screenshot({ path: 'artifacts/pincer-donor/background-run.png' });
@@ -654,8 +668,9 @@ test('agent picker dispatches the chosen profile; Russian creation and task list
   mock.agents.push({ id: 'researcher', name: 'Исследователь' });
   mock.tasks.push({ id: 'subtask-1', title: 'Анализ проекта', status: 'running', runtime: 'subagent', agentId: 'researcher' });
   await connect(); await page.getByTestId('sidebar-new-chat').click();
-  await page.getByRole('dialog', { name: 'Новый чат', exact: true }).getByRole('button', { name: 'Создать чат' }).click();
+  await page.getByTestId('chat-composer-input').fill('Родительский чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
   await expect.poll(() => mock.sessions.length).toBe(1);
+  await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
   const parent = mock.sessions[0].key;
   await page.getByTestId('chat-header-agent').click(); await page.screenshot({ path: 'artifacts/pincer-donor/header-agent-picker.png' }); await page.getByTestId('chat-header-agent-menu').getByRole('button', { name: 'Исследователь', exact: true }).click();
   await expect(page.getByTestId('chat-header-agent')).toContainText('Исследователь');
@@ -685,7 +700,8 @@ test('usage page displays model-attributed totals and native project directory c
   await form.getByRole('button', { name: 'Обзор', exact: true }).click();
   await expect(page.getByTestId('project-path')).toHaveValue('C:/MockWorkspace');
   await form.getByRole('button', { name: 'Создать', exact: true }).click();
-  await expect.poll(() => mock.projects.some((p) => p.displayName === 'Русский проект')).toBe(true);
+  await expect.poll(async () => (await page.evaluate(() => window.pincer.chat.snapshot())).projects.some((p) => p.name === 'Русский проект')).toBe(true);
+  expect(mock.responses.some((item) => String(item.method).startsWith('projects.'))).toBe(false);
 });
 
 test('friendly model names and Thinking variants retain exact provider model identities', async () => {
@@ -699,9 +715,10 @@ test('friendly model names and Thinking variants retain exact provider model ide
   const options = page.locator('[data-testid^="chat-model-picker-option-"]');
   await expect(options).toHaveCount(2); await expect(options.first()).toHaveText('Gemini 3.7 Flash');
   await options.first().click();
-  await expect.poll(() => mock.sessions[0].model).toBe('custom/agy/agy/gemini-3.7-flash-low');
+  expect(mock.sessions).toHaveLength(0);
   await page.getByTestId('chat-thinking-picker-button').click();
   await page.getByTestId('chat-thinking-picker-menu').getByRole('button', { name: 'High', exact: true }).click();
+  await page.getByTestId('chat-composer-input').fill('Проверка модели'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
   await expect.poll(() => mock.sessions[0].model).toBe('custom/agy/agy/gemini-3.7-flash-high');
   await expect(page.getByTestId('chat-model-picker-button')).toContainText('Gemini 3.7 Flash');
   await expect(page.getByTestId('chat-thinking-picker-button')).toContainText('High');

@@ -65,6 +65,7 @@ const api: PincerApi = {
     snapshot: () => ipcRenderer.invoke('pincer:chat:snapshot'),
     refresh: () => ipcRenderer.invoke('pincer:chat:refresh'),
     select: (key) => ipcRenderer.invoke('pincer:chat:select', key),
+    prepare: (location) => ipcRenderer.invoke('pincer:chat:prepare', location),
     create: (agent, location) => ipcRenderer.invoke('pincer:chat:create', agent, location),
     registerProject: (name, path) => ipcRenderer.invoke('pincer:chat:project-register', name, path),
     removeProject: (id) => ipcRenderer.invoke('pincer:chat:project-remove', id),

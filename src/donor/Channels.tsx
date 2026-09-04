@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useGatewayStore } from './adapter';
@@ -297,7 +298,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
 
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">{t('account.bindAgentLabel')}</span>
-                                <select
+                                <Select
                                   className="h-8 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
                                   disabled title={t('pincer.channelConfigUnavailable')}
                                   value={account.agentId || ''}
@@ -311,7 +312,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                                       {agent.name}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                                 <Button
                                   size="sm"
                                   variant="outline"

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import { Select } from '@/components/ui/select';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAgentsStore } from './agents-adapter';
 import { useGatewayStore } from './adapter';
@@ -422,7 +423,7 @@ function AgentCard({
 const inputClasses =
   'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const selectClasses =
-  'h-[44px] w-full rounded-xl font-mono text-meta bg-transparent border border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground px-3 dark:[color-scheme:dark]';
+  'h-10 w-full rounded-xl font-mono text-meta text-foreground';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 
 function ChannelLogo({ type }: { type: ChannelType }) {
@@ -1023,7 +1024,7 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
               <Label htmlFor="agent-model-provider" className="text-xs text-foreground/70">
                 {t('settingsDialog.modelProviderLabel')}
               </Label>
-              <select
+              <Select
                 id="agent-model-provider"
                 value={selectedRuntimeProviderKey}
                 onChange={(event) => {
@@ -1043,13 +1044,13 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="agent-model-id" className="text-xs text-foreground/70">
                 {t('settingsDialog.modelIdLabel')}
               </Label>
-              <select
+              <Select
                 id="agent-model-id"
                 value={modelIdInput}
                 onChange={(event) => setModelIdInput(event.target.value)}
@@ -1062,7 +1063,7 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
                     {model.label === model.id ? model.id : `${model.label} — ${model.id}`}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             {!!nextModelRef && (
               <p className="text-xs font-mono text-foreground/70 break-all">

@@ -99,7 +99,7 @@ export function useComposer(props: ComposerProps) {
     finishEditingModelName: (name: string) => { if (editingModelKey) setAliases((all) => ({ ...all, [editingModelKey]: name })); setEditingModelKey(null); },
     resetModelAlias: (id: string) => setAliases((all) => { const next = { ...all }; delete next[id]; return next; }),
     handleSelectModelGroup: (group: ModelGroup) => void chooseModel(resolveGroupVariant(group, currentThinkingLevel).modelRef),
-    handleSelectThinkingLevel: async (level: string) => { if (variantLevels.length > 1 && currentModelGroup) { await chooseModel(resolveGroupVariant(currentModelGroup, level).modelRef); return; } const result = await window.pincer.chat.setThinking(level); if (!result.ok) toast.error(result.error.message); else setThinkingPickerOpen(false); },
+    handleSelectThinkingLevel: async (level: string) => { if (variantLevels.length > 1 && currentModelGroup) { await chooseModel(resolveGroupVariant(currentModelGroup, level).modelRef); return; } if (effectiveModelRef) { await chooseModel(effectiveModelRef, level); return; } const result = await window.pincer.chat.setThinking(level); if (!result.ok) toast.error(result.error.message); else setThinkingPickerOpen(false); },
     attachments: props.files.map((file, index): FileAttachment => ({ id: String(index), fileName: file.fileName, mimeType: file.mimeType, fileSize: Math.floor(file.content.length * 0.75), preview: file.mimeType.startsWith('image/') ? `data:${file.mimeType};base64,${file.content}` : null, status: 'ready' })),
     removeAttachment: (id: string) => props.removeFile(Number(id)), pickFiles: () => fileRef.current?.click(),
     handleInputChange: props.setInput,

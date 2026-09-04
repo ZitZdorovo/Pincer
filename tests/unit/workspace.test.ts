@@ -23,6 +23,18 @@ it('creates a full-permission session and sends exactly one request', async () =
   expect(mock.responses.filter((request) => request.method === 'chat.send')).toHaveLength(1);
   expect(mock.responses.find((request) => request.method === 'sessions.create')?.params).toMatchObject({ permissionMode: 'full' });
 });
+it('keeps a new chat local until the first send and stores non-Git project folders in Pincer', async () => {
+  const existingCreates = mock.responses.filter((request) => request.method === 'sessions.create').length;
+  await workspace.registerProject('Far Cry 4', 'C:\\Users\\zdawn\\Documents\\My Games\\Far Cry 4');
+  const project = workspace.snapshot().projects[0];
+  expect(project).toMatchObject({ name: 'Far Cry 4', path: 'C:\\Users\\zdawn\\Documents\\My Games\\Far Cry 4' });
+  expect(mock.responses.some((request) => String(request.method).startsWith('projects.'))).toBe(false);
+  await workspace.prepare({ projectId: project.id, cwd: project.path });
+  expect(workspace.snapshot()).toMatchObject({ selected: null, draftLocation: { projectId: project.id, cwd: project.path } });
+  expect(mock.responses.filter((request) => request.method === 'sessions.create')).toHaveLength(existingCreates);
+  await workspace.create('main', workspace.snapshot().draftLocation);
+  expect(mock.responses.findLast((request) => request.method === 'sessions.create')?.params).toMatchObject({ agentId: 'main', projectId: project.id, cwd: project.path });
+});
 it('preserves 16-second measured duration through a racing history reload with identical timestamps', async () => {
   mock.holdRun = true; mock.deltaDelayMs = 60000; await workspace.create('main');
   const start = Date.now(); const clock = vi.spyOn(Date, 'now').mockReturnValue(start);

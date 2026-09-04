@@ -4,6 +4,7 @@ import type { MemoryConfig, ProviderConfig } from '../../shared/configuration';
 import { usePreferences } from '../preferences';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Select } from '../components/ui/select';
 import { Modal } from '../components/ui/modal';
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block space-y-2 text-sm"><span className="text-muted-foreground">{label}</span>{children}</label>; }
 export function Providers({ connected }: { connected: boolean }) {
@@ -21,7 +22,7 @@ function ProviderEditor({ value, hash, close, saved }: { value: ProviderConfig; 
   return <Modal open title={ru ? 'Провайдер моделей' : 'Model provider'} close={() => { if (!busy) close(); }}><form className="max-h-[65vh] space-y-4 overflow-auto" onSubmit={(event) => { event.preventDefault(); setBusy(true); setError(''); void window.pincer.configuration.saveProvider(hash, { id, baseUrl: url, api, models: models.split('\n').map((model) => model.trim()).filter(Boolean), ...(key ? { apiKey: key } : {}) }).then((result) => { if (result.ok) { setKey(''); saved(); } else setError(result.error.message); }).finally(() => setBusy(false)); }}>
     <Field label={ru ? 'Идентификатор провайдера' : 'Provider ID'}><Input value={id} disabled={Boolean(value.id)} required pattern="[a-z][a-z0-9_-]*" onChange={(event) => setId(event.target.value)} /></Field>
     <Field label="Base URL"><Input required type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://api.example.com/v1" /></Field>
-    <Field label="API"><select className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm" value={api} onChange={(event) => setApi(event.target.value)}>{['openai-completions', 'openai-responses', 'anthropic-messages', 'ollama'].map((item) => <option key={item}>{item}</option>)}</select></Field>
+    <Field label="API"><Select className="w-full" value={api} onChange={(event) => setApi(event.target.value)}>{['openai-completions', 'openai-responses', 'anthropic-messages', 'ollama'].map((item) => <option key={item}>{item}</option>)}</Select></Field>
     <Field label="API key"><Input type="password" autoComplete="off" value={key} onChange={(event) => setKey(event.target.value)} placeholder={value.hasKey ? ru ? 'Ключ настроен · пустое поле сохранит его' : 'Configured · leave blank to keep' : ru ? 'Необязательно' : 'Optional'} /></Field>
     <Field label={ru ? 'Модели — по одной на строку' : 'Model IDs — one per line'}><textarea required className="min-h-24 w-full rounded-xl border border-border bg-background p-3 font-mono text-xs" value={models} onChange={(event) => setModels(event.target.value)} /></Field>
     <p className="text-xs leading-5 text-muted-foreground">{ru ? 'Настройки сохраняются на Gateway. Он может перезапуститься для их применения. Существующий ключ не возвращается в интерфейс.' : 'Settings are saved on the Gateway, which may restart to apply them. Existing keys are never returned to this UI.'}</p>

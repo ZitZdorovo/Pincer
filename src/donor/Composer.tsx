@@ -1,5 +1,6 @@
 // Original OpenX composer JSX and presentation helpers; transport/state are Pincer's.
 import { useState, type ReactNode } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Search, ChevronDown, Check, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -43,6 +44,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
   const [dragOver, setDragOver] = useState(false);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [workspaceDraft, setWorkspaceDraft] = useState('');
+  const reduceMotion = useReducedMotion();
   const queueTray: ReactNode = null;
   const scrollToLatestAction = props.scrollToLatestAction;
   return (
@@ -485,10 +487,16 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                     <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
                   )}
                 </button>
+                <AnimatePresence initial={false}>
                 {workspaceMenuOpen && !workspaceSelectorDisabled && (
-                  <div
+                  <motion.div
                     data-testid="chat-workspace-menu"
                     className="absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                    initial={reduceMotion ? false : { opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: reduceMotion ? 0.01 : 0.16, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ transformOrigin: 'bottom left' }}
                   >
                     <button
                       type="button"
@@ -537,8 +545,9 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                       <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate">{t('composer.chooseOtherWorkspaceOption')}</span>
                     </button>
-                  </div>
+                  </motion.div>
                 )}
+                </AnimatePresence>
               </div>
             )}
           </div>
