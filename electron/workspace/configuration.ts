@@ -61,16 +61,123 @@ export class ConfigurationService {
     if (!str(value.hash) || !isRecord(value.config)) throw new Error('CONFIG_UNAVAILABLE');
     return { hash: str(value.hash), config: value.config };
   }
+  private async authStatusSnapshot(refresh = false, agentId?: string): Promise<Record<string, unknown>> {
+    try {
+      return rec(await this.gateway.operatorRequest('models.authStatus', {
+        ...(refresh ? { refresh: true } : {}),
+        ...(agentId ? { agentId: bounded(agentId, 128) } : {}),
+      }));
+    } catch {
+      // Older Gateways do not expose auth status. Provider config remains usable.
+      return {};
+    }
+  }
+  async authDetect(agentId?: string): Promise<unknown> {
+    return this.gateway.operatorRequest('openclaw.setup.detect', agentId ? { agentId: bounded(agentId, 128) } : {});
+  }
+  async authStart(input: unknown): Promise<unknown> {
+    if (!isRecord(input) || !str(input.sessionId) || !str(input.authChoice)) throw new Error('INVALID_INPUT');
+    const sessionId = bounded(input.sessionId, 128);
+    const authChoice = bounded(input.authChoice, 128);
+    return this.gateway.operatorRequest('openclaw.setup.auth.start', {
+      sessionId,
+      authChoice,
+      ...(input.agentId ? { agentId: bounded(input.agentId, 128) } : {}),
+      ...(input.workspace ? { workspace: bounded(input.workspace, 4096) } : {}),
+    });
+  }
+  async authNext(input: unknown): Promise<unknown> {
+    if (!isRecord(input) || !str(input.sessionId)) throw new Error('INVALID_INPUT');
+    const answer = isRecord(input.answer) && str(input.answer.stepId)
+      ? { stepId: bounded(input.answer.stepId, 256), ...(Object.hasOwn(input.answer, 'value') ? { value: input.answer.value } : {}) }
+      : undefined;
+    return this.gateway.operatorRequest('wizard.next', { sessionId: bounded(input.sessionId, 128), ...(answer ? { answer } : {}) });
+  }
+  async authCancel(sessionId: unknown): Promise<unknown> {
+    if (!str(sessionId)) throw new Error('INVALID_INPUT');
+    return this.gateway.operatorRequest('wizard.cancel', { sessionId: bounded(sessionId, 128) });
+  }
+  async authLogout(provider: unknown, profileIds?: unknown, agentId?: unknown): Promise<unknown> {
+    if (!str(provider)) throw new Error('INVALID_INPUT');
+    const ids = Array.isArray(profileIds) ? profileIds.filter((value): value is string => Boolean(str(value))).map((value) => bounded(value, 256)) : undefined;
+    return this.gateway.operatorRequest('models.authLogout', { provider: bounded(provider, 128), ...(ids?.length ? { profileIds: ids } : {}), ...(str(agentId) ? { agentId: bounded(agentId, 128) } : {}) });
+  }
+  async authStatus(refresh = false, agentId?: string): Promise<unknown> {
+    return this.authStatusSnapshot(refresh, agentId);
+  }
+  async modelsList(agentId?: string): Promise<unknown> {
+    return this.gateway.operatorRequest('models.list', agentId ? { agentId } : {});
+  }
+  async refreshProviderModels(hash: unknown, providerId: unknown): Promise<void> {
+    const id = bounded(providerId, 128);
+    const { hash: current, config } = await this.snapshot();
+    if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
+    const previous = rec(rec(rec(config.models).providers)[id]);
+    const baseUrl = str(previous.baseUrl);
+    const api = str(previous.api);
+    const key = str(previous.apiKey);
+    let ids: string[] = [];
+    if (baseUrl && api) {
+      try { ids = await this.discoverModels({ baseUrl, api, ...(key ? { apiKey: key } : {}) }); } catch { /* OAuth/native providers use models.list below. */ }
+    }
+    if (!ids.length) {
+      const catalog = rec(await this.gateway.operatorRequest('models.list', {}));
+      const rows = Array.isArray(catalog.models) ? catalog.models : Array.isArray(catalog.data) ? catalog.data : [];
+      ids = rows.map((row) => {
+        const value = rec(row);
+        const rowProvider = str(value.provider);
+        const keyValue = str(value.key);
+        const model = str(value.id) || (keyValue.includes('/') ? keyValue.slice(keyValue.indexOf('/') + 1) : keyValue);
+        return (!rowProvider || rowProvider === id || keyValue.startsWith(`${id}/`)) ? model : '';
+      }).filter(Boolean);
+    }
+    ids = [...new Set(ids)];
+    if (!ids.length) throw new Error('EMPTY_MODEL_CATALOG');
+    const existing = Array.isArray(previous.models) ? previous.models.map(rec) : [];
+    const models = ids.map((model) => existing.find((entry) => entry.id === model) || { id: model, name: model });
+    await this.patch(current, { models: { providers: { [id]: { ...previous, models } } } }, [`models.providers.${id}.models`]);
+  }
   async providers(): Promise<{ hash: string; providers: ProviderConfig[] }> {
     const { hash, config } = await this.snapshot();
-    return { hash, providers: Object.entries(rec(rec(config.models).providers)).map(([id, entry]) => {
-      const provider = rec(entry); return { id, baseUrl: str(provider.baseUrl), api: str(provider.api), hasKey: Boolean(provider.apiKey), models: (Array.isArray(provider.models) ? provider.models : []).map((model) => str(rec(model).id)).filter(Boolean) };
-    }) };
+    const configured = new Map<string, ProviderConfig>(Object.entries(rec(rec(config.models).providers)).map(([id, entry]) => {
+      const provider = rec(entry);
+      return [id, { id, baseUrl: str(provider.baseUrl), api: str(provider.api), hasKey: Boolean(provider.apiKey), models: (Array.isArray(provider.models) ? provider.models : []).map((model) => str(rec(model).id)).filter(Boolean) }] as [string, ProviderConfig];
+    }));
+    const auth = await this.authStatusSnapshot(false);
+    const authRows = Array.isArray(auth.providers) ? auth.providers.map(rec) : [];
+    for (const row of authRows) {
+      const id = str(row.provider) || str(row.authProvider);
+      if (!id) continue;
+      const profiles = Array.isArray(row.profiles) ? row.profiles.map((profile) => {
+        const value = rec(profile);
+        const expiry = rec(value.expiry);
+        return {
+          profileId: str(value.profileId),
+          type: str(value.type),
+          ...(str(value.status) ? { status: str(value.status) } : {}),
+          ...(str(value.displayName) ? { displayName: str(value.displayName) } : {}),
+          ...(str(value.email) ? { email: str(value.email) } : {}),
+          ...(str(value.source) ? { source: str(value.source) } : {}),
+          ...(value.logoutSupported === true ? { logoutSupported: true } : {}),
+          ...(value.externallyManaged === true ? { externallyManaged: true } : {}),
+          ...(Object.keys(expiry).length ? { expiry: { ...(typeof expiry.at === 'number' ? { at: expiry.at } : {}), ...(typeof expiry.remainingMs === 'number' ? { remainingMs: expiry.remainingMs } : {}), ...(str(expiry.label) ? { label: str(expiry.label) } : {}) } } : {}),
+        };
+      }).filter((profile) => profile.profileId) : [];
+      const current = configured.get(id) || { id, baseUrl: '', api: '', hasKey: false, models: [] };
+      configured.set(id, {
+        ...current,
+        hasKey: current.hasKey || profiles.length > 0 || Boolean(str(row.status) && !['missing', 'expired'].includes(str(row.status))),
+        ...(str(row.status) ? { authStatus: str(row.status) } : {}),
+        ...(profiles.length ? { authProfiles: profiles } : {}),
+      });
+    }
+    return { hash, providers: [...configured.values()] };
   }
-  private async patch(hash: string, value: unknown, replacePaths?: string[]): Promise<void> {
+  private async patch(hash: string, value: unknown, replacePaths?: string[]): Promise<Record<string, unknown>> {
     try {
       const result = rec(await this.gateway.operatorRequest('config.patch', { baseHash: hash, raw: JSON.stringify(value), ...(replacePaths ? { replacePaths } : {}) }));
       if (result.ok === false) throw new Error('CONFIG_UPDATE_FAILED');
+      return result;
     } catch { throw new Error('CONFIG_UPDATE_FAILED'); } // A validation error may echo a newly entered key.
   }
   async saveProvider(hash: unknown, input: unknown): Promise<void> {
@@ -99,12 +206,16 @@ export class ConfigurationService {
     const id = bounded(providerId, 128);
     const { hash: current, config } = await this.snapshot();
     if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
-    const providers = { ...rec(rec(config.models).providers) };
+    const providers = rec(rec(config.models).providers);
     if (!Object.hasOwn(providers, id)) throw new Error('PROVIDER_NOT_FOUND');
-    delete providers[id];
-    // Replace the providers map as a whole so deletion works on Gateways whose
-    // merge patch intentionally ignores null values.
-    await this.patch(current, { models: { providers } }, ['models.providers']);
+    // config.patch follows RFC 7396 for objects: null removes the named key.
+    // replacePaths only controls arrays, so sending a shorter providers object
+    // merely merges it and is reported by the Gateway as a successful noop.
+    const result = await this.patch(current, { models: { providers: { [id]: null } } });
+    const returnedConfig = rec(result.config);
+    if (Object.keys(returnedConfig).length && Object.hasOwn(rec(rec(returnedConfig.models).providers), id)) {
+      throw new Error('CONFIG_UPDATE_FAILED');
+    }
   }
   private async memoryPath(): Promise<'memory.search' | 'agents.defaults.memorySearch'> {
     for (const path of ['memory.search', 'agents.defaults.memorySearch'] as const) {

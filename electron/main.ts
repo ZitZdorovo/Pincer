@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, session, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, session, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -153,6 +153,13 @@ async function start(): Promise<void> {
     const picked = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] });
     return picked.canceled ? null : picked.filePaths[0] || null;
   });
+  operation('desktop:open-external', async (value) => {
+    if (typeof value !== 'string') throw new Error('INVALID_URL');
+    let url: URL;
+    try { url = new URL(value); } catch { throw new Error('INVALID_URL'); }
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('INVALID_URL');
+    await shell.openExternal(url.toString());
+  });
   operation('management:subagent-cancel', (id) => management.cancelSubagent(id), true);
   operation('management:usage', (range) => management.usage(range));
   operation('management:quotas', (force) => quotas.load(force));
@@ -174,6 +181,8 @@ async function start(): Promise<void> {
   operation('management:skill-search', (query) => management.searchSkills(query));
   operation('management:skill-install', (slug, agent) => management.installSkill(slug, agent), true);
   operation('management:channel-action', (channel, account, action) => management.channelAction(channel, account, action), true);
+  operation('management:channel-save', (channel, account, values) => management.saveChannel(channel, account, values), true);
+  operation('management:channel-delete', (channel, account) => management.deleteChannel(channel, account), true);
   operation('management:job-save', (id, input) => management.saveJob(id, input), true);
   operation('management:job-toggle', (id, enabled) => management.toggleJob(id, enabled), true);
   operation('management:job-delete', (id) => management.deleteJob(id), true);
@@ -186,6 +195,14 @@ async function start(): Promise<void> {
   operation('drafts:read', (scope) => { if (scope !== workspace.snapshot().scope) throw new Error('CONNECTION_CHANGED'); return drafts.read(scope); });
   operation('drafts:write', (scope, key, text) => { if (scope !== workspace.snapshot().scope) throw new Error('CONNECTION_CHANGED'); return drafts.write(scope, key, text); });
   operation('configuration:providers', () => configuration.providers());
+  operation('configuration:auth-detect', (agentId) => configuration.authDetect(typeof agentId === 'string' ? agentId : undefined));
+  operation('configuration:auth-start', (input) => configuration.authStart(input), true);
+  operation('configuration:auth-next', (input) => configuration.authNext(input), true);
+  operation('configuration:auth-cancel', (sessionId) => configuration.authCancel(sessionId), true);
+  operation('configuration:auth-logout', (provider, profileIds, agentId) => configuration.authLogout(provider, profileIds, agentId), true);
+  operation('configuration:auth-status', (refresh, agentId) => configuration.authStatus(Boolean(refresh), typeof agentId === 'string' ? agentId : undefined));
+  operation('configuration:models-list', (agentId) => configuration.modelsList(typeof agentId === 'string' ? agentId : undefined));
+  operation('configuration:provider-models-refresh', (hash, id) => configuration.refreshProviderModels(hash, id), true);
   operation('configuration:models-discover', (input) => configuration.discoverModels(input));
   operation('settings:catalog', () => gatewaySettings.catalog());
   operation('settings:section', (root) => gatewaySettings.section(root));

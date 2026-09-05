@@ -76,6 +76,7 @@ export type PincerApi = {
     setStartup(enabled: boolean): Promise<Result<boolean>>;
     closeBehavior(): Promise<CloseBehavior>;
     setCloseBehavior(value: CloseBehavior): Promise<Result<CloseBehavior>>;
+    openExternal(url: string): Promise<Result<void>>;
   };
   chat: {
     snapshot(): Promise<WorkspaceState>;

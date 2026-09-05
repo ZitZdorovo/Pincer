@@ -20,7 +20,32 @@ export function useProviderData(connected: boolean) {
   const [defaultAccountId, setDefaultAccountId] = useState<string | null>(readDefaultProvider);
   const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const epoch = useRef(0);
   const refreshProviderSnapshot = useCallback(async () => { if (!connected) return; const generation = ++epoch.current; setLoading(true); setError(''); try { const result = await window.pincer.configuration.providers(); if (generation !== epoch.current) return; if (result.ok) setSnapshot(result.value); else setError(result.error.message); } catch (failure) { setError(String(failure)); } finally { if (generation === epoch.current) setLoading(false); } }, [connected]);
-  const accounts = useMemo<ProviderAccount[]>(() => (snapshot?.providers || []).map((provider) => ({ id: provider.id, vendorId: PROVIDER_TYPE_INFO.some((type) => type.id === provider.id) ? provider.id as ProviderType : 'custom', label: providerLabels[provider.id] || provider.id, authMode: provider.api === 'ollama' ? 'local' : 'api_key', baseUrl: provider.baseUrl, apiProtocol: provider.api as ProviderAccount['apiProtocol'], model: provider.models[0], metadata: { customModels: provider.models }, enabled: true, isDefault: false, createdAt: '', updatedAt: '' })), [providerLabels, snapshot]);
+  const accounts = useMemo<ProviderAccount[]>(() => (snapshot?.providers || []).map((provider) => {
+    const oauthProfile = provider.authProfiles?.find((profile) => profile.type === 'oauth' || profile.type === 'token');
+    const authMode: ProviderAccount['authMode'] = provider.api === 'ollama'
+      ? 'local'
+      : oauthProfile
+        ? 'oauth_browser'
+        : 'api_key';
+    return {
+      id: provider.id,
+      vendorId: PROVIDER_TYPE_INFO.some((type) => type.id === provider.id) ? provider.id as ProviderType : 'custom',
+      label: oauthProfile?.displayName || oauthProfile?.email || providerLabels[provider.id] || provider.id,
+      authMode,
+      baseUrl: provider.baseUrl || undefined,
+      apiProtocol: (provider.api || undefined) as ProviderAccount['apiProtocol'],
+      model: provider.models[0],
+      metadata: {
+        customModels: provider.models,
+        ...(oauthProfile?.email ? { email: oauthProfile.email } : {}),
+        ...(oauthProfile?.profileId ? { resourceUrl: oauthProfile.profileId } : {}),
+      },
+      enabled: true,
+      isDefault: false,
+      createdAt: '',
+      updatedAt: '',
+    };
+  }), [providerLabels, snapshot]);
   const statuses = useMemo<ProviderWithKeyInfo[]>(() => accounts.map((account) => ({ id: account.id, type: account.vendorId, name: account.label, baseUrl: account.baseUrl, apiProtocol: account.apiProtocol, model: account.model, enabled: true, createdAt: '', updatedAt: '', hasKey: snapshot?.providers.find((provider) => provider.id === account.id)?.hasKey === true, keyMasked: null })), [accounts, snapshot]);
   const save = async (account: ProviderAccount, apiKey?: string) => {
     if (!snapshot || !connected) throw new Error('Gateway configuration is unavailable.');
@@ -34,13 +59,19 @@ export function useProviderData(connected: boolean) {
     if (account.label.trim()) setProviderLabels((current) => { const next = { ...current, [account.id]: account.label.trim() }; localStorage.setItem('pincer.provider-labels', JSON.stringify(next)); return next; });
     await refreshProviderSnapshot(); await window.pincer.chat.refresh();
   };
+  const refreshProviderModels = async (id: string) => {
+    if (!snapshot || !connected) throw new Error('Gateway configuration is unavailable.');
+    const result = await window.pincer.configuration.refreshProviderModels(snapshot.hash, id);
+    if (!result.ok) throw new Error(result.error.message);
+    await refreshProviderSnapshot(); await window.pincer.chat.refresh();
+  };
   useEffect(() => {
     if (defaultAccountId && accounts.length && !accounts.some((account) => account.id === defaultAccountId)) {
       setDefaultAccountId(null);
       try { localStorage.removeItem('pincer.default-provider'); } catch { /* storage unavailable */ }
     }
   }, [accounts, defaultAccountId]);
-  return { accounts, statuses, vendors, defaultAccountId, loading, error, refreshProviderSnapshot,
+  return { accounts, statuses, vendors, defaultAccountId, loading, error, refreshProviderSnapshot, refreshProviderModels,
     createAccount: save,
     updateAccount: async (id: string, updates: Partial<ProviderAccount>, apiKey?: string) => {
       const account = accounts.find((item) => item.id === id); if (!account) throw new Error('Provider unavailable');
@@ -50,8 +81,18 @@ export function useProviderData(connected: boolean) {
       }
       await save({ ...account, ...updates }, apiKey);
     },
-    removeAccount: async (id: string) => {
+    removeAccount: async (id: string, agentId?: string) => {
       if (!snapshot || !connected) throw new Error('Gateway configuration is unavailable.');
+      const remote = snapshot.providers.find((provider) => provider.id === id);
+      const removableProfiles = remote?.authProfiles?.filter((profile) => profile.logoutSupported === true && (profile.type === 'oauth' || profile.type === 'token')) || [];
+      if (removableProfiles.length) {
+        const result = await window.pincer.configuration.authLogout(id, removableProfiles.map((profile) => profile.profileId), agentId);
+        if (!result.ok) throw new Error(result.error.message);
+        if (!remote?.baseUrl && !remote?.api) {
+          await refreshProviderSnapshot(); await window.pincer.chat.refresh();
+          return;
+        }
+      }
       const result = await window.pincer.configuration.deleteProvider(snapshot.hash, id);
       if (!result.ok) throw new Error(result.error.message);
       if (id === defaultAccountId) { setDefaultAccountId(null); try { localStorage.removeItem('pincer.default-provider'); } catch { /* storage unavailable */ } }

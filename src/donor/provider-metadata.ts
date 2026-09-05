@@ -105,6 +105,8 @@ export interface ProviderTypeInfo {
   modelIdPlaceholder?: string;
   defaultModelId?: string;
   isOAuth?: boolean;
+  /** Exact OpenClaw providerAuthChoices choiceId; avoids setup inference probes. */
+  oauthChoiceId?: string;
   supportsApiKey?: boolean;
   apiKeyUrl?: string;
   docsUrl?: string;
@@ -171,6 +173,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     placeholder: 'sk-ant-api03-...',
     model: 'Claude',
     requiresApiKey: true,
+    supportsApiKey: true,
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     showModelId: true,
     defaultModelId: 'claude-opus-4-8',
@@ -185,8 +188,8 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     model: 'GPT',
     requiresApiKey: true,
     isOAuth: true,
+    oauthChoiceId: 'openai',
     supportsApiKey: true,
-    hideOAuthUi: true,
     defaultBaseUrl: 'https://api.openai.com/v1',
     defaultModelId: 'gpt-5.6-sol',
     showModelId: true,
@@ -206,13 +209,13 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     modelIdPlaceholder: 'gemini-3.1-pro-preview',
     apiKeyUrl: 'https://aistudio.google.com/app/apikey',
   },
-  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://openrouter.ai/api/v1', showModelId: true, modelIdPlaceholder: 'openai/gpt-5.6-sol', defaultModelId: 'openai/gpt-5.6-sol', docsUrl: 'https://openrouter.ai/models' },
-  { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: true, isOAuth: true, supportsApiKey: true, hideOAuthUi: true, defaultBaseUrl: 'https://api.minimaxi.com/v1', defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimaxi.com/' },
-  { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.cn/' },
-  { id: 'moonshot-global', name: 'Moonshot (Global)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.ai/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.ai/' },
-  { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3', docsUrl: 'https://docs.siliconflow.cn/cn/userguide/introduction' },
+  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, isOAuth: true, oauthChoiceId: 'openrouter-oauth', supportsApiKey: true, defaultBaseUrl: 'https://openrouter.ai/api/v1', showModelId: true, modelIdPlaceholder: 'openai/gpt-5.6-sol', defaultModelId: 'openai/gpt-5.6-sol', docsUrl: 'https://openrouter.ai/models' },
+  { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: true, isOAuth: true, supportsApiKey: true, hideOAuthUi: true, hidden: true, defaultBaseUrl: 'https://api.minimaxi.com/v1', defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimaxi.com/' },
+  { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, hidden: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.cn/' },
+  { id: 'moonshot-global', name: 'Moonshot', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.ai/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.ai/' },
+  { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, hidden: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3', docsUrl: 'https://docs.siliconflow.cn/cn/userguide/introduction' },
   { id: 'deepseek', name: 'DeepSeek', icon: '🐋', placeholder: 'sk-...', model: 'DeepSeek', requiresApiKey: true, defaultBaseUrl: 'https://api.deepseek.com/v1', showModelId: true, modelIdPlaceholder: 'deepseek-v4-pro', defaultModelId: 'deepseek-v4-pro', apiKeyUrl: 'https://platform.deepseek.com/api_keys', docsUrl: 'https://api-docs.deepseek.com/' },
-  { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: true, isOAuth: true, supportsApiKey: true, hideOAuthUi: true, defaultBaseUrl: 'https://api.minimax.io/v1', defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimax.io' },
+  { id: 'minimax-portal', name: 'MiniMax', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: true, isOAuth: true, oauthChoiceId: 'minimax-global-oauth', supportsApiKey: true, defaultBaseUrl: 'https://api.minimax.io/v1', defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimax.io' },
   {
     id: 'zai',
     name: 'Z.AI (CN)',
@@ -220,6 +223,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     placeholder: 'your-z.ai-api-key',
     model: 'GLM',
     requiresApiKey: true,
+    hidden: true,
     defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     showBaseUrl: true,
     showModelId: true,
@@ -233,7 +237,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   },
   {
     id: 'zai-global',
-    name: 'Z.AI (Global)',
+    name: 'Z.AI',
     icon: 'Z',
     placeholder: 'your-z.ai-api-key',
     model: 'GLM',

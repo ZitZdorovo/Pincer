@@ -162,6 +162,7 @@ export type ProvidersSettingsHandle = {
 export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected: boolean; embedded?: boolean }>(function ProvidersSettings({ connected, embedded = false }, ref) {
   const { t } = useTranslation('settings');
   const devModeUnlocked = usePreferences().devMode;
+  const currentAgentId = useAgentsStore((state) => state.agents[0]?.id || '');
   const {
     statuses,
     accounts,
@@ -169,10 +170,10 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
     defaultAccountId,
     loading,
     refreshProviderSnapshot,
+    refreshProviderModels,
     createAccount,
     removeAccount,
     updateAccount,
-    setDefaultAccount,
     validateAccountApiKey,
   } = useProviderData(connected);
 
@@ -239,19 +240,19 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
 
   const handleDeleteProvider = async (providerId: string) => {
     try {
-      await removeAccount(providerId);
+      await removeAccount(providerId, currentAgentId);
       toast.success(t('aiProviders.toast.deleted'));
     } catch (error) {
       toast.error(`${t('aiProviders.toast.failedDelete')}: ${error}`);
     }
   };
 
-  const handleSetDefault = async (providerId: string) => {
+  const handleRefreshProviderModels = async (providerId: string) => {
     try {
-      await setDefaultAccount(providerId);
-      toast.success(t('aiProviders.toast.defaultUpdated'));
+      await refreshProviderModels(providerId);
+      toast.success(t('aiProviders.refresh', 'Модели обновлены'));
     } catch (error) {
-      toast.error(`${t('aiProviders.toast.failedDefault')}: ${error}`);
+      toast.error(`${t('aiProviders.refresh', 'Не удалось обновить модели')}: ${error}`);
     }
   };
 
@@ -295,7 +296,7 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
               onEdit={() => setEditingProvider(item.account.id)}
               onCancelEdit={() => setEditingProvider(null)}
               onDelete={() => handleDeleteProvider(item.account.id)}
-              onSetDefault={() => handleSetDefault(item.account.id)}
+              onRefreshModels={() => handleRefreshProviderModels(item.account.id)}
               onSaveEdits={async (payload) => {
                 const updates: Partial<ProviderAccount> = {};
                 if (payload.updates) {
@@ -330,6 +331,12 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
         vendors={vendors}
         onClose={() => setShowAddDialog(false)}
         onAdd={handleAddProvider}
+        onOAuthComplete={async () => {
+          await window.pincer.configuration.authStatus(true);
+          await refreshProviderSnapshot();
+          await window.pincer.chat.refresh();
+          setShowAddDialog(false);
+        }}
         onValidateKey={(type, key, options) => validateAccountApiKey(type, key, options)}
       />
     </div>
@@ -344,7 +351,7 @@ interface ProviderCardProps {
   onEdit: () => void;
   onCancelEdit: () => void;
   onDelete: () => void;
-  onSetDefault: () => void;
+  onRefreshModels: () => void;
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (
     key: string,
@@ -363,7 +370,7 @@ function ProviderCard({
   onEdit,
   onCancelEdit,
   onDelete,
-  onSetDefault,
+  onRefreshModels,
   onSaveEdits,
   onValidateKey: _onValidateKey,
   devModeUnlocked: _devModeUnlocked,
@@ -570,18 +577,16 @@ function ProviderCard({
 
         {!isEditing && (
           <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-            {!isDefault && (
             <Button
-              data-testid={`provider-set-default-${account.id}`}
+              data-testid={`provider-refresh-models-${account.id}`}
               variant="ghost"
               size="icon"
               className="h-8 w-8 rounded-lg text-muted-foreground hover:text-blue-600 hover:bg-surface-modal shadow-sm"
-                onClick={onSetDefault}
-                title={t('aiProviders.card.setDefault')}
+              onClick={onRefreshModels}
+              title={t('aiProviders.refresh', 'Обновить API и модели')}
               >
-                <Check className="h-4 w-4" />
+                <RefreshCw className="h-4 w-4" />
               </Button>
-            )}
             <Button
               data-testid={`provider-edit-${account.id}`}
               variant="ghost"
@@ -906,6 +911,7 @@ interface AddProviderDialogProps {
       customModels?: string[];
     }
   ) => Promise<void>;
+  onOAuthComplete: () => Promise<void>;
   onValidateKey: (
     type: string,
     apiKey: string,
@@ -919,6 +925,7 @@ function AddProviderDialog({
   vendors,
   onClose,
   onAdd,
+  onOAuthComplete,
   onValidateKey: _onValidateKey,
 }: AddProviderDialogProps) {
   const { t, i18n } = useTranslation('settings');
@@ -939,20 +946,25 @@ function AddProviderDialog({
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
   const [oauthData, setOauthData] = useState<{
-    mode: 'device';
+    mode: 'device' | 'manual';
+    stepType: string;
+    sessionId: string;
+    stepId: string;
     verificationUri: string;
     userCode: string;
     expiresIn: number;
-  } | {
-    mode: 'manual';
     authorizationUrl: string;
     message?: string;
+    options?: Array<{ value: unknown; label: string; hint?: string }>;
+    sensitive?: boolean;
+    placeholder?: string;
   } | null>(null);
   const [manualCodeInput, setManualCodeInput] = useState('');
   const [oauthError, setOauthError] = useState<string | null>(null);
   // For providers that support both OAuth and API key, let the user choose.
   // Default to the vendor's declared auth mode instead of hard-coding OAuth.
   const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('apikey');
+  const oauthSessionRef = React.useRef<string | null>(null);
   const [prevOpen, setPrevOpen] = useState(open);
   const pendingOAuthRef = React.useRef<{ accountId: string; label: string } | null>(null);
 
@@ -976,6 +988,7 @@ function AddProviderDialog({
       setManualCodeInput('');
       setOauthError(null);
       setAuthMode('apikey');
+      oauthSessionRef.current = null;
       pendingOAuthRef.current = null;
     }
   }
@@ -1049,9 +1062,131 @@ function AddProviderDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType]);
 
-  const handleStartOAuth = async () => { setOauthError(t('pincer.oauthUnavailable')); };
-  const handleCancelOAuth = async () => { setOauthFlowing(false); setOauthData(null); setManualCodeInput(''); };
-  const handleSubmitManualOAuthCode = handleStartOAuth;
+  const readGatewayResult = (value: unknown): { done: boolean; status?: string; step?: { id: string; type: string; executor?: string; title?: string; message?: string; externalUrl?: string; deviceCode?: { code: string; expiresInMinutes?: number; message?: string }; options?: Array<{ value: unknown; label: string; hint?: string }>; sensitive?: boolean; placeholder?: string } ; error?: string; modelActivation?: { modelRef?: string } } => {
+    if (!value || typeof value !== 'object') throw new Error('OAuth returned an invalid response.');
+    const row = value as Record<string, unknown>;
+    const step = row.step && typeof row.step === 'object' ? row.step as Record<string, unknown> : undefined;
+    const device = step?.deviceCode && typeof step.deviceCode === 'object' ? step.deviceCode as Record<string, unknown> : undefined;
+    return {
+      done: row.done === true,
+      status: typeof row.status === 'string' ? row.status : undefined,
+      error: typeof row.error === 'string' ? row.error : undefined,
+      modelActivation: row.modelActivation && typeof row.modelActivation === 'object' ? row.modelActivation as { modelRef?: string } : undefined,
+      step: step && typeof step.id === 'string' && typeof step.type === 'string' ? {
+        id: step.id,
+        type: step.type,
+        ...(typeof step.executor === 'string' ? { executor: step.executor } : {}),
+        ...(typeof step.title === 'string' ? { title: step.title } : {}),
+        ...(typeof step.message === 'string' ? { message: step.message } : {}),
+        ...(typeof step.externalUrl === 'string' ? { externalUrl: step.externalUrl } : {}),
+        ...(device && typeof device.code === 'string' ? { deviceCode: { code: device.code, ...(typeof device.expiresInMinutes === 'number' ? { expiresInMinutes: device.expiresInMinutes } : {}), ...(typeof device.message === 'string' ? { message: device.message } : {}) } } : {}),
+        ...(Array.isArray(step.options) ? { options: step.options.filter((option): option is Record<string, unknown> => Boolean(option && typeof option === 'object' && typeof (option as Record<string, unknown>).label === 'string')).map((option) => ({ value: option.value, label: String(option.label), ...(option.hint ? { hint: String(option.hint) } : {}) })) } : {}),
+        ...(step.sensitive === true ? { sensitive: true } : {}),
+        ...(typeof step.placeholder === 'string' ? { placeholder: step.placeholder } : {}),
+      } : undefined,
+    };
+  };
+  const processOAuthResult = async (raw: unknown, sessionId: string): Promise<void> => {
+    let result = readGatewayResult(raw);
+    while (!result.done && (!result.step || result.step.executor === 'gateway')) {
+      if (oauthSessionRef.current !== sessionId) return;
+      const next = await window.pincer.configuration.authNext({ sessionId });
+      if (!next.ok) throw new Error(next.error.message);
+      result = readGatewayResult(next.value);
+    }
+    if (oauthSessionRef.current !== sessionId) return;
+    if (result.done) {
+      if (result.status === 'error' || result.error) throw new Error(result.error || 'OAuth login failed.');
+      setOauthFlowing(false);
+      setOauthData(null);
+      setManualCodeInput('');
+      if (result.modelActivation?.modelRef) setModelId(result.modelActivation.modelRef.split('/').slice(1).join('/') || result.modelActivation.modelRef);
+      await onOAuthComplete();
+      toast.success(i18n.language.startsWith('ru') ? 'OAuth-профиль сохранён' : 'OAuth profile saved');
+      return;
+    }
+    const step = result.step;
+    if (!step) throw new Error('OAuth login did not return a next step.');
+    setOauthData({
+      mode: step.deviceCode ? 'device' : 'manual',
+      stepType: step.type,
+      sessionId,
+      stepId: step.id,
+      verificationUri: step.externalUrl || '',
+      authorizationUrl: step.externalUrl || '',
+      userCode: step.deviceCode?.code || '',
+      expiresIn: (step.deviceCode?.expiresInMinutes || 10) * 60,
+      message: step.deviceCode?.message || step.message || step.title,
+      options: step.options,
+      sensitive: step.sensitive,
+      placeholder: step.placeholder,
+    });
+    if (step.externalUrl) {
+      const opened = await window.pincer.desktop.openExternal(step.externalUrl);
+      if (!opened.ok) throw new Error(opened.error.message);
+    }
+    if (step.type === 'action') {
+      const next = await window.pincer.configuration.authNext({ sessionId, answer: { stepId: step.id } });
+      if (!next.ok) throw new Error(next.error.message);
+      await processOAuthResult(next.value, sessionId);
+      return;
+    }
+    if (step.deviceCode || step.type === 'progress') {
+      window.setTimeout(async () => {
+        if (oauthSessionRef.current !== sessionId) return;
+        try {
+          const next = await window.pincer.configuration.authNext({ sessionId });
+          if (next.ok) await processOAuthResult(next.value, sessionId);
+          else throw new Error(next.error.message);
+        } catch (error) {
+          if (oauthSessionRef.current === sessionId) setOauthError(error instanceof Error ? error.message : String(error));
+        }
+      }, 2000);
+    }
+  };
+  const handleStartOAuth = async () => {
+    if (!selectedType) return;
+    setOauthFlowing(true); setOauthData(null); setOauthError(null); setManualCodeInput('');
+    const sessionId = crypto.randomUUID(); oauthSessionRef.current = sessionId;
+    try {
+      // setup.detect also probes local runtimes in an isolated worker. On
+      // Windows that worker can exit before settling and temporarily occupy
+      // OpenClaw's setup admission lock. OAuth needs only the manifest choice.
+      const authChoice = typeInfo?.oauthChoiceId || selectedType;
+      const started = await window.pincer.configuration.authStart({ sessionId, authChoice });
+      if (!started.ok) throw new Error(started.error.message);
+      await processOAuthResult(started.value, sessionId);
+    } catch (error) {
+      if (oauthSessionRef.current === sessionId) setOauthError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const handleCancelOAuth = async () => {
+    const sessionId = oauthSessionRef.current; oauthSessionRef.current = null;
+    setOauthFlowing(false); setOauthData(null); setManualCodeInput('');
+    if (sessionId) await window.pincer.configuration.authCancel(sessionId).catch(() => undefined);
+  };
+  const handleSubmitManualOAuthCode = async () => {
+    if (!oauthData || !manualCodeInput.trim()) return;
+    try {
+      const next = await window.pincer.configuration.authNext({ sessionId: oauthData.sessionId, answer: { stepId: oauthData.stepId, value: manualCodeInput.trim() } });
+      if (!next.ok) throw new Error(next.error.message);
+      setOauthData(null);
+      await processOAuthResult(next.value, oauthData.sessionId);
+    } catch (error) {
+      setOauthError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const handleOAuthAnswer = async (value?: unknown, includeValue = true) => {
+    if (!oauthData) return;
+    try {
+      const next = await window.pincer.configuration.authNext({ sessionId: oauthData.sessionId, answer: { stepId: oauthData.stepId, ...(includeValue ? { value } : {}) } });
+      if (!next.ok) throw new Error(next.error.message);
+      setOauthData(null);
+      await processOAuthResult(next.value, oauthData.sessionId);
+    } catch (error) {
+      setOauthError(error instanceof Error ? error.message : String(error));
+    }
+  };
   const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
     // Skip providers that are temporarily hidden from the UI.
     if (type.hidden) return false;
@@ -1090,7 +1225,7 @@ function AddProviderDialog({
     setValidationError(null);
 
     try {
-      const requiresKey = typeInfo?.requiresApiKey ?? false;
+      const requiresKey = !useOAuthFlow && (typeInfo?.requiresApiKey ?? false);
       const normalizedApiKey = normalizeProviderApiKeyInput(apiKey);
       if (requiresKey && !normalizedApiKey) {
         setValidationError(t('aiProviders.toast.invalidKey')); // reusing invalid key msg or should add 'required' msg? null checks
@@ -1099,6 +1234,20 @@ function AddProviderDialog({
       }
 
       let ids = modelId.trim().split(/[\n,]/).map((id) => id.trim()).filter(Boolean);
+      if (!ids.length && useOAuthFlow) {
+        const result = await window.pincer.configuration.modelsList();
+        if (result.ok && result.value && typeof result.value === 'object') {
+          const rows: unknown[] = Array.isArray((result.value as Record<string, unknown>).models) ? (result.value as Record<string, unknown>).models as unknown[] : Array.isArray(result.value) ? result.value as unknown[] : [];
+          ids = rows.map((row) => {
+            if (typeof row === 'string') return row;
+            if (!row || typeof row !== 'object') return '';
+            const value = row as Record<string, unknown>;
+            const provider = typeof value.provider === 'string' ? value.provider : '';
+            const id = typeof value.id === 'string' ? value.id : typeof value.key === 'string' ? value.key.split('/').slice(1).join('/') : '';
+            return !provider || provider === selectedType || provider === 'openai' || provider === 'anthropic' ? id : '';
+          }).filter(Boolean);
+        }
+      }
       if (!ids.length) {
         const result = await window.pincer.configuration.discoverModels({ baseUrl: baseUrl.trim() || typeInfo?.defaultBaseUrl || '', api: apiProtocol || getDefaultProviderProtocol(selectedType), apiKey: normalizedApiKey });
         if (!result.ok) throw new Error(i18n.language.startsWith('ru') ? 'Не удалось загрузить модели. Проверьте адрес и API-ключ.' : 'Could not load models. Check the URL and API key.');
@@ -1481,26 +1630,46 @@ function AddProviderDialog({
                               <Button
                                 variant="secondary"
                                 className="h-[42px] w-full rounded-lg font-semibold"
-                                onClick={() => navigator.clipboard.writeText(oauthData.authorizationUrl)}
+                                onClick={() => oauthData.authorizationUrl && void window.pincer.desktop.openExternal(oauthData.authorizationUrl)}
+                                disabled={!oauthData.authorizationUrl}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
                                 {t('aiProviders.oauth.openLoginPage')}
                               </Button>
 
-                              <Input
-                                placeholder="Paste callback URL or code"
-                                value={manualCodeInput}
-                                onChange={(e) => setManualCodeInput(e.target.value)}
-                                className={inputClasses}
-                              />
-
-                              <Button
-                                className="h-[42px] w-full rounded-lg bg-brand font-semibold text-white hover:bg-brand-hover"
-                                onClick={handleSubmitManualOAuthCode}
-                                disabled={!manualCodeInput.trim()}
-                              >
-                                Submit Code
-                              </Button>
+                              {oauthData.options?.length ? (
+                                <div className="grid gap-2">
+                                  {oauthData.options.map((option, index) => (
+                                    <Button key={`${option.label}-${index}`} variant="outline" className="min-h-[42px] h-auto rounded-lg py-2" onClick={() => void handleOAuthAnswer(option.value)}>
+                                      <span>{option.label}{option.hint ? <span className="block text-xs font-normal text-muted-foreground">{option.hint}</span> : null}</span>
+                                    </Button>
+                                  ))}
+                                </div>
+                              ) : oauthData.stepType === 'confirm' ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Button variant="outline" onClick={() => void handleOAuthAnswer(false)}>Нет</Button>
+                                  <Button onClick={() => void handleOAuthAnswer(true)}>Да</Button>
+                                </div>
+                              ) : oauthData.stepType === 'text' ? (
+                                <>
+                                  <Input
+                                    type={oauthData.sensitive ? 'password' : 'text'}
+                                    placeholder={oauthData.placeholder || 'Вставьте код или URL возврата'}
+                                    value={manualCodeInput}
+                                    onChange={(e) => setManualCodeInput(e.target.value)}
+                                    className={inputClasses}
+                                  />
+                                  <Button
+                                    className="h-[42px] w-full rounded-lg bg-brand font-semibold text-white hover:bg-brand-hover"
+                                    onClick={handleSubmitManualOAuthCode}
+                                    disabled={!manualCodeInput.trim()}
+                                  >
+                                    Продолжить
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button className="h-[42px] w-full rounded-lg" onClick={() => void handleOAuthAnswer(undefined, false)}>Продолжить</Button>
+                              )}
 
                               <Button variant="ghost" className="h-[42px] w-full rounded-lg font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
                                 Cancel
@@ -1537,7 +1706,8 @@ function AddProviderDialog({
                               <Button
                                 variant="secondary"
                                 className="h-[42px] w-full rounded-lg font-semibold"
-                                onClick={() => navigator.clipboard.writeText(oauthData.verificationUri)}
+                                onClick={() => oauthData.verificationUri && void window.pincer.desktop.openExternal(oauthData.verificationUri)}
+                                disabled={!oauthData.verificationUri}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
                                 {t('aiProviders.oauth.openLoginPage')}
@@ -1566,7 +1736,7 @@ function AddProviderDialog({
                 <Button
                   data-testid="add-provider-submit-button"
                   onClick={handleAdd}
-                  className={cn("h-[42px] rounded-lg px-8 text-meta font-semibold shadow-sm", useOAuthFlow && "hidden")}
+                  className={cn("h-[42px] rounded-lg px-8 text-meta font-semibold shadow-sm", useOAuthFlow && oauthFlowing && "hidden")}
                   disabled={!selectedType || saving || discovering}
                 >
                   {saving ? (
