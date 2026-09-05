@@ -245,7 +245,7 @@ test('closed advanced settings do no schema work and opening them loads once wit
 test('main chat has reproducible empty and conversation screenshots in both themes', async () => {
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
-  const output = join(process.cwd(), 'artifacts', 'chat-audit-0.4.1');
+  const output = join(process.cwd(), 'artifacts', 'chat-audit-0.4.2');
   mkdirSync(output, { recursive: true });
   await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
   await page.screenshot({ path: join(output, '01-empty-light.png') });
@@ -269,7 +269,7 @@ test('every settings page has the same frame and a reproducible visual audit', a
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
   await page.keyboard.press('Control+,');
-  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.4.1');
+  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.4.2');
   mkdirSync(output, { recursive: true });
   const pages = [
     'profile', 'appearance', 'chat', 'shortcuts', 'notifications',
@@ -332,7 +332,7 @@ test.beforeEach(async () => {
   page = await application.firstWindow();
   pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await expect(page.getByTestId('setup-page')).toBeVisible();
+  await expect(page.getByTestId('setup-page')).toBeVisible({ timeout: 15000 });
 });
 test.afterEach(async () => {
   await application?.close();
@@ -548,6 +548,7 @@ test('settings preserve draft, sending shortcut and theme; chat find locates tex
 });
 
 test('agent forms, personality file editing and skill switches use the Gateway', async () => {
+ mock.responseDelayMs.set('agents.files.set', 350);
 
  await connect(); await page.getByTestId('sidebar-nav-agents').click(); await expect(page.getByTestId('agents-page')).toContainText('Assistant');
  await page.getByTestId('agents-add-button').click(); await page.locator('#agent-name').fill('Research'); await page.getByTestId('add-agent-dialog').getByRole('button', { name: 'Сохранить', exact: true }).click();
@@ -556,7 +557,11 @@ test('agent forms, personality file editing and skill switches use the Gateway',
  await expect(page.getByTestId('agent-settings-personality')).toBeEnabled();
  await page.getByTestId('agent-settings-personality').fill('A careful research assistant'); await page.getByTestId('agent-settings-personality-save').click();
  await expect.poll(() => mock.files.get('test-agent-1/SOUL.md')).toBe('A careful research assistant');
- await page.keyboard.press('Escape'); await page.screenshot({ path: 'artifacts/pincer-agents-light.png' });
+ await expect(page.getByTestId('agent-settings-personality')).toBeEnabled();
+ await expect(page.getByTestId('agent-settings-personality-save')).toBeDisabled();
+ await page.keyboard.press('Escape');
+ await expect(page.getByTestId('agent-settings-personality')).not.toBeVisible();
+ await page.screenshot({ path: 'artifacts/pincer-agents-light.png' });
  await page.getByTestId('sidebar-nav-skills').click(); await page.getByTestId('skills-grid').getByRole('switch').first().click();
  await expect.poll(() => mock.skills[0].disabled).toBe(true);
 

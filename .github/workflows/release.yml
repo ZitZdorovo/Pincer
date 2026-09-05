@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Существующий тег вида v0.4.1'
+        description: 'Существующий тег вида v0.4.2'
         required: true
         type: string
 concurrency:
