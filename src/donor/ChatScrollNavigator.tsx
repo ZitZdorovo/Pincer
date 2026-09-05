@@ -100,7 +100,7 @@ export function ChatScrollNavigator({ items, scrollElement, label, concealed = f
               key={item.id}
               type="button"
               aria-label={`${label}: ${item.userPreview}`}
-              className="group relative flex h-2.5 min-h-0 w-full shrink items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="group relative flex h-2.5 min-h-0 w-full shrink items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
               onClick={() => jumpTo(index)}
               onMouseEnter={(event) => showPreview(index, event.currentTarget)}
               onMouseLeave={() => setPreview(null)}

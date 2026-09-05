@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowRight, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { QuotaSnapshot, QuotaSource } from '../../shared/quotas';
 import { usePreferences } from '../preferences';
@@ -44,7 +44,7 @@ export function useProviderQuotas(scope: string, enabled = true) {
 export function QuotaList({ scope, enabled = true, compact = false }: { scope: string; enabled?: boolean; compact?: boolean }) {
   const ru = usePreferences().language === 'ru'; const { data, loading, failed, refresh } = useProviderQuotas(scope, enabled); const navigate = useNavigate();
   const date = (n: number) => new Intl.DateTimeFormat(ru ? 'ru' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(n);
-  return <section data-testid="provider-quotas" className={compact ? 'text-xs' : 'rounded-2xl border border-border bg-surface-modal p-5 text-sm'}>
+  return <section data-testid="provider-quotas" className={compact ? 'text-xs' : 'settings-card text-sm'}>
     <div className="flex items-center justify-between gap-3"><h3 className="font-medium">{ru ? 'Лимиты провайдеров' : 'Provider limits'}</h3><button type="button" disabled={loading || !enabled} onClick={() => void refresh(true)} aria-label={ru ? 'Обновить лимиты' : 'Refresh limits'} className="rounded-lg p-1.5 hover:bg-foreground/5"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button></div>
     {loading && !data && <p className="mt-3 text-muted-foreground">{ru ? 'Загружаем лимиты…' : 'Loading limits…'}</p>}
     {data?.providers.map((p, i) => <div key={`${p.source}:${p.provider}:${i}`} className="mt-4 border-t border-border pt-3">
@@ -60,7 +60,15 @@ export function QuotaList({ scope, enabled = true, compact = false }: { scope: s
     {data?.refreshing && <p role="status" className="mt-3 text-muted-foreground">{ru ? 'Gateway запрашивает свежие лимиты…' : 'Gateway is refreshing provider limits…'}</p>}
     {(failed || !!data?.errors.length) && <p role="alert" className="mt-3 text-amber-700 dark:text-amber-400">{ru ? 'Не удалось обновить часть лимитов. Проверь подключение и токен источника.' : 'Some limits could not be refreshed. Check the connection and source token.'}</p>}
     {!loading && !data?.refreshing && !data?.providers.length && <p className="mt-3 leading-relaxed text-muted-foreground">{ru ? 'Gateway пока не передал квоты. Для моделей через OmniRoute подключи его ниже. Отсутствие данных не означает нулевой расход или полный остаток.' : 'Gateway has not supplied quotas. Connect OmniRoute for routed models. Missing data does not mean zero usage or full allowance.'}</p>}
-    {compact && <button className="mt-3 text-primary" onClick={() => navigate('/settings?section=providers&tab=limits')}>{ru ? 'Настроить источники лимитов' : 'Configure quota sources'}</button>}
+    {compact && <button
+      type="button"
+      data-testid="configure-quota-sources"
+      className="mt-3 inline-flex min-h-8 items-center gap-2 rounded-lg px-2 font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
+      onClick={() => navigate('/settings?section=providers&tab=limits')}
+    >
+      <span>{ru ? 'Настроить источники лимитов' : 'Configure quota sources'}</span>
+      <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+    </button>}
   </section>;
 }
 export function ProviderLimitsSettings({ scope, connected }: { scope: string; connected: boolean }) {
@@ -71,10 +79,10 @@ export function ProviderLimitsSettings({ scope, connected }: { scope: string; co
     try { const r = await window.pincer.management.saveQuotaSource({ baseUrl: url, ...(token ? { managementToken: token } : {}), ...(clear ? { clear: true } : {}) }); if (!r.ok) { setError(r.error.code.startsWith('OMNIROUTE_HTTP_') ? ru ? 'Источник отклонил запрос. Проверь адрес и management token.' : 'Source rejected the request. Check its URL and management token.' : ru ? 'Не удалось подключить источник. Нужен HTTPS (или локальный HTTP) и действующий management token.' : 'Could not connect. Use HTTPS (or loopback HTTP) and a valid management token.'); return; } setToken(''); setSource(r.value); setUrl(r.value.baseUrl); snapshots.delete(scope); setRevision(v => v + 1); setNotice(clear ? ru ? 'Источник отключён, его токен удалён.' : 'Source disconnected and its token removed.' : ru ? 'Подключение проверено. Токен сохранён в защищённом хранилище Pincer.' : 'Connection verified. Token saved in Pincer’s encrypted storage.'); } catch { setError(ru ? 'Не удалось связаться с приложением. Повтори попытку.' : 'Could not reach the application. Please retry.'); } finally { setBusy(false); }
   };
   return <div className="space-y-6">
-    <form data-testid="quota-source-form" className="space-y-4 rounded-2xl border border-border bg-surface-modal p-5" onSubmit={e => { e.preventDefault(); void save(); }}>
+    <form data-testid="quota-source-form" className="settings-card space-y-4" onSubmit={e => { e.preventDefault(); void save(); }}>
       <div><h3 className="font-semibold">OmniRoute</h3><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{ru ? 'Дополнительный источник квот, когда Gateway не сообщает лимиты проксируемых моделей. Используется management token OmniRoute, не ключ модели и не токен OpenClaw.' : 'Additional quota source when Gateway cannot report routed-model limits. Requires an OmniRoute management token, not a model API key or OpenClaw token.'}</p></div>
       <label className="block space-y-2 text-sm"><span>{ru ? 'Адрес OmniRoute' : 'OmniRoute URL'}</span><Input type="url" required value={url} disabled={busy} placeholder="https://omniroute.example.com" onChange={e => setUrl(e.target.value)} /></label>
-      <label className="block space-y-2 text-sm"><span>Management token</span><Input type="password" autoComplete="off" value={token} disabled={busy} onChange={e => setToken(e.target.value)} placeholder={source?.configured ? ru ? 'Сохранён · оставь пустым, чтобы сохранить' : 'Saved · leave blank to keep' : ru ? 'Вставь management token' : 'Paste management token'} /></label>
+      <label className="block space-y-2 text-sm"><span>{ru ? 'Токен управления' : 'Management token'}</span><Input type="password" autoComplete="off" value={token} disabled={busy} onChange={e => setToken(e.target.value)} placeholder={source?.configured ? ru ? 'Сохранён · оставь пустым, чтобы сохранить' : 'Saved · leave blank to keep' : ru ? 'Вставьте токен управления' : 'Paste management token'} /></label>
       <p className="flex gap-2 text-xs leading-relaxed text-muted-foreground"><ShieldCheck size={15} className="shrink-0" />{ru ? 'Секрет шифруется средствами ОС. Сохранённый токен не отображается и не переносится на другой адрес автоматически.' : 'Encrypted by the OS. Saved tokens are never displayed or automatically sent to a different address.'}</p>
       <div className="flex flex-wrap gap-2"><Button disabled={busy || !url || !source}>{busy ? ru ? 'Проверяем…' : 'Checking…' : ru ? 'Проверить и сохранить' : 'Test and save'}</Button>{source?.configured && <Button type="button" variant="outline" disabled={busy} onClick={() => void save(true)}>{ru ? 'Отключить источник' : 'Disconnect source'}</Button>}</div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}

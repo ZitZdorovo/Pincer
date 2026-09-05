@@ -145,7 +145,7 @@ function DropInsertionIndicator({ testId, edge = 'bottom' }: { testId?: string; 
         edge === 'top' ? 'top-0' : 'bottom-0',
       )}
     >
-      <span className="absolute -left-1 -top-[3px] h-[7px] w-[7px] rounded-full border-2 border-sky-500 bg-surface-sidebar" />
+      <span className="absolute -left-1 -top-[3px] h-[7px] w-[7px] rounded-full border border-sky-500 bg-surface-sidebar" />
     </span>
   );
 }
@@ -252,6 +252,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
     const previousCursor = document.body.style.cursor;
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.cursor = 'col-resize';
+    document.body.dataset.columnResizing = 'true';
     document.body.style.userSelect = 'none';
     let hiddenDuringResize = false;
 
@@ -281,6 +282,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
       if (resizeHandle.hasPointerCapture(pointerId)) resizeHandle.releasePointerCapture(pointerId);
       resizingGestureRef.current = false;
       document.body.style.cursor = previousCursor;
+      delete document.body.dataset.columnResizing;
       document.body.style.userSelect = previousUserSelect;
       const nextWidth = resizingWidthRef.current ?? width;
       resizingWidthRef.current = null;
@@ -654,6 +656,14 @@ export function Sidebar({ active = true }: { active?: boolean }) {
             void dropChat(event, { projectId: project.id, folderId: folderId ?? null, beforeChatKey });
           }
         }}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          const titleInput = document.querySelector<HTMLInputElement>('[data-testid="chat-session-title-input"]');
+          if (!titleInput) return;
+          titleInput.blur();
+          selectChat(session, project, folderId);
+          event.preventDefault();
+        }}
         onClick={() => selectChat(session, project, folderId)}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
@@ -666,7 +676,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           setChatContextMenu({ chatKey: session.key, x: event.clientX, y: event.clientY });
         }}
         className={cn(
-          'group relative mx-1 my-0.5 flex min-h-8 select-none items-center gap-1 rounded-lg px-2.5 py-1 text-meta transition-[background-color,box-shadow,opacity] cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+          'group relative mx-1 my-0.5 flex min-h-8 select-none items-center gap-1 rounded-lg px-2.5 py-1 text-meta transition-[background-color,box-shadow,opacity] cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
           draggedChat === session.key && 'opacity-55',
           currentKey === session.key
             ? 'bg-black/[0.07] font-medium text-foreground dark:bg-white/[0.09]'
@@ -720,7 +730,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           aria-expanded={!isCollapsed}
           draggable
           className={cn(
-            'group relative mx-1 my-0.5 flex min-h-8 cursor-pointer items-center gap-1 rounded-lg px-1.5 py-1 text-meta text-foreground/75 transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:hover:bg-white/5',
+            'group relative mx-1 my-0.5 flex min-h-8 cursor-pointer items-center gap-1 rounded-lg px-1.5 py-1 text-meta text-foreground/75 transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring dark:hover:bg-white/5',
             draggedFolder === folder.id && 'opacity-55',
             dropTargetId === `folder:${folder.id}` && 'text-foreground',
           )}
@@ -791,7 +801,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           role="button"
           tabIndex={0}
           aria-expanded={!isCollapsed}
-          className="group mx-1 flex min-h-8 cursor-pointer items-center gap-1 rounded-lg px-1.5 py-1 text-meta font-semibold text-foreground/75 transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:hover:bg-white/5"
+          className="group mx-1 flex min-h-8 cursor-pointer items-center gap-1 rounded-lg px-1.5 py-1 text-meta font-semibold text-foreground/75 transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring dark:hover:bg-white/5"
           onClick={() => void organization.setCollapsed('project', !isCollapsed, project.id)}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
@@ -902,14 +912,10 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         aria-label={t('resizeSidebar')}
         data-testid="sidebar-resize-handle"
         onPointerDown={handleResizePointerDown}
-        className="group absolute inset-y-0 right-0 z-30 w-2 cursor-col-resize bg-transparent"
+        className="pincer-resize-handle group absolute inset-y-0 right-0 z-30 w-2"
       >
         <span
-          className="pointer-events-none absolute bottom-2 right-0 top-2 w-px rounded-full bg-black/[0.10] transition-colors group-hover:bg-black/[0.16] dark:bg-white/[0.10] dark:group-hover:bg-white/[0.18]"
-          style={{
-            WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)',
-            maskImage: 'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)',
-          }}
+          className="pincer-resize-line right-0"
         />
       </div>
       <div
@@ -1048,20 +1054,20 @@ export function Sidebar({ active = true }: { active?: boolean }) {
             <button
               type="button"
               data-testid="sidebar-update-available"
-              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
+              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 dark:text-blue-400"
               title={updateLabel}
               aria-label={updateLabel}
               onClick={() => navigate('/settings?section=updates')}
             >
               <CircleArrowUp className={cn('h-4 w-4', updateStatus === 'downloading' && 'animate-pulse')} />
-              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500 ring-2 ring-surface-sidebar" />
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500 ring-1 ring-surface-sidebar" />
             </button>
           )}
           <button
             type="button"
             data-testid="gateway-connection-state"
             className={cn(
-              'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/5',
+              'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white/5',
               gatewayIconColor,
             )}
             title={gateway.error || connectionLabel}
@@ -1069,7 +1075,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
             onClick={() => navigate('/settings?section=gateway&target=settings-gateway-status')}
           >
             <Network className="h-4 w-4" />
-            <span className={cn('absolute right-1 top-1 h-2 w-2 rounded-full ring-2 ring-surface-sidebar', gatewayStatusColor, gateway.state === 'reconnecting' && 'animate-pulse')} />
+            <span className={cn('absolute right-1 top-1 h-2 w-2 rounded-full ring-1 ring-surface-sidebar', gatewayStatusColor, gateway.state === 'reconnecting' && 'animate-pulse')} />
           </button>
         </div>
       </div>

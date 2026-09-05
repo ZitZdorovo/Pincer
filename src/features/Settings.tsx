@@ -1,8 +1,8 @@
 // OpenX Settings navigation + personal sections copied as presentation only.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Palette, MessageSquare, Network, Code2, RefreshCw, Info, Boxes, Bot, Radio, CircleHelp, Bell, Brain, Clock, ShieldCheck, Mic, Monitor, Cloud, FlaskConical, Server, KeyRound, Shield, Globe, SlidersHorizontal, ScrollText, UserRound } from 'lucide-react';
+import { ArrowLeft, Search, Palette, MessageSquare, Network, Code2, RefreshCw, Info, Boxes, Bot, Radio, CircleHelp, Bell, Brain, Clock, ShieldCheck, Mic, Monitor, Cloud, FlaskConical, Server, KeyRound, Shield, Globe, SlidersHorizontal, ScrollText, UserRound, Keyboard, Puzzle, ChevronDown, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -17,14 +17,13 @@ import { UpdatesPage } from './Updates';
 import type { GatewayState, UpdateState, WorkspaceState } from '../../shared/contract';
 import { AppearanceExtras, ChatExtras, NotificationSettings } from './ClientPreferences';
 import { ProviderLimitsSettings } from './ProviderLimits';
-import { ProvidersSettings } from '../donor/Providers';
+import { ProvidersSettings, type ProvidersSettingsHandle } from '../donor/Providers';
 import { DonorProvider } from '../donor/adapter';
 import { Agents } from '../donor/Agents';
 import { Channels } from '../donor/Channels';
 import { Skills } from '../donor/Skills';
 import { Cron } from '../donor/Cron';
 import { SettingsBrowser } from './SettingsBrowser';
-import { gatewayCategories } from './settings-categories';
 import { Modal } from '../components/ui/modal';
 import { DevicesSettings, LogsSettings, ProfileSettings } from './GatewayAdminSettings';
 import { Memory } from './Memory';
@@ -34,6 +33,33 @@ const sections: Section[] = ['profile','appearance','chat','shortcuts','gateway'
 type SettingsSearchItem = { section: Section; target: string; label: string };
 const SUPPORTED_LANGUAGES = [{ code: 'en' as const, label: 'English' }, { code: 'ru' as const, label: 'Русский' }];
 const DEFAULT_WORKSPACE_CWD = '';
+function SettingsPageHeader({ title, description, actions }: { title: string; description: string; actions?: ReactNode }) {
+  return <div className="settings-section-header">
+    <div className="min-w-0"><h2 className="settings-section-title">{title}</h2><p className="settings-section-description">{description}</p></div>
+    {actions && <div className="shrink-0">{actions}</div>}
+  </div>;
+}
+function OpenClawSettingsPanel({ category, connected, scope, onDirty, expanded = false, ru }: { category: string; connected: boolean; scope: string; onDirty(value: boolean): void; expanded?: boolean; ru: boolean }) {
+  const [hasOpened, setHasOpened] = useState(expanded);
+  if (expanded) return <div className="settings-schema-standalone"><SettingsBrowser key={`${category}:${scope}`} category={category} connected={connected} scope={scope} title={false} onDirty={onDirty} /></div>;
+  return <details className="settings-openclaw-panel group" onToggle={(event) => { if (event.currentTarget.open) setHasOpened(true); }}>
+    <summary className="settings-openclaw-summary">
+      <div><p className="text-sm font-semibold">{ru ? 'Дополнительные параметры OpenClaw' : 'Additional OpenClaw settings'}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{ru ? 'Полная серверная схема этого раздела. Откройте только когда нужны расширенные параметры.' : 'The complete server schema for this section. Open it only when advanced fields are needed.'}</p></div>
+      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+    </summary>
+    {hasOpened && <div className="border-t border-border p-5"><SettingsBrowser key={`${category}:${scope}`} category={category} connected={connected} scope={scope} title={false} onDirty={onDirty} /></div>}
+  </details>;
+}
+const gatewaySectionDescriptions: Record<string, [string, string]> = {
+  communications: ['Сообщения, рассылки, вложения и синтез речи подключённого OpenClaw.', 'Messages, broadcasts, attachments, and speech for the connected OpenClaw.'],
+  talk: ['Голосовой ввод, ответы и параметры синтеза речи.', 'Voice input, replies, and speech synthesis settings.'],
+  'cloud-workers': ['Удалённые исполнители и параметры их подключения.', 'Remote workers and their connection settings.'],
+  labs: ['Экспериментальные возможности OpenClaw. Изменяйте их только если понимаете последствия.', 'Experimental OpenClaw capabilities. Change them only when you understand the impact.'],
+  mcp: ['Серверы MCP, транспорт и доступные подключения.', 'MCP servers, transports, and available connections.'],
+  secrets: ['Защищённые значения, переменные окружения и профили авторизации.', 'Protected values, environment variables, and authentication profiles.'],
+  infrastructure: ['Gateway, ноды, браузер, обнаружение, прокси и служебные поверхности.', 'Gateway, nodes, browser, discovery, proxies, and service surfaces.'],
+  advanced: ['Полная схема установленного OpenClaw, включая новые и подключаемые разделы.', 'The complete installed OpenClaw schema, including new and plugin-provided sections.'],
+};
 export function Settings({ gateway, updates, back: leave, dirty, initialSection = 'appearance' }: { gateway: GatewayState; updates: UpdateState | null; back(): void; dirty: boolean; initialSection?: Section }) {
  const preferences = usePreferences(); const { t } = useTranslation('settings');
  const ru = preferences.language === 'ru'; const connected = gateway.operator.phase === 'connected';
@@ -60,14 +86,21 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
  const launchAtStartup = startup.enabled;
  const setLaunchAtStartup = (enabled: boolean) => { setStartupBusy(true); void window.pincer.desktop.setStartup(enabled).then((result) => { if (result.ok) setStartup((previous) => ({ ...previous, enabled: result.value })); else toast.error(result.error.message); }).finally(() => setStartupBusy(false)); };
  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+ const settingsScrollRef = useRef<HTMLDivElement>(null);
+ const providersSettingsRef = useRef<ProvidersSettingsHandle>(null);
  const location = useLocation(); const route = useNavigate();
  const navigate = (path: string) => { if (path === '/') back(); else route(path); };
  const requested = new URLSearchParams(location.search).get('section') as Section | null;
  const [activeSection, setActiveSection] = useState<Section>(requested && sections.includes(requested) ? requested : initialSection);
  const [providerTab, setProviderTab] = useState(new URLSearchParams(location.search).get('tab') === 'limits' ? 'limits' : 'api');
  const [gatewayTab, setGatewayTab] = useState(new URLSearchParams(location.search).get('tab') === 'configuration' ? 'configuration' : 'connection');
- const [settingsSearch, setSettingsSearch] = useState('');
- useEffect(() => { if (requested && sections.includes(requested)) setActiveSection(requested); }, [requested]);
+  const [settingsSearch, setSettingsSearch] = useState('');
+  useEffect(() => { if (requested && sections.includes(requested)) setActiveSection(requested); }, [requested]);
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(location.search).get('tab');
+    if (requested === 'providers') setProviderTab(requestedTab === 'limits' ? 'limits' : 'api');
+    if (requested === 'gateway') setGatewayTab(requestedTab === 'configuration' ? 'configuration' : 'connection');
+  }, [location.search, requested]);
  useEffect(() => {
    let alive = true; let revision = -1;
    const accept = (snapshot: Awaited<ReturnType<typeof window.pincer.chat.snapshot>>) => { if (alive && snapshot.revision >= revision) { revision = snapshot.revision; setAgents(snapshot.agents); setWorkspace(snapshot); } };
@@ -75,17 +108,20 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
    void window.pincer.desktop.startup().then((value) => { if (alive) setStartup(value); });
    return () => { alive = false; off(); };
  }, []);
- useEffect(() => { const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[role="dialog"]')) { event.preventDefault(); back(); } }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [back]);
+  useEffect(() => { const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"], [role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) { event.preventDefault(); back(); } }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [back]);
   const settingsNavigation = useMemo(() => [
-    { id: 'profile' as const, label: ru ? 'Профиль' : 'Profile', icon: UserRound },
-    { id: 'appearance' as const, label: ru ? 'Внешний вид' : 'Appearance', icon: Palette },
+     { id: 'profile' as const, label: ru ? 'Профиль' : 'Profile', icon: UserRound },
+     { id: 'appearance' as const, label: ru ? 'Внешний вид' : 'Appearance', icon: Palette },
+     { id: 'chat' as const, label: ru ? 'Чат' : 'Chat', icon: MessageSquare },
+     { id: 'shortcuts' as const, label: ru ? 'Горячие клавиши' : 'Keyboard shortcuts', icon: Keyboard },
     { id: 'gateway' as const, label: ru ? 'Подключение' : 'Connection', icon: Network },
     { id: 'notifications' as const, label: ru ? 'Уведомления' : 'Notifications', icon: Bell },
     { id: 'agents' as const, label: t('navigation.agents'), icon: Bot },
     { id: 'labs' as const, label: ru ? 'Лаборатория' : 'Labs', icon: FlaskConical },
     { id: 'providers' as const, label: ru ? 'Поставщики моделей' : 'Model providers', icon: Boxes },
     { id: 'mcp' as const, label: 'MCP', icon: Server },
-    { id: 'memory' as const, label: ru ? 'Память' : 'Memory', icon: Brain },
+     { id: 'memory' as const, label: ru ? 'Память' : 'Memory', icon: Brain },
+     { id: 'skills' as const, label: ru ? 'Навыки' : 'Skills', icon: Puzzle },
     { id: 'automation' as const, label: ru ? 'Автоматизация' : 'Automation', icon: Clock },
     { id: 'channels' as const, label: t('navigation.channels'), icon: Radio },
     { id: 'security' as const, label: ru ? 'Доступ и безопасность' : 'Access and security', icon: ShieldCheck },
@@ -101,7 +137,10 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
     { id: 'logs' as const, label: ru ? 'Журналы' : 'Logs', icon: ScrollText },
     { id: 'updates' as const, label: t('updates.title'), icon: RefreshCw },
     { id: 'about' as const, label: t('about.title'), icon: Info },
-  ], [devModeUnlocked, t, ru]);
+  ], [t, ru]);
+  useLayoutEffect(() => {
+    settingsScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [activeSection, providerTab, gatewayTab]);
   const settingsSearchItems = useMemo<SettingsSearchItem[]>(() => [
     ...settingsNavigation.map(item => ({ section: item.id, target: `settings-section-${item.id}`, label: item.label })),
     { section: 'providers' as const, target: 'settings-provider-limits', label: ru ? 'Лимиты провайдеров · OmniRoute · management token · API' : 'Provider limits · OmniRoute · management token · API' },
@@ -164,11 +203,11 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
               className="h-9 rounded-xl bg-black/[0.025] pl-9 text-sm dark:bg-white/[0.035]"
             />
           </div>
-          <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+          <nav data-testid="settings-navigation-scroll" className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
             {!settingsSearch.trim() && ([
-              { label: t('navigation.personal'), items: settingsNavigation.filter(({ id }) => ['profile', 'appearance', 'notifications'].includes(id)) },
+              { label: t('navigation.personal'), items: settingsNavigation.filter(({ id }) => ['profile', 'appearance', 'chat', 'shortcuts', 'notifications'].includes(id)) },
               { label: t('navigation.connections'), items: settingsNavigation.filter(({ id }) => ['gateway', 'channels', 'communications', 'talk', 'devices', 'cloud-workers'].includes(id)) },
-              { label: ru ? 'Агенты и инструменты' : 'Agents and tools', items: settingsNavigation.filter(({ id }) => ['agents', 'labs', 'providers', 'mcp', 'memory', 'automation'].includes(id)) },
+              { label: ru ? 'Агенты и инструменты' : 'Agents and tools', items: settingsNavigation.filter(({ id }) => ['agents', 'labs', 'providers', 'mcp', 'skills', 'memory', 'automation'].includes(id)) },
               { label: ru ? 'Конфиденциальность и безопасность' : 'Privacy and security', items: settingsNavigation.filter(({ id }) => ['security', 'secrets', 'approvals'].includes(id)) },
               { label: ru ? 'Система' : 'System', items: settingsNavigation.filter(({ id }) => ['infrastructure', 'advanced', 'developer', 'logs', 'updates', 'about'].includes(id)) },
             ]).map((group) => (
@@ -222,18 +261,15 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
             )}
           </nav>
           <div className="mt-3 flex h-8 shrink-0 items-center justify-between border-t border-border/50 px-3 pt-2 text-[11px] text-muted-foreground"><span>Pincer</span><span>{gateway.appVersion}</span></div>
-          <div role="separator" aria-label={ru ? 'Ширина боковой панели настроек' : 'Settings sidebar width'} aria-orientation="vertical" tabIndex={0} aria-valuenow={preferences.sidebarWidth} aria-valuemin={240} aria-valuemax={520} className="absolute inset-y-0 right-0 w-1 hover:bg-foreground/10" onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setPreferences({ sidebarWidth: Math.min(520, Math.max(240, preferences.sidebarWidth + (e.key === 'ArrowRight' ? 16 : -16))) }); } }} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) setPreferences({ sidebarWidth: Math.min(520, Math.max(240, e.clientX)) }); }} />
+          <div role="separator" aria-label={ru ? 'Ширина боковой панели настроек' : 'Settings sidebar width'} aria-orientation="vertical" tabIndex={0} aria-valuenow={preferences.sidebarWidth} aria-valuemin={240} aria-valuemax={520} className="pincer-resize-handle group absolute inset-y-0 right-0 z-30 w-2" onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setPreferences({ sidebarWidth: Math.min(520, Math.max(240, preferences.sidebarWidth + (e.key === 'ArrowRight' ? 16 : -16))) }); } }} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) setPreferences({ sidebarWidth: Math.min(520, Math.max(240, e.clientX)) }); }}><span className="pincer-resize-line right-0" /></div>
         </aside>
       <div className="settings-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tl-2xl border-t border-border/70 bg-surface-chat" data-testid="settings-content">
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-16" data-testid="settings-scroll">
+        <div ref={settingsScrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-12" data-testid="settings-scroll">
         <div className="mx-auto w-full max-w-[46rem] space-y-8 pb-8" data-testid="settings-content-inner">
           {/* Appearance */}
-          <div className={cn(activeSection !== 'appearance' && 'hidden')} data-testid="settings-section-appearance">
-            <h2 className="openx-section-title">
-              {ru ? 'Внешний вид' : 'Appearance'}
-            </h2>
+          <div className={cn('settings-section-panel', activeSection !== 'appearance' && 'hidden')} data-testid="settings-section-appearance">
+            <SettingsPageHeader title={ru ? 'Внешний вид' : 'Appearance'} description={ru ? 'Внешний вид, язык и поведение этого клиента. Эти параметры сохраняются в Pincer и не меняют другие клиенты OpenClaw.' : 'Appearance, language and behavior of this client. Saved in Pincer without changing other OpenClaw clients.'} />
             <div className="space-y-6">
-              <p className="text-xs leading-relaxed text-muted-foreground">{ru ? 'Внешний вид, язык и поведение этого клиента. Эти параметры сохраняются в Pincer и не меняют другие клиенты OpenClaw.' : 'Appearance, language and behavior of this client. Saved in Pincer without changing other OpenClaw clients.'}</p>
               <div id="settings-theme" className="space-y-3">
                 <Label className="text-sm font-medium text-foreground/80">{t('appearance.theme')}</Label>
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -249,8 +285,8 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                       aria-pressed={theme === value}
                       onClick={() => setTheme(value)}
                       className={cn(
-                        'overflow-hidden rounded-2xl border bg-surface-modal text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        theme === value ? 'border-primary ring-2 ring-primary/25' : 'border-border',
+                        'overflow-hidden rounded-2xl border bg-surface-modal text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                        theme === value ? 'border-primary ring-1 ring-primary/25' : 'border-border',
                       )}
                     >
                       <div className={cn(
@@ -272,6 +308,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                 </div>
               </div>
               <AppearanceExtras />
+              <div className="settings-card space-y-5">
               <div id="settings-language" className="space-y-3">
                 <Label className="text-sm font-medium text-foreground/80">{t('appearance.language')}</Label>
                 <div className="flex flex-wrap gap-2">
@@ -280,7 +317,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                       key={lang.code}
                       variant={language === lang.code ? 'secondary' : 'outline'}
                       className={cn(
-                        'rounded-full px-5 h-10 border-black/10 dark:border-white/10',
+                        'h-10 rounded-lg border-border px-5',
                         language === lang.code
                           ? 'bg-black/5 dark:bg-white/10 text-foreground'
                           : 'bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -292,7 +329,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   ))}
                 </div>
               </div>
-              <div id="settings-font-size" className="flex items-center justify-between gap-6 border-t border-black/5 pt-5 dark:border-white/5">
+              <div id="settings-font-size" className="flex items-center justify-between gap-6 border-t border-border pt-5">
                 <div>
                   <Label htmlFor="interface-font-size" className="text-sm font-medium text-foreground/80">{t('appearance.fontSize')}</Label>
                   <p className="mt-1 text-meta text-muted-foreground">{t('appearance.fontSizeDesc')}</p>
@@ -323,7 +360,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                 </div>
                 <Switch id="settings-launch-at-startup" checked={launchAtStartup} onCheckedChange={setLaunchAtStartup} disabled={!startup.supported || startupBusy} />
               </div>
-              <div className="space-y-3 border-t border-black/5 pt-5 dark:border-white/5">
+              <div className="space-y-3 border-t border-border pt-5">
                 <div>
                   <Label htmlFor="agent-badge-mode" className="text-sm font-medium text-foreground/80">{t('appearance.agentBadge')}</Label>
                   <p className="mt-1 text-meta text-muted-foreground">{t('appearance.agentBadgeDesc')}</p>
@@ -357,7 +394,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-between border-t border-black/5 pt-5 dark:border-white/5">
+              <div className="flex items-center justify-between border-t border-border pt-5">
                 <div>
                   <Label htmlFor="settings-dev-mode" className="text-sm font-medium text-foreground">{t('advanced.devMode')}</Label>
                   <p className="text-meta text-muted-foreground mt-1">{t('advanced.devModeDesc')}</p>
@@ -377,17 +414,18 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                 </div>
                 <Switch id="settings-telemetry" checked={false} disabled title={t('pincer.noTelemetry')} />
               </div>
+              </div>
             </div>
           </div>
 
           <Separator className="hidden" />
 
           {/* Chat */}
-          <div className={cn(!['chat', 'appearance'].includes(activeSection) && 'hidden', activeSection === 'appearance' && 'border-t border-border pt-8')} data-testid="settings-section-chat">
-            <h2 className="openx-section-title !mb-2">{t('chat.title')}</h2>
-            <p className="mb-6 text-sm text-muted-foreground">{t('chat.description')}</p>
+          <div className={cn('settings-section-panel', activeSection !== 'chat' && 'hidden')} data-testid="settings-section-chat">
+            <h2 className="settings-section-title">{t('chat.title')}</h2>
+            <p className="settings-section-description mb-6">{t('chat.description')}</p>
             <ChatExtras />
-            <div className="space-y-6 rounded-2xl border border-border bg-surface-modal p-5">
+            <div className="settings-card space-y-6">
               <div id="settings-default-workspace" className="space-y-3">
                 <div>
                   <Label className="text-sm font-medium text-foreground">{t('chat.defaultWorkspace')}</Label>
@@ -422,10 +460,10 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
           <Separator className="hidden" />
 
           {/* Keyboard shortcuts */}
-          <div className={cn(!['shortcuts', 'appearance'].includes(activeSection) && 'hidden', activeSection === 'appearance' && 'border-t border-border pt-8')} data-testid="settings-section-shortcuts">
-            <h2 className="openx-section-title !mb-2">{t('shortcuts.title')}</h2>
-            <p className="mb-6 text-sm text-muted-foreground">{t('shortcuts.description')}</p>
-            <div className="divide-y divide-border rounded-2xl border border-border bg-surface-modal px-5">
+          <div className={cn('settings-section-panel', activeSection !== 'shortcuts' && 'hidden')} data-testid="settings-section-shortcuts">
+            <h2 className="settings-section-title">{t('shortcuts.title')}</h2>
+            <p className="settings-section-description mb-6">{t('shortcuts.description')}</p>
+            <div className="settings-card divide-y divide-border !py-0">
               {([
                 ['settings-shortcut-new-chat', t('shortcuts.newChat'), 'Ctrl+N'],
                 ['settings-shortcut-search-chats', t('shortcuts.searchChats'), 'Ctrl+K'],
@@ -444,24 +482,32 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
           <Separator className="hidden" />
 
 
-          {activeSection === 'providers' && <div data-testid="settings-section-providers" id="settings-provider-limits"><div className="mb-6 flex gap-1 border-b border-border" role="tablist">{[['api', ru ? 'API и модели' : 'APIs and models'], ['limits', ru ? 'Лимиты' : 'Limits']].map(([id, label]) => <button key={id} role="tab" aria-selected={providerTab === id} onClick={() => guardNavigation(() => { setProviderTab(id); route('/settings?section=providers&tab=' + id, { replace: true }); })} className={cn('border-b-2 px-4 py-3 text-sm', providerTab === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground')}>{label}</button>)}</div>{providerTab === 'limits' ? <ProviderLimitsSettings key={workspace?.scope} scope={workspace?.scope || ''} connected={connected} /> : <ProvidersSettings connected={connected} />}</div>}
-          {activeSection === 'notifications' && <NotificationSettings />}
-          {activeSection === 'agents' && <Agents workspace={workspace} connected={connected} />}
-          {activeSection === 'channels' && <Channels workspace={workspace} connected={connected} />}
-          {activeSection === 'skills' && <Skills workspace={workspace} connected={connected} />}
-          {activeSection === 'automation' && <Cron workspace={workspace} connected={connected} />}
-          {activeSection === 'memory' && <Memory state={workspace} language={language} connected={connected} embedded onDirty={setMemoryDirty} />}
-          {activeSection === 'security' && <div className="space-y-5 rounded-2xl border border-border bg-surface-modal p-5 text-sm"><h2 className="font-semibold">{ru ? 'Доступ Pincer' : 'Pincer access'}</h2><p className="text-muted-foreground">{ru ? 'Режим доступа выбирается щитом в поле ввода чата. Ограничения Gateway и операционной системы продолжают действовать.' : 'Choose access mode using the shield in the composer. Gateway and OS restrictions remain in effect.'}</p><p>{ru ? 'Разрешённые права управления' : 'Granted operator scopes'}: {gateway.operator.grantedScopes?.join(', ') || '—'}</p><p>{ru ? 'Реализованные команды ноды' : 'Implemented node commands'}: {gateway.nodeCommands.join(', ') || '—'}</p><p className="text-muted-foreground">{ru ? 'Токены, ключи устройства и черновики шифруются средствами ОС. Pincer не устанавливает OpenClaw и не запускает его CLI.' : 'Tokens, device keys and drafts are encrypted by the OS. Pincer does not install OpenClaw or run its CLI.'}</p></div>}
-          {activeSection === 'gateway' && <div data-testid="settings-section-gateway"><div className="mb-6 flex gap-1 border-b border-border" role="tablist"><button role="tab" aria-selected={gatewayTab === 'connection'} onClick={() => guardNavigation(() => { setGatewayTab('connection'); route('/settings?section=gateway', { replace: true }); })} className={cn('border-b-2 px-4 py-3 text-sm', gatewayTab === 'connection' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground')}>{ru ? 'Подключение' : 'Connection'}</button><button role="tab" aria-selected={gatewayTab === 'configuration'} onClick={() => guardNavigation(() => { setGatewayTab('configuration'); route('/settings?section=gateway&tab=configuration', { replace: true }); })} className={cn('border-b-2 px-4 py-3 text-sm', gatewayTab === 'configuration' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground')}>{ru ? 'Параметры Gateway' : 'Gateway configuration'}</button></div>{gatewayTab === 'connection' ? <ConnectionPage state={gateway} language={language} preview={back} embedded /> : <SettingsBrowser key={`gateway:${workspace?.scope || ''}`} category="gateway" connected={connected} scope={workspace?.scope || ''} title={false} onDirty={setGatewaySettingsDirty} />}</div>}
-          {activeSection === 'updates' && <div data-testid="settings-section-updates"><UpdatesPage state={updates} language={language} dirty={dirty} nodeVersion={gateway.nodeVersion} /></div>}
-          {activeSection === 'about' && <div data-testid="settings-section-about"><h2 className="openx-section-title">Pincer</h2><p className="text-subtitle">{gateway.appVersion}</p><p className="mt-4 text-sm text-muted-foreground">Electron · OpenClaw Gateway SDK {gateway.nodeVersion}</p></div>}
-          {activeSection === 'developer' && <div data-testid="settings-section-developer"><h2 className="openx-section-title">{t('developer.title')}</h2><div className="rounded-2xl border border-border bg-surface-modal p-5 text-sm"><p>{t('pincer.directConnection')}</p><p className="mt-4 text-muted-foreground">{gateway.profile?.url || '—'}</p><p className="mt-2 text-muted-foreground">{gateway.nodeCommands.join(', ')}</p></div></div>}
-          {['communications','talk','cloud-workers','labs','mcp','secrets','infrastructure','advanced'].includes(activeSection) && <div><h2 className="openx-section-title">{settingsNavigation.find(s => s.id === activeSection)?.label}</h2><p className="text-sm leading-6 text-muted-foreground">{ru ? 'Настройки подключённого OpenClaw. Все вложенные параметры доступны ниже; дополнительные и новые разделы всегда доступны в «Расширенные».' : 'Settings of your connected OpenClaw. All nested fields are available below; additional and new sections are always accessible under Advanced.'}</p></div>}
+          {activeSection === 'providers' && <div data-testid="settings-section-providers" id="settings-provider-limits" className="settings-section-panel space-y-6">
+            <SettingsPageHeader
+              title={ru ? 'Поставщики моделей' : 'Model providers'}
+              description={ru ? 'Модели, способы авторизации и лимиты подключённых учётных записей.' : 'Models, authentication methods, and connected account limits.'}
+              actions={providerTab === 'api' ? <Button data-testid="providers-add-button" onClick={() => providersSettingsRef.current?.openAddProvider()} className="h-9 rounded-lg px-4 text-sm font-medium shadow-none"><Plus className="mr-2 h-4 w-4" />{t('aiProviders.add')}</Button> : undefined}
+            />
+            <div className="settings-tabs" role="tablist">{[['api', ru ? 'API и модели' : 'APIs and models'], ['limits', ru ? 'Лимиты' : 'Limits']].map(([id, label]) => <button key={id} role="tab" aria-selected={providerTab === id} onClick={() => guardNavigation(() => { setProviderTab(id); route('/settings?section=providers&tab=' + id, { replace: true }); })} className={cn('settings-tab', providerTab === id && 'settings-tab-active')}>{label}</button>)}</div>
+            {providerTab === 'limits' ? <ProviderLimitsSettings key={workspace?.scope} scope={workspace?.scope || ''} connected={connected} /> : <><ProvidersSettings ref={providersSettingsRef} connected={connected} embedded /><OpenClawSettingsPanel category="providers" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></>}
+          </div>}
+          {activeSection === 'notifications' && <div data-testid="settings-section-notifications" className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'Уведомления' : 'Notifications'} description={ru ? 'Когда Pincer должен сообщать о завершении работы и событиях Gateway.' : 'When Pincer should report completed work and Gateway events.'} /><NotificationSettings /><OpenClawSettingsPanel category="notifications" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'agents' && <div className="settings-section-panel space-y-6"><Agents workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="agents" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'channels' && <div className="settings-section-panel space-y-6"><Channels workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="channels" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'skills' && <div className="settings-section-panel space-y-6"><Skills workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="skills" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'automation' && <div className="settings-section-panel space-y-6"><Cron workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="automation" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'memory' && <div className="settings-section-panel space-y-6"><Memory state={workspace} language={language} connected={connected} embedded onDirty={setMemoryDirty} /><OpenClawSettingsPanel category="memory" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'security' && <div className="space-y-6"><SettingsPageHeader title={ru ? 'Доступ и безопасность' : 'Access and security'} description={ru ? 'Права Pincer и защитные ограничения подключённого Gateway.' : 'Pincer permissions and connected Gateway safeguards.'} /><div className="settings-card space-y-4 text-sm"><h3 className="font-semibold">{ru ? 'Доступ Pincer' : 'Pincer access'}</h3><p className="text-muted-foreground">{ru ? 'Режим доступа выбирается щитом в поле ввода чата. Ограничения Gateway и операционной системы продолжают действовать.' : 'Choose access mode using the shield in the composer. Gateway and OS restrictions remain in effect.'}</p><div className="settings-technical-row"><span>{ru ? 'Права управления' : 'Operator scopes'}</span><code>{gateway.operator.grantedScopes?.join(', ') || '—'}</code></div><div className="settings-technical-row"><span>{ru ? 'Команды ноды' : 'Node commands'}</span><code>{gateway.nodeCommands.join(', ') || '—'}</code></div><p className="text-muted-foreground">{ru ? 'Токены, ключи устройства и черновики шифруются средствами ОС.' : 'Tokens, device keys, and drafts are encrypted by the operating system.'}</p></div><OpenClawSettingsPanel category="security" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'gateway' && <div data-testid="settings-section-gateway" className="space-y-6"><SettingsPageHeader title={ru ? 'Подключение' : 'Connection'} description={ru ? 'Соединение Pincer с существующим OpenClaw Gateway и его серверные параметры.' : 'Connect Pincer to an existing OpenClaw Gateway and manage its server settings.'} /><div className="settings-tabs" role="tablist"><button role="tab" aria-selected={gatewayTab === 'connection'} onClick={() => guardNavigation(() => { setGatewayTab('connection'); route('/settings?section=gateway', { replace: true }); })} className={cn('settings-tab', gatewayTab === 'connection' && 'settings-tab-active')}>{ru ? 'Подключение' : 'Connection'}</button><button role="tab" aria-selected={gatewayTab === 'configuration'} onClick={() => guardNavigation(() => { setGatewayTab('configuration'); route('/settings?section=gateway&tab=configuration', { replace: true }); })} className={cn('settings-tab', gatewayTab === 'configuration' && 'settings-tab-active')}>{ru ? 'Параметры Gateway' : 'Gateway configuration'}</button></div>{gatewayTab === 'connection' ? <ConnectionPage state={gateway} language={language} preview={back} embedded /> : <div className="settings-schema-standalone"><SettingsBrowser key={`gateway:${workspace?.scope || ''}`} category="gateway" connected={connected} scope={workspace?.scope || ''} title={false} onDirty={setGatewaySettingsDirty} /></div>}</div>}
+          {activeSection === 'updates' && <div data-testid="settings-section-updates" className="space-y-6"><UpdatesPage embedded state={updates} language={language} dirty={dirty} nodeVersion={gateway.nodeVersion} /><OpenClawSettingsPanel category="updates" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'about' && <div data-testid="settings-section-about" className="space-y-6"><SettingsPageHeader title={ru ? 'О Pincer' : 'About Pincer'} description={ru ? 'Версия приложения и совместимость с подключённым OpenClaw.' : 'Application version and connected OpenClaw compatibility.'} /><div className="settings-card"><p className="text-lg font-semibold">Pincer {gateway.appVersion}</p><p className="mt-2 text-sm text-muted-foreground">Electron · OpenClaw Gateway SDK {gateway.nodeVersion}</p></div></div>}
+          {activeSection === 'developer' && <div data-testid="settings-section-developer" className="space-y-6"><SettingsPageHeader title={ru ? 'Отладка' : 'Debug'} description={ru ? 'Сведения о прямом соединении и доступных командах ноды.' : 'Direct connection details and available node commands.'} /><div className="settings-card text-sm"><p>{t('pincer.directConnection')}</p><p className="mt-4 break-all font-mono text-xs text-muted-foreground">{gateway.profile?.url || '—'}</p><p className="mt-2 break-all font-mono text-xs text-muted-foreground">{gateway.nodeCommands.join(', ') || '—'}</p></div><OpenClawSettingsPanel category="developer" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {(['communications','talk','cloud-workers','labs','mcp','secrets','infrastructure','advanced'] as Section[]).includes(activeSection) && <div className="space-y-6"><SettingsPageHeader title={settingsNavigation.find(s => s.id === activeSection)?.label || activeSection} description={gatewaySectionDescriptions[activeSection]?.[ru ? 0 : 1] || ''} /><OpenClawSettingsPanel category={activeSection} connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} expanded ru={ru} /></div>}
           {activeSection === 'profile' && <ProfileSettings connected={connected} />}
-          {activeSection === 'devices' && <DevicesSettings connected={connected} />}
-          {activeSection === 'logs' && <LogsSettings connected={connected} />}
-          {activeSection === 'approvals' && <Approvals updateBusy={updates?.phase === 'downloading' || updates?.phase === 'installing'} inline />}
-          {Object.hasOwn(gatewayCategories, activeSection) && activeSection !== 'gateway' && !(activeSection === 'providers' && providerTab === 'limits') && <SettingsBrowser key={`${activeSection}:${workspace?.scope || ''}`} category={activeSection} connected={connected} scope={workspace?.scope || ''} title={false} onDirty={setGatewaySettingsDirty} />}
+          {activeSection === 'devices' && <div className="space-y-6"><DevicesSettings connected={connected} /><OpenClawSettingsPanel category="devices" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'logs' && <div className="space-y-6"><LogsSettings connected={connected} /><OpenClawSettingsPanel category="logs" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'approvals' && <div className="space-y-6"><Approvals updateBusy={updates?.phase === 'downloading' || updates?.phase === 'installing'} inline /><OpenClawSettingsPanel category="approvals" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'appearance' && <OpenClawSettingsPanel category="appearance" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} />}
         </div>
         </div>
       </div>

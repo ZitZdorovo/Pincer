@@ -63,7 +63,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
       {dragOver && createPortal(
         <div
           data-testid="chat-drop-overlay"
-          className="pointer-events-none fixed inset-3 z-[10000] grid place-items-center rounded-3xl border-2 border-dashed border-primary/55 bg-background/80 text-foreground shadow-2xl backdrop-blur-sm"
+          className="pointer-events-none fixed inset-3 z-[10000] grid place-items-center rounded-3xl border border-dashed border-primary/55 bg-background/80 text-foreground shadow-2xl backdrop-blur-sm"
         >
           <div className="flex items-center gap-3 rounded-2xl bg-surface-modal px-5 py-4 text-sm font-medium shadow-lg">
             <Paperclip className="h-5 w-5 text-primary" aria-hidden="true" />
@@ -621,7 +621,7 @@ function AttachmentPreview({
       {/* Remove button */}
       <button
         onClick={onRemove}
-        className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         aria-label={`${t('common:actions.delete')}: ${attachment.fileName}`}
       >
         <X className="h-3 w-3" />

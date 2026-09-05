@@ -57,10 +57,10 @@ interface ChannelConfigModalProps {
   onChannelSaved?: (channelType: ChannelType) => void | Promise<void>;
 }
 
-const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
-const outlineButtonClasses = 'h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
-const primaryButtonClasses = 'h-9 text-meta font-medium rounded-full px-4 shadow-none';
+const outlineButtonClasses = 'h-9 text-meta font-medium rounded-lg px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
+const primaryButtonClasses = 'h-9 text-meta font-medium rounded-lg px-4 shadow-none';
 
 export function ChannelConfigModal({ initialSelectedType = null, configuredTypes = [], showChannelName = true, allowEditAccountId = false, accountId, onClose, onChannelSaved }: ChannelConfigModalProps) {
  const { t } = useTranslation('channels');
@@ -105,7 +105,7 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
       }}
     >
       <Card
-        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
+        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-border shadow-2xl bg-surface-modal overflow-hidden"
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
@@ -150,7 +150,7 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
                         : 'border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
                     )}
                   >
-                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-xl shadow-sm">
                       <ChannelLogo type={type} />
                     </div>
                     <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
@@ -183,9 +183,9 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
             </div>
           ) : qrCode ? (
             <div className="text-center space-y-6">
-              <div className="bg-transparent p-4 rounded-3xl inline-block shadow-sm border border-black/10 dark:border-white/10">
+              <div className="bg-transparent p-4 rounded-2xl inline-block shadow-sm border border-black/10 dark:border-white/10">
                 {qrCode.startsWith('data:image') || qrCode.startsWith('http://') || qrCode.startsWith('https://') ? (
-                  <img src={qrCode} alt="Scan QR Code" className="w-64 h-64 object-contain rounded-2xl" />
+                  <img src={qrCode} alt={t('dialog.qrCode')} className="w-64 h-64 object-contain rounded-2xl" />
                 ) : (
                   <div className="w-64 h-64 bg-surface-modal rounded-2xl flex items-center justify-center">
                     <QrCode className="h-32 w-32 text-muted-foreground" />

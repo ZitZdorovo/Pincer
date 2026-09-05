@@ -57,7 +57,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
  useEffect(() => { void fetchPageData(); }, [fetchPageData]);
  const handleRefresh = () => void fetchPageData();
  const scheduleConvergenceRefresh = handleRefresh;
- const statusLabel = (status: string) => t('status.' + status);
+ const statusLabel = (status: string) => t('account.connectionStatus.' + status);
  const handleRestartGateway = () => { toast.info(t('pincer.channelConfigUnavailable')); };
  const handleCopyDiagnostics = () => navigator.clipboard.writeText(diagnosticsText).then(() => toast.success(t('pincer.linkCopied')));
  const handleToggleDiagnostics = () => setDiagnostics((value) => !value);
@@ -86,7 +86,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
               disabled={gatewayStatus.state !== 'running'}
               title={t('refresh')}
               aria-label={t('refresh')}
-              className="h-9 w-9 rounded-full border-black/10 bg-transparent p-0 text-foreground/80 shadow-none transition-colors hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5"
+              className="h-9 w-9 rounded-lg border-border bg-surface-modal p-0 text-foreground/80 shadow-sm transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
             >
               <RefreshCw className={cn('h-3.5 w-3.5', isUsingStableValue && 'animate-spin')} />
             </Button>
@@ -133,7 +133,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                     data-testid="channels-restart-gateway"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 rounded-lg text-xs"
                     onClick={() => {
                       void handleRestartGateway();
                     }}
@@ -145,7 +145,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                     data-testid="channels-copy-diagnostics"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 rounded-lg text-xs"
                     disabled={diagnosticsLoading}
                     onClick={() => {
                       void handleCopyDiagnostics();
@@ -158,7 +158,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                     data-testid="channels-toggle-diagnostics"
                     size="sm"
                     variant="outline"
-                    className="h-8 rounded-full text-xs"
+                    className="h-8 rounded-lg text-xs"
                     disabled={diagnosticsLoading}
                     onClick={() => {
                       void handleToggleDiagnostics();
@@ -202,11 +202,11 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                 {configuredGroups.map((group) => (
                   <div
                     key={group.channelType}
-                    className="rounded-2xl border border-black/10 dark:border-white/10 p-4 bg-transparent"
+                    className="rounded-2xl border border-border bg-surface-modal p-4 shadow-sm"
                   >
                     <div className="flex items-center justify-between gap-2 mb-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                        <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-xl shadow-sm">
                           <ChannelLogo type={group.channelType as ChannelType} />
                         </div>
                         <div className="min-w-0">
@@ -237,7 +237,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 text-xs rounded-full"
+                          className="h-8 rounded-lg text-xs"
                           onClick={() => {
                             const shouldUseGeneratedAccountId = !usesPluginManagedQrAccounts(group.channelType);
                             const nextAccountId = shouldUseGeneratedAccountId
@@ -316,7 +316,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 text-xs rounded-full"
+                                  className="h-8 rounded-lg text-xs"
                                   onClick={() => {
                                     void (async () => {
                                       setInitialConfigValuesForModal(undefined);
@@ -375,10 +375,10 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                       setShowConfigModal(true);
                     }}
                     className={cn(
-                      'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5',
+                      'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-surface-modal border-border shadow-sm hover:bg-black/5 dark:hover:bg-white/5',
                     )}
                   >
-                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm mb-3">
+                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-xl shadow-sm mb-3">
                       <ChannelLogo type={type} />
                     </div>
                     <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
@@ -387,7 +387,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                         {meta.isPlugin && (
                           <Badge
                             variant="secondary"
-                            className="font-mono text-2xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
+                            className="rounded-md bg-black/[0.04] px-2 py-0.5 font-mono text-2xs font-medium text-foreground/70 shadow-none dark:bg-white/[0.08]"
                           >
                             {t('pluginBadge')}
                           </Badge>

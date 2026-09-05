@@ -11,13 +11,22 @@ type Lease = { scope: string; root: string; hash: string; protected: Map<string,
 /** Complete schema-backed configuration surface. No arbitrary RPC exposed to Renderer. */
 export class GatewaySettingsService {
   private leases = new Map<string, Lease>();
+  private schemaCache: { scope: string; value: Promise<{ schema: JsonSchema; hints: Record<string, SettingHint>; version: string }> } | null = null;
   constructor(private gateway: Pick<GatewayService, 'operatorRequest' | 'snapshot'>) {}
   private scope() { const s = this.gateway.snapshot(); if (s.operator.phase !== 'connected') throw new Error('NOT_CONNECTED'); return JSON.stringify([s.profile, s.operator.connectedAt]); }
   private check(scope: string) { if (scope !== this.scope()) throw new Error('CONNECTION_CHANGED'); }
-  private async schema() {
-    const result = rec(await this.gateway.operatorRequest('config.schema', {}));
-    if (!isRecord(result.schema) || !isRecord(result.schema.properties)) throw new Error('SETTINGS_SCHEMA_UNAVAILABLE');
-    return { schema: result.schema as JsonSchema, hints: rec(result.uiHints) as Record<string, SettingHint>, version: typeof result.version === 'string' ? result.version : '' };
+  private schema() {
+    const scope = this.scope();
+    if (this.schemaCache?.scope === scope) return this.schemaCache.value;
+    const value = (async () => {
+      const result = rec(await this.gateway.operatorRequest('config.schema', {}));
+      this.check(scope);
+      if (!isRecord(result.schema) || !isRecord(result.schema.properties)) throw new Error('SETTINGS_SCHEMA_UNAVAILABLE');
+      return { schema: result.schema as JsonSchema, hints: rec(result.uiHints) as Record<string, SettingHint>, version: typeof result.version === 'string' ? result.version : '' };
+    })();
+    this.schemaCache = { scope, value };
+    void value.catch(() => { if (this.schemaCache?.value === value) this.schemaCache = null; });
+    return value;
   }
   async catalog(): Promise<SettingsCatalog> {
     const scope = this.scope(); const { schema, version } = await this.schema(); this.check(scope);

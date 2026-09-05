@@ -76,7 +76,7 @@ export default function App() {
     <TitleBar />
     {!state ? <main className="grid flex-1 place-items-center text-sm text-muted-foreground" role={error ? 'alert' : 'status'}>{t(error ? 'startupError' : 'loading')}</main>
       : <><div className={shell && !settings ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><Shell key={JSON.stringify(state.profile)} state={state} language={language} configure={() => setShell(false)} openSettings={() => setSettings(true)} updates={updates} onDirty={setDirty} active={shell && !settings} /></div>
-        {settings ? <Settings key={location.search} initialSection={new URLSearchParams(location.search).get('section') === 'gateway' ? 'gateway' : new URLSearchParams(location.search).get('section') === 'updates' ? 'updates' : 'appearance'} gateway={state} updates={updates} back={() => { setShell(true); setSettings(false); }} dirty={dirty} /> : !shell && <ConnectionPage state={state} language={language} preview={() => setShell(true)} />}</>}
+        {settings ? <Settings initialSection={new URLSearchParams(location.search).get('section') === 'gateway' ? 'gateway' : new URLSearchParams(location.search).get('section') === 'updates' ? 'updates' : 'appearance'} gateway={state} updates={updates} back={() => { setShell(true); setSettings(false); }} dirty={dirty} /> : !shell && <ConnectionPage state={state} language={language} preview={() => setShell(true)} />}</>}
     <Approvals updateBusy={updates?.phase === 'downloading' || updates?.phase === 'installing'} />
     <UpdateModal state={updates} language={language} />
   </div>;

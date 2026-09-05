@@ -6,11 +6,12 @@
  * Linux: use native window chrome (no custom title bar).
  */
 import { useState, useEffect, type MouseEvent } from 'react';
-import { ArrowLeft, ArrowRight, Minus, PanelLeft, Square, X, Copy } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Minus, PanelLeftClose, PanelLeftOpen, Square, X, Copy } from 'lucide-react';
 import { titlebarHost as hostApi } from '@/donor/titlebar-adapter';
 import { useSettingsStore } from '@/donor/settings-adapter';
 import { useTranslation } from 'react-i18next';
 import type { MenuId as WindowMenuId } from '../../shared/contract';
+import { cn } from '../lib/utils';
 
 export function TitleBar() {
   const platform = window.pincer?.platform;
@@ -78,12 +79,15 @@ function WindowsTitleBar() {
       <div className="no-drag flex h-full items-center pl-1">
         <button
           type="button"
-          className="flex h-7 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+          className="flex h-7 w-8 items-center justify-center overflow-hidden rounded text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
           title={sidebarCollapsed ? t('titleBar.showSidebar') : t('titleBar.hideSidebar')}
           aria-label={sidebarCollapsed ? t('titleBar.showSidebar') : t('titleBar.hideSidebar')}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
-          <PanelLeft className="h-4 w-4" />
+          <span className="relative h-4 w-4" aria-hidden="true">
+            <PanelLeftOpen data-testid="sidebar-open-icon" className={cn('absolute inset-0 h-4 w-4 transition-[opacity,transform] duration-200 ease-out', sidebarCollapsed ? 'translate-x-0 scale-100 opacity-100' : '-translate-x-1 scale-90 opacity-0')} />
+            <PanelLeftClose data-testid="sidebar-close-icon" className={cn('absolute inset-0 h-4 w-4 transition-[opacity,transform] duration-200 ease-out', sidebarCollapsed ? 'translate-x-1 scale-90 opacity-0' : 'translate-x-0 scale-100 opacity-100')} />
+          </span>
         </button>
         <button
           type="button"

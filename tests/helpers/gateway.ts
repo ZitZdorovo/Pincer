@@ -44,6 +44,7 @@ export class MockGateway {
   toolDenied = false;
   holdRun = false;
   deltaDelayMs = 40;
+  readonly responseDelayMs = new Map<string, number>();
   assistantText = 'Hello from Gateway';
   readonly activeRuns = new Map<string, string>();
   private ticker: ReturnType<typeof setInterval>;
@@ -62,7 +63,9 @@ export class MockGateway {
           const validator = (protocol as unknown as Record<string, (input: unknown) => boolean>)[validatorName || derivedValidator];
           if (validator && !validator(frame.params)) { socket.send(JSON.stringify({ type: 'res', id: frame.id, ok: false, error: { code: 'INVALID_REQUEST', message: `Invalid ${frame.method} schema` } })); return; }
           const payload = this.request(frame.method, frame.params as Record<string, unknown>);
-          socket.send(JSON.stringify({ type: 'res', id: frame.id, ok: true, payload }));
+          const respond = () => { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: 'res', id: frame.id, ok: true, payload })); };
+          const delay = this.responseDelayMs.get(frame.method) ?? 0;
+          if (delay > 0) setTimeout(respond, delay).unref(); else respond();
           return;
         }
         if (!validateConnectParams(frame.params)) {

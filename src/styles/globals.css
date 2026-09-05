@@ -2,14 +2,290 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Native-desktop arrow throughout; selection and keyboard focus stay enabled. */
-html, body, body * { cursor: default !important; }
+:root {
+  --radius-control: .5rem;
+  --radius-panel: .75rem;
+}
 
-/* Embedded Gateway sections use the same bounded page surface as chat. */
-.settings-content .openx-page-root { height: auto; min-height: 0; margin: 0; overflow: visible; }
-.settings-content .openx-page-frame { max-width: none; padding: 0; }
-.settings-content .openx-page-title { font-size: 1.5rem; line-height: 1.3; }
-.settings-content .openx-section-title { font-size: 1.25rem; line-height: 1.4; }
+/* One shape language for the whole client: controls are 8px, surfaces are
+ * 12px. Fully round shapes remain reserved for status/progress/switches. */
+.rounded-2xl,
+.rounded-3xl {
+  border-radius: var(--radius-panel) !important;
+}
+
+button.rounded-full:not([role="switch"]),
+[role="button"].rounded-full:not([role="switch"]),
+.rounded-full[class*="px-"],
+.rounded-full[class*="p-"] {
+  border-radius: var(--radius-control) !important;
+}
+
+/* Only the arrow, text I-beam and column-resize cursor are used in Pincer. */
+html,
+body,
+body * {
+  cursor: default !important;
+}
+
+body[data-column-resizing="true"],
+body[data-column-resizing="true"] * {
+  cursor: col-resize !important;
+}
+
+body :is(input:not([type]), input[type="text"], input[type="search"], input[type="password"], input[type="email"], input[type="url"], input[type="tel"], input[type="number"], textarea, [contenteditable="true"], .openx-copy-surface),
+body .openx-copy-surface :where(p, li, blockquote, td, th, pre, code, h1, h2, h3, h4, h5, h6),
+body [data-testid="file-preview-content"] :where(p, li, blockquote, td, th, pre, code, h1, h2, h3, h4, h5, h6) {
+  cursor: text !important;
+}
+
+body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
+  cursor: col-resize !important;
+}
+
+.pincer-resize-handle {
+  cursor: col-resize !important;
+  background: transparent;
+}
+
+.pincer-resize-line {
+  pointer-events: none;
+  position: absolute;
+  top: .5rem;
+  bottom: .5rem;
+  width: 1px;
+  border-radius: 9999px;
+  background: rgb(0 0 0 / .1);
+  transition: background-color .15s ease;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent);
+}
+
+.pincer-resize-handle:hover .pincer-resize-line {
+  background: rgb(0 0 0 / .16);
+}
+
+.dark .pincer-resize-line {
+  background: rgb(255 255 255 / .1);
+}
+
+.dark .pincer-resize-handle:hover .pincer-resize-line {
+  background: rgb(255 255 255 / .18);
+}
+
+/* Embedded Gateway pages are sections of Settings, never a second full page. */
+.settings-content .openx-page-root,
+.settings-content [data-testid="agents-page"],
+.settings-content [data-testid="channels-page"],
+.settings-content [data-testid="skills-page"],
+.settings-content [data-testid="cron-page"] {
+  height: auto;
+  min-height: 0;
+  margin: 0 !important;
+  overflow: visible;
+}
+
+.settings-content .openx-page-frame {
+  --openx-page-inline: 0px;
+  display: block;
+  height: auto;
+  max-width: none;
+  padding: 0;
+}
+
+.settings-content .openx-page-header {
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 1rem;
+  margin-bottom: 1.5rem !important;
+}
+
+.settings-content .openx-page-title {
+  margin-bottom: .35rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -.015em;
+  line-height: 1.4;
+}
+
+.settings-content .openx-page-header .text-subtitle {
+  color: hsl(var(--muted-foreground));
+  font-size: .875rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.settings-content .openx-page-frame > .overflow-y-auto {
+  margin: 0 !important;
+  overflow: visible;
+  padding: 0 0 2rem !important;
+}
+
+.settings-content .openx-page-header button {
+  border-radius: .5rem;
+}
+
+.settings-content .openx-section-title {
+  margin-bottom: .75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+
+.settings-content [data-testid="settings-content-inner"] > div:not(.hidden),
+.settings-content [data-testid="settings-content-inner"] > section {
+  animation: settings-section-in 140ms ease-out both;
+  will-change: opacity;
+}
+
+[data-testid="settings-scroll"] {
+  overflow-anchor: none;
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.settings-section-title {
+  margin: 0;
+  color: hsl(var(--foreground));
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -.015em;
+  line-height: 1.4;
+}
+
+.settings-section-description {
+  margin-top: .35rem;
+  max-width: 42rem;
+  color: hsl(var(--muted-foreground));
+  font-size: .875rem;
+  line-height: 1.5;
+}
+
+/* Older embedded feature pages keep their internal section-title class, but
+ * their first heading is still a Settings page title. */
+.settings-content [data-testid="settings-content-inner"] > section > div:first-child .openx-section-title,
+.settings-content [data-testid="settings-content-inner"] > div:not(.hidden) > section:first-child > div:first-child .openx-section-title {
+  margin-bottom: 0;
+  color: hsl(var(--foreground));
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -.015em;
+  line-height: 1.4;
+}
+
+.settings-content :is([data-testid="agents-page"], [data-testid="channels-page"], [data-testid="skills-page"], [data-testid="cron-page"]) .shadow-sm {
+  box-shadow: none;
+}
+
+.settings-card,
+.settings-openclaw-panel,
+.settings-browser-controls,
+.settings-browser-document,
+.settings-browser-empty,
+.settings-action-bar {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-panel);
+  background: hsl(var(--surface-modal));
+  box-shadow: none;
+}
+
+.settings-card {
+  padding: 1.25rem;
+}
+
+.settings-openclaw-panel {
+  overflow: hidden;
+}
+
+.settings-openclaw-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  list-style: none;
+}
+
+.settings-openclaw-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-browser-controls,
+.settings-browser-document,
+.settings-browser-empty {
+  padding: 1.25rem;
+}
+
+.settings-action-bar {
+  padding: .75rem;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: .25rem;
+  padding: .25rem;
+  border-radius: .75rem;
+  background: hsl(var(--muted) / .6);
+}
+
+.settings-tab {
+  min-height: 2.25rem;
+  flex: 1;
+  border-radius: .5rem;
+  padding: .45rem .8rem;
+  color: hsl(var(--muted-foreground));
+  font-size: .875rem;
+  transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+.settings-tab-active {
+  background: hsl(var(--surface-modal));
+  color: hsl(var(--foreground));
+  box-shadow: 0 1px 2px rgb(0 0 0 / .08);
+}
+
+.settings-technical-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, .4fr) minmax(0, 1fr);
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.settings-technical-row code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: hsl(var(--muted-foreground));
+  font-size: .75rem;
+}
+
+@media (max-width: 760px) {
+  .settings-section-header,
+  .settings-technical-row {
+    display: block;
+  }
+
+  .settings-section-header > :last-child {
+    margin-top: .75rem;
+  }
+
+  .settings-technical-row code {
+    display: block;
+    margin-top: .5rem;
+  }
+}
+
+@keyframes settings-section-in {
+  from { opacity: .72; }
+  to { opacity: 1; }
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
  * OpenX design tokens — CSS variable layer
@@ -246,6 +522,34 @@ html, body, body * { cursor: default !important; }
     -webkit-user-select: text;
   }
 
+  input:not([type]),
+  input[type="text"],
+  input[type="search"],
+  input[type="password"],
+  input[type="email"],
+  input[type="url"],
+  input[type="tel"],
+  input[type="number"],
+  textarea,
+  [contenteditable="true"],
+  .openx-copy-surface,
+  .openx-copy-surface :where(p, li, blockquote, td, th, pre, code, h1, h2, h3, h4, h5, h6),
+  [data-testid="file-preview-content"],
+  [data-testid="file-preview-content"] :where(p, li, blockquote, td, th, pre, code, h1, h2, h3, h4, h5, h6) {
+    cursor: text !important;
+  }
+
+  [role="separator"][aria-orientation="vertical"],
+  .cursor-col-resize {
+    cursor: col-resize !important;
+  }
+
+  button,
+  [role="button"],
+  select {
+    cursor: default;
+  }
+
   button,
   [role="button"],
   [data-tauri-drag-region],
@@ -257,7 +561,7 @@ html, body, body * { cursor: default !important; }
 
 @layer components {
   .openx-page-root {
-    @apply -m-6 flex h-[calc(100vh-2.5rem)] flex-col overflow-hidden dark:bg-background;
+    @apply -m-6 flex h-[calc(100vh-2.5rem)] flex-col overflow-hidden;
   }
 
   .openx-page-frame {
@@ -278,7 +582,7 @@ html, body, body * { cursor: default !important; }
 
   .openx-page-header {
     @apply flex shrink-0 flex-col justify-between gap-4;
-    margin-bottom: clamp(1.5rem, 5vh, 3rem);
+    margin-bottom: 1.5rem;
   }
 
   @media (min-width: 1100px) {
@@ -288,14 +592,22 @@ html, body, body * { cursor: default !important; }
   }
 
   .openx-page-title {
-    @apply mb-3 font-sans font-normal tracking-tight text-foreground;
-    font-size: clamp(2.5rem, 5vw, 3.75rem);
-    line-height: 0.98;
+    @apply font-sans font-semibold tracking-tight text-foreground;
+    margin-bottom: .35rem;
+    font-size: 1.25rem;
+    line-height: 1.4;
     overflow-wrap: anywhere;
   }
 
+  .openx-page-header .text-subtitle {
+    color: hsl(var(--muted-foreground));
+    font-size: .875rem;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+
   .openx-section-title {
-    @apply mb-6 font-sans text-3xl font-semibold tracking-tight text-foreground;
+    @apply mb-3 font-sans text-base font-semibold tracking-normal text-foreground;
   }
 
   .sidebar-nav-text.sidebar-nav-text {

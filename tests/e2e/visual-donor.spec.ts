@@ -32,6 +32,13 @@ test('donated shell matches the OpenX dev geometry and theme structure', async (
     for (const route of ['models', 'agents', 'channels', 'skills', 'cron']) {
       await page.getByTestId(`sidebar-nav-${route}`).click();
       await page.waitForTimeout(650);
+      const routePage = page.getByTestId(`${route}-page`);
+      await expect(routePage.locator('.openx-page-title')).toHaveCSS('font-size', '20px');
+      await expect(routePage.locator('.openx-page-header .text-subtitle')).toHaveCSS('font-size', '14px');
+      await expect(routePage.locator('.openx-page-header .text-subtitle')).toHaveCSS('font-weight', '400');
+      await expect(routePage).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      expect(await routePage.locator('button.rounded-full:not([role="switch"])').evaluateAll(elements => elements.every(element => getComputedStyle(element).borderRadius === '8px'))).toBe(true);
+      expect(await routePage.locator('.rounded-2xl, .rounded-3xl').evaluateAll(elements => elements.every(element => getComputedStyle(element).borderRadius === '12px'))).toBe(true);
       await page.screenshot({ path: `artifacts/pincer-donor/${route}-dark.png` });
     }
     expect(errors).toEqual([]);

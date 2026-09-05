@@ -10,6 +10,7 @@ it('loads every schema root and never sends saved secrets to Renderer', async ()
   const service = new GatewaySettingsService({ operatorRequest: request, snapshot });
   expect((await service.catalog()).roots.map(r => r.key)).toEqual(['agents', 'models']);
   const document = await service.section('models'); expect(JSON.stringify(document)).not.toContain('PRIVATE_KEY');
+  expect(request.mock.calls.filter(([method]) => method === 'config.schema')).toHaveLength(1);
   await service.save(document.lease, document.value);
   const raw = String((request.mock.calls.find(([method]) => method === 'config.patch')?.[1] as Record<string, unknown>).raw);
   expect(raw).toContain('PRIVATE_KEY'); expect(raw).not.toContain('__PINCER_PROTECTED_');

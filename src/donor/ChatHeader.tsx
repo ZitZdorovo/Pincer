@@ -7,7 +7,7 @@ import { cn } from '../lib/utils';
 import { ChatToolbar } from './ChatToolbar';
 import type { ChatSession } from '../../shared/contract';
 import { toast } from 'sonner';
-export function ChatHeader({ session, agents, agentId, targetAgentId, connected, openFiles, onAgent, children }: { session?: ChatSession; agents: { id: string; name: string }[]; agentId: string; targetAgentId?: string; connected: boolean; openFiles(): void; onAgent(id: string | null): void; children?: ReactNode }) {
+export function ChatHeader({ session, agents, agentId, targetAgentId, connected, filesOpen, openFiles, onAgent, children }: { session?: ChatSession; agents: { id: string; name: string }[]; agentId: string; targetAgentId?: string; connected: boolean; filesOpen: boolean; openFiles(): void; onAgent(id: string | null): void; children?: ReactNode }) {
  const { t } = useTranslation('chat');
  const currentSession = { createdLocally: !session }; const isWindows = window.pincer.platform === 'win32';
  const currentSessionKey = session?.key || ''; const currentSessionTitle = session?.title || ''; const currentChatPinned = Boolean(session?.pinned);
@@ -123,7 +123,7 @@ export function ChatHeader({ session, agents, agentId, targetAgentId, connected,
             </div>
           )}
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10 flex items-center">
-            <ChatToolbar agents={agents} currentAgentId={agentId} selectedAgentId={targetAgentId} onAgent={onAgent} disabled={!connected || Boolean(session?.activeRunId)} workspaceAvailable={connected && Boolean(session)} openBrowser={openFiles} />
+            <ChatToolbar agents={agents} currentAgentId={agentId} selectedAgentId={targetAgentId} onAgent={onAgent} disabled={!connected || Boolean(session?.activeRunId)} workspaceAvailable={connected && Boolean(session)} openBrowser={openFiles} browserActive={filesOpen} />
           </div>
 {children}
 </div>

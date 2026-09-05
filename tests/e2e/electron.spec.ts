@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MockGateway } from '../helpers/gateway';
@@ -19,9 +19,18 @@ test('settings share the main sidebar width and bounded chat surface; preference
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
   const sidebar = await page.getByTestId('sidebar-layout-slot').boundingBox();
+  const chatSurface = page.getByTestId('chat-page');
+  await expect(chatSurface).toHaveCSS('border-top-left-radius', '16px');
+  await expect(chatSurface).toHaveCSS('border-top-width', '1px');
+  const chatSurfaceColor = await chatSurface.evaluate(element => getComputedStyle(element).backgroundColor);
+  expect(chatSurfaceColor).not.toBe('rgba(0, 0, 0, 0)');
   await page.keyboard.press('Control+,');
   await expect(page.getByTestId('settings-navigation')).toHaveCSS('width', `${sidebar!.width}px`);
-  const content = page.getByTestId('settings-content'); await expect(content).toHaveCSS('border-top-left-radius', '16px');
+  const settingsSeparator = page.getByRole('separator', { name: 'Ширина боковой панели настроек', exact: true });
+  await expect(settingsSeparator).toHaveCSS('cursor', 'col-resize');
+  await expect(settingsSeparator.locator('.pincer-resize-line')).toHaveCSS('width', '1px');
+  const content = page.getByTestId('settings-content'); await expect(content).toHaveCSS('border-top-left-radius', '16px'); await expect(content).toHaveCSS('border-top-width', '1px');
+  await expect(content).toHaveCSS('background-color', chatSurfaceColor);
   const bounds = await content.boundingBox(); expect(bounds!.x).toBe(sidebar!.width); expect(bounds!.height).toBeLessThanOrEqual(810);
   await page.getByTestId('settings-theme-light').click();
   await expect(page.getByTestId('settings-theme-light')).toHaveAttribute('aria-pressed', 'true');
@@ -32,11 +41,16 @@ test('settings share the main sidebar width and bounded chat surface; preference
   await expect(page.locator('html')).toHaveAttribute('data-accent-color', 'violet');
   await expect(page.locator('html')).toHaveAttribute('data-chat-font', 'serif');
   await page.screenshot({ path: 'artifacts/pincer-donor/settings-new-dark.png' });
+  await page.getByTestId('settings-nav-chat').click();
   await page.getByLabel('Ширина сообщений', { exact: true }).fill('1008');
-  await page.getByRole('switch', { name: 'Сворачивать ход работы', exact: true }).click();
+  const collapseSwitch = page.getByRole('switch', { name: 'Сворачивать ход работы', exact: true });
+  await expect(collapseSwitch).toHaveCSS('border-top-left-radius', '8px');
+  await expect(collapseSwitch.locator('span')).toHaveCSS('border-top-left-radius', '6px');
+  await collapseSwitch.click();
   await page.keyboard.press('Escape');
   await expect.poll(() => page.getByTestId('chat-composer').evaluate(el => getComputedStyle(el).maxWidth)).toBe('1040px');
   await page.keyboard.press('Control+,');
+  await page.getByTestId('settings-nav-chat').click();
   await expect(page.getByRole('switch', { name: 'Сворачивать ход работы', exact: true })).toHaveAttribute('aria-checked', 'true');
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(760, 620));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -46,6 +60,7 @@ test('complete Gateway settings are edited inside Pincer with profile, devices a
   mock.config = { ...mock.config, ui: { enabled: false } };
   await connect(); await page.keyboard.press('Control+,');
   await expect(page.getByTestId('settings-content').locator('header')).toHaveCount(0);
+  await page.getByText('Дополнительные параметры OpenClaw', { exact: true }).click();
   await expect(page.getByTestId('gateway-settings-root')).toHaveAttribute('data-value', 'ui');
   await chooseSelect(page.getByLabel('ui.enabled', { exact: true }), 'Включено');
   await page.getByRole('button', { name: 'Сохранить на Gateway', exact: true }).click();
@@ -54,6 +69,40 @@ test('complete Gateway settings are edited inside Pincer with profile, devices a
   await page.getByTestId('settings-nav-profile').click(); await expect(page.getByRole('textbox', { name: 'Отображаемое имя' })).toHaveValue('Test User');
   await page.getByTestId('settings-nav-devices').click(); await expect(page.getByText('Связанные устройства · 0')).toBeVisible();
   await page.getByTestId('settings-nav-logs').click(); await expect(page.getByText('Gateway ready')).toBeVisible();
+  await page.getByTestId('settings-nav-agents').click();
+  const embedded = page.getByTestId('agents-page'); await expect(embedded).toBeVisible();
+  await expect(embedded.locator('.openx-page-title')).toHaveCSS('font-size', '20px');
+  await expect(embedded.locator('.openx-page-frame')).toHaveCSS('padding-top', '0px');
+  await expect(embedded).toHaveCSS('margin-top', '0px');
+  await expect(embedded).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: 'artifacts/pincer-donor/settings-embedded-unified.png' });
+  await expect(page.getByTestId('settings-content').locator('select')).toHaveCount(0);
+  await page.getByTestId('settings-nav-channels').click();
+  const channels = page.getByTestId('channels-page'); await expect(channels.getByRole('heading', { name: 'Каналы сообщений', exact: true })).toBeVisible();
+  await expect(channels.locator('.openx-page-title')).toHaveCSS('font-size', '20px');
+  await expect(channels.getByTestId('channels-refresh-button')).toHaveCSS('border-top-left-radius', '8px');
+  await page.screenshot({ path: 'artifacts/pincer-donor/settings-channels-unified.png' });
+  await page.getByTestId('settings-nav-notifications').click();
+  await expect(page.getByTestId('settings-section-notifications')).toHaveCSS('animation-name', 'settings-section-in');
+  await page.getByTestId('settings-nav-automation').click();
+  const automation = page.getByTestId('cron-page'); await expect(automation.getByRole('heading', { name: 'Автоматизация', exact: true })).toBeVisible();
+  await expect(automation.locator('.openx-page-title')).toHaveCSS('font-size', '20px');
+  await expect(automation.getByTestId('cron-new-task-button')).toHaveCSS('border-top-left-radius', '8px');
+  await page.screenshot({ path: 'artifacts/pincer-donor/settings-automation-unified.png' });
+  await page.getByTestId('settings-nav-providers').click();
+  const addProvider = page.getByTestId('providers-add-button');
+  await expect(addProvider.locator('xpath=ancestor::*[contains(@class,"settings-section-header")]')).toHaveCount(1);
+  const providerHeader = await page.getByTestId('settings-section-providers').locator('.settings-section-header').boundingBox();
+  const providerTabs = await page.getByTestId('settings-section-providers').locator('.settings-tabs').boundingBox();
+  expect(providerHeader!.y).toBeLessThan(providerTabs!.y);
+  await addProvider.click(); await expect(page.getByRole('dialog')).toBeVisible(); await page.keyboard.press('Escape');
+  const navigation = page.getByTestId('settings-navigation-scroll');
+  await navigation.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(() => navigation.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.getByTestId('settings-nav-updates').click();
+  await expect(page.getByTestId('updates-page')).toBeVisible();
+  await expect(page.getByTestId('updates-page').locator(':scope > div').nth(1)).toHaveCSS('border-top-left-radius', '12px');
+  await expect.poll(() => navigation.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   await page.getByTestId('settings-nav-advanced').click(); await page.getByTestId('gateway-settings-root').click(); await expect(page.getByRole('option')).toHaveCount(3); await page.keyboard.press('Escape');
   await page.screenshot({ path: 'artifacts/pincer-donor/settings-complete-schema.png' });
 });
@@ -65,6 +114,11 @@ test('connection settings use one surface and separate connection from Gateway c
   await page.getByRole('tab', { name: 'Параметры Gateway', exact: true }).click();
   await expect(page.getByTestId('gateway-settings-root')).toHaveAttribute('data-value', 'gateway');
   await expect(page.getByTestId('connection-status')).toHaveCount(0);
+  await expect(page.getByTestId('gateway-settings-browser')).toContainText('Режим');
+  await page.getByLabel('gateway.mode', { exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Локальный', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Удалённый', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
 });
 test('update modal changes surface and text colors in light and dark modes', async () => {
   await connect(); await page.keyboard.press('Control+,');
@@ -126,15 +180,21 @@ test('OmniRoute source connects from API settings and exposes real quotas withou
   try {
     await connect(); await page.keyboard.press('Control+,'); await page.getByTestId('settings-nav-providers').click();
     await page.getByRole('tab', { name: 'Лимиты', exact: true }).click();
-    const form = page.getByTestId('quota-source-form'); await form.getByLabel('Адрес OmniRoute').fill(`http://127.0.0.1:${address.port}`); await form.getByLabel('Management token').fill('QUOTA_TEST_SECRET');
+    const form = page.getByTestId('quota-source-form'); await form.getByLabel('Адрес OmniRoute').fill(`http://127.0.0.1:${address.port}`); await form.getByLabel('Токен управления').fill('QUOTA_TEST_SECRET');
     await form.getByRole('button', { name: 'Проверить и сохранить' }).click();
-    await expect(form.getByRole('status')).toContainText('Подключение проверено'); await expect(form.getByLabel('Management token')).toHaveValue('');
+    await expect(form.getByRole('status')).toContainText('Подключение проверено'); await expect(form.getByLabel('Токен управления')).toHaveValue('');
     await expect(page.getByTestId('provider-quotas')).toContainText('64% осталось'); await expect(page.getByTestId('provider-quotas')).toContainText('Test account');
     expect(calls).toBeGreaterThanOrEqual(4); expect(readFileSync(join(directory, 'quota-sources.vault')).toString()).not.toContain('QUOTA_TEST_SECRET');
     expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('QUOTA_TEST_SECRET');
     expect(JSON.stringify(await page.evaluate(() => window.pincer.management.quotas()))).not.toContain('MUST_NOT_REACH_UI');
     await page.screenshot({ path: 'artifacts/pincer-donor/settings-provider-limits.png' });
     await page.keyboard.press('Escape'); await page.getByTestId('chat-request-stats-button').click(); await expect(page.getByTestId('chat-request-stats-panel')).toContainText('64% осталось');
+    const configureSources = page.getByTestId('configure-quota-sources');
+    const restingBackground = await configureSources.evaluate(element => getComputedStyle(element).backgroundColor);
+    await configureSources.hover();
+    await expect.poll(() => configureSources.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(restingBackground);
+    await configureSources.click();
+    await expect(page.getByRole('tab', { name: 'Лимиты', exact: true })).toHaveAttribute('aria-selected', 'true');
   } finally { source.closeAllConnections(); await new Promise<void>(resolve => source.close(() => resolve())); }
 });
 test('provider quotas recheck an asynchronous Gateway refresh instead of claiming no limits', async () => {
@@ -143,6 +203,100 @@ test('provider quotas recheck an asynchronous Gateway refresh instead of claimin
   await expect(page.getByTestId('chat-request-stats-panel')).toContainText('Gateway запрашивает свежие лимиты');
   mock.quotaData = { providers: [{ provider: 'test', windows: [{ label: '5h', usedPercent: 40, resetAt: Date.now() + 50000 }] }] };
   await expect(page.getByTestId('chat-request-stats-panel')).toContainText('60% осталось', { timeout: 10000 });
+});
+test('closed advanced settings do no schema work and opening them loads once without a layout jump', async () => {
+  mock.responseDelayMs.set('config.schema', 400);
+  await connect(); await page.keyboard.press('Control+,');
+  mock.responses.length = 0;
+  await page.getByTestId('settings-nav-notifications').click();
+  const section = page.getByTestId('settings-section-notifications');
+  await expect(section.getByRole('heading', { name: 'Уведомления', exact: true })).toBeVisible();
+  await expect(section).toHaveCSS('transform', 'none');
+  await page.waitForTimeout(500);
+  expect(mock.responses.filter(({ method }) => method === 'config.schema')).toHaveLength(0);
+
+  await page.getByTestId('settings-nav-appearance').click();
+  const advanced = page.getByText('Дополнительные параметры OpenClaw', { exact: true });
+  await advanced.click();
+  await expect(page.getByRole('status')).toHaveText('Загрузка…');
+  await expect(page.getByTestId('gateway-settings-root')).toBeVisible();
+  expect(mock.responses.filter(({ method }) => method === 'config.schema')).toHaveLength(1);
+  await advanced.click();
+  await advanced.click();
+  await expect(page.getByTestId('gateway-settings-root')).toBeVisible();
+  expect(mock.responses.filter(({ method }) => method === 'config.schema')).toHaveLength(1);
+});
+test('main chat has reproducible empty and conversation screenshots in both themes', async () => {
+  await connect();
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
+  const output = join(process.cwd(), 'artifacts', 'chat-audit-0.3.0');
+  mkdirSync(output, { recursive: true });
+  await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
+  await page.screenshot({ path: join(output, '01-empty-light.png') });
+
+  await page.keyboard.press('Control+,'); await page.getByTestId('settings-theme-dark').click(); await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
+  await expect(page.locator('html')).toHaveClass('dark');
+  await page.screenshot({ path: join(output, '02-empty-dark.png') });
+
+  await page.keyboard.press('Control+,'); await page.getByTestId('settings-theme-light').click(); await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
+  await page.getByTestId('chat-composer-input').fill('Покажи состояние интерфейса');
+  await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect(page.getByTestId('chat-page')).toContainText('Hello from Gateway');
+  await expect(page.getByRole('button', { name: 'Остановить', exact: true })).not.toBeVisible();
+  await page.screenshot({ path: join(output, '03-conversation-light.png') });
+
+  await page.keyboard.press('Control+,'); await page.getByTestId('settings-theme-dark').click(); await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
+  await page.screenshot({ path: join(output, '04-conversation-dark.png') });
+});
+test('every settings page has the same frame and a reproducible visual audit', async () => {
+  test.setTimeout(90000);
+  await connect();
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
+  await page.keyboard.press('Control+,');
+  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.3.0');
+  mkdirSync(output, { recursive: true });
+  const pages = [
+    'profile', 'appearance', 'chat', 'shortcuts', 'notifications',
+    'gateway', 'channels', 'communications', 'talk', 'devices', 'cloud-workers',
+    'agents', 'labs', 'providers', 'mcp', 'skills', 'memory', 'automation',
+    'security', 'secrets', 'approvals', 'infrastructure', 'advanced',
+    'developer', 'logs', 'updates', 'about',
+  ];
+  const content = page.getByTestId('settings-content');
+  const scroller = page.getByTestId('settings-scroll');
+  for (const theme of ['light', 'dark'] as const) {
+    const themeOutput = join(output, theme);
+    mkdirSync(themeOutput, { recursive: true });
+    await page.getByTestId('settings-nav-appearance').click();
+    await page.getByTestId(`settings-theme-${theme}`).click();
+    for (const [index, section] of pages.entries()) {
+      await page.getByTestId(`settings-nav-${section}`).click();
+      const title = content.locator('.settings-section-title:visible, .openx-section-title:visible, .openx-page-title:visible').first();
+      await expect(title).toBeVisible();
+      await expect(title).toHaveCSS('font-size', '20px');
+      await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBe(0);
+      await page.waitForTimeout(250);
+      await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBe(0);
+      const titleBounds = await title.boundingBox();
+      expect(titleBounds?.y).toBeGreaterThan(80);
+      const prefix = `${String(index + 1).padStart(2, '0')}-${section}`;
+      await page.screenshot({ path: join(themeOutput, `${prefix}-top.png`) });
+      const scrollable = await scroller.evaluate(element => element.scrollHeight > element.clientHeight + 8);
+      if (scrollable) {
+        await scroller.evaluate(element => { element.scrollTop = element.scrollHeight; });
+        await page.screenshot({ path: join(themeOutput, `${prefix}-bottom.png`) });
+      }
+    }
+    await page.getByTestId('settings-nav-gateway').click();
+    await page.getByRole('tab', { name: 'Параметры Gateway', exact: true }).click();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: join(themeOutput, '06-gateway-configuration.png') });
+    await page.getByTestId('settings-nav-providers').click();
+    await page.getByRole('tab', { name: 'Лимиты', exact: true }).click();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: join(themeOutput, '14-providers-limits.png') });
+  }
+  expect(pageErrors).toEqual([]);
 });
 function launchEnv(): Record<string, string> {
   const env: Record<string, string> = { PINCER_TEST_DATA: directory };
@@ -202,7 +356,9 @@ test('clean Electron shell, imported design tokens and no renderer Node privileg
   await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
   await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
   await page.screenshot({ path: 'artifacts/pincer-shell-dark.png' });
+  await expect(page.getByTestId('sidebar-close-icon')).toHaveCSS('opacity', '1');
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
+  await expect(page.getByTestId('sidebar-open-icon')).toHaveCSS('opacity', '1');
   await expect(page.locator('aside')).toHaveAttribute('inert', '');
 });
 
@@ -323,6 +479,7 @@ test('donor sidebar resizing, search and real rename/pin/delete', async () => {
  await expect.poll(() => page.getByTestId('sidebar-layout-slot').evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(330);
  const key = (await page.evaluate(() => window.pincer.chat.snapshot())).selected!;
  const row = page.getByTestId(`sidebar-session-${key}`);
+ await expect(row).toHaveCSS('cursor', 'default');
  await row.click({ button: 'right' }); await page.getByTestId('chat-context-menu').getByRole('button', { name: 'Переименовать', exact: true }).click();
  await page.getByTestId('sidebar-chat-rename-input').fill('Renamed chat'); await page.getByTestId('sidebar-chat-rename-input').press('Enter');
  await expect.poll(() => mock.sessions.find((session) => session.key === key)?.label).toBe('Renamed chat');
@@ -335,11 +492,33 @@ test('donor sidebar resizing, search and real rename/pin/delete', async () => {
 
 });
 
+test('inline title rename commits and switches to another chat with the same click', async () => {
+ await connect();
+ await page.getByTestId('sidebar-new-chat').click();
+ await page.getByTestId('chat-composer-input').fill('Первый чат');
+ await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+ await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
+ const firstKey = (await page.evaluate(() => window.pincer.chat.snapshot())).selected!;
+ await page.getByTestId('sidebar-new-chat').click();
+ await page.getByTestId('chat-composer-input').fill('Второй чат');
+ await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+ await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
+ const secondKey = (await page.evaluate(() => window.pincer.chat.snapshot())).selected!;
+ await page.getByTestId(`sidebar-session-${firstKey}`).click();
+ await page.getByTestId('chat-session-title').click();
+ await page.getByTestId('chat-session-title-input').fill('Переименованный первый чат');
+ await page.getByTestId(`sidebar-session-${secondKey}`).click();
+ await expect.poll(() => page.evaluate(() => window.pincer.chat.snapshot().then(state => state.selected))).toBe(secondKey);
+ await expect.poll(() => mock.sessions.find(session => session.key === firstKey)?.label).toBe('Переименованный первый чат');
+ await expect(page.getByTestId(`sidebar-session-${secondKey}`)).toHaveClass(/bg-/);
+});
+
 test('settings preserve draft, sending shortcut and theme; chat find locates text', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
   const editor = page.getByTestId('chat-composer-input'); await editor.fill('Keep my draft');
   await page.getByTestId('sidebar-nav-settings').click();
   await page.getByTestId('settings-theme-dark').click(); await expect(page.locator('html')).toHaveClass('dark');
+  await page.getByTestId('settings-nav-chat').click();
   await chooseSelect(page.locator('#send-shortcut'), 'Ctrl+Enter');
   await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
   await expect(editor).toHaveValue('Keep my draft'); await editor.press('Enter');
@@ -385,6 +564,8 @@ test('project creates a chat in its actual Gateway workspace', async () => {
 
  await connect(); await page.getByRole('button', { name: 'Новый проект', exact: true }).click();
  const editor = page.getByRole('dialog'); await editor.getByRole('textbox').first().fill('Research project'); await page.getByTestId('project-path').fill('C:/Research');
+ await expect(page.getByTestId('project-path')).toHaveCSS('cursor', 'text');
+ expect(await page.getByTestId('project-path').evaluate((element) => getComputedStyle(element).boxShadow)).toContain('1px');
  await editor.getByRole('button', { name: 'Создать', exact: true }).click();
  const project = page.locator('[data-testid^="sidebar-project-"]').filter({ hasText: 'Research project' });
  await project.click({ button: 'right' });
@@ -400,7 +581,58 @@ test('project creates a chat in its actual Gateway workspace', async () => {
 test('workspace files read, save and preserve remote conflicts', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
   await page.getByTestId('chat-composer-input').fill('Открой рабочую область'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
-  await page.getByRole('button', { name: 'Рабочая область', exact: true }).click();
+  const workspaceToggle = page.getByTestId('chat-toolbar-workspace');
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('workspace-open-icon')).toHaveCSS('opacity', '1');
+  await workspaceToggle.click();
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('workspace-close-icon')).toHaveCSS('opacity', '1');
+  const animatedPanel = page.getByTestId('workspace-files'); await expect(animatedPanel).toBeVisible();
+  const panelSeparator = page.getByRole('separator', { name: 'Ширина панели файлов', exact: true });
+  await expect(panelSeparator).toHaveCSS('cursor', 'col-resize');
+  await expect(panelSeparator.locator('.pincer-resize-line')).toHaveCSS('width', '1px');
+  await expect(page.getByTestId('sidebar-resize-handle').locator('.pincer-resize-line')).toHaveCSS('width', '1px');
+  const openingParentWidth = await animatedPanel.evaluate((element) => element.parentElement!.getBoundingClientRect().width);
+  await expect.poll(async () => Math.round((await animatedPanel.boundingBox())!.width)).toBe(Math.round(openingParentWidth * 0.45));
+  const initialWidth = (await animatedPanel.boundingBox())!.width;
+  const initialHandle = (await panelSeparator.boundingBox())!;
+  await page.mouse.move(initialHandle.x + initialHandle.width - 1, initialHandle.y + 20); await page.mouse.down();
+  await page.mouse.move(initialHandle.x - 70, initialHandle.y + 20); await page.mouse.up();
+  const savedPercent = await page.evaluate(() => Number((JSON.parse(localStorage.getItem('pincer.preferences') || '{}') as { workspacePanelWidth?: number }).workspacePanelWidth));
+  const panelParentWidth = await animatedPanel.evaluate((element) => element.parentElement!.getBoundingClientRect().width);
+  await expect.poll(async () => Math.round((await animatedPanel.boundingBox())!.width)).toBe(Math.round(panelParentWidth * savedPercent / 100));
+  const savedWidth = (await animatedPanel.boundingBox())!.width;
+  expect(savedWidth).toBeGreaterThan(initialWidth + 50);
+  await workspaceToggle.click();
+  await expect(animatedPanel).toHaveCount(1);
+  await expect(animatedPanel).toHaveCount(0, { timeout: 1000 });
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'false');
+  await workspaceToggle.click();
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => Math.round((await page.getByTestId('workspace-files').boundingBox())!.width)).toBe(Math.round(savedWidth));
+  const closingHandle = (await page.getByRole('separator', { name: 'Ширина панели файлов', exact: true }).boundingBox())!;
+  const mainBounds = (await page.getByTestId('main-content').boundingBox())!;
+  await page.mouse.move(closingHandle.x + closingHandle.width - 1, closingHandle.y + 20); await page.mouse.down();
+  await page.mouse.move(mainBounds.x + mainBounds.width - 1, closingHandle.y + 20);
+  await expect(page.getByTestId('workspace-files')).toHaveAttribute('data-resize-collapsed', 'true');
+  await expect(page.getByTestId('workspace-files')).toHaveCount(1);
+  await expect.poll(async () => (await page.getByTestId('workspace-files').boundingBox())?.width || 0).toBeLessThan(8);
+  await page.mouse.move(closingHandle.x + closingHandle.width - 1, closingHandle.y + 20);
+  await expect(page.getByTestId('workspace-files')).toHaveAttribute('data-resize-collapsed', 'false');
+  await expect.poll(async () => Math.round((await page.getByTestId('workspace-files').boundingBox())!.width)).toBe(Math.round(savedWidth));
+  await page.mouse.up();
+  await expect(page.getByTestId('workspace-files')).toHaveCount(1);
+  const finalHandle = (await page.getByRole('separator', { name: 'Ширина панели файлов', exact: true }).boundingBox())!;
+  await page.mouse.move(finalHandle.x + finalHandle.width - 1, finalHandle.y + 20); await page.mouse.down();
+  await page.mouse.move(mainBounds.x + mainBounds.width - 1, finalHandle.y + 20);
+  await expect(page.getByTestId('workspace-files')).toHaveAttribute('data-resize-collapsed', 'true');
+  await page.mouse.up();
+  await expect(page.getByTestId('workspace-files')).toHaveCount(0, { timeout: 1000 });
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('body')).toHaveCSS('cursor', 'default');
+  await workspaceToggle.click();
+  await expect(workspaceToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => Math.round((await page.getByTestId('workspace-files').boundingBox())!.width)).toBe(Math.round(savedWidth));
   await page.getByTestId('workspace-files').getByRole('button', { name: /README.md/ }).click();
   await expect(page.getByTestId('file-preview-content')).toHaveCSS('user-select', 'text');
   await page.getByTestId('workspace-files').getByRole('button', { name: 'Редактировать', exact: true }).click();
@@ -449,11 +681,11 @@ test('provider and embedding forms write guarded settings, never return saved ke
   const providers = await page.evaluate(() => window.pincer.configuration.providers());
   expect(JSON.stringify(providers)).not.toContain('PRIVATE_PROVIDER_KEY');
   await openMemory();
-  await page.getByRole('button', { name: 'Настроить embeddings' }).click();
+  await page.getByRole('button', { name: 'Настроить векторный поиск' }).click();
   const memory = page.getByRole('dialog', { name: 'Семантическая память' });
-  await memory.getByLabel('Провайдер embeddings').fill('openai');
-  await memory.getByLabel('Модель embeddings').fill('text-embedding-3-small');
-  await memory.getByLabel('API key', { exact: true }).fill('PRIVATE_EMBEDDING_KEY');
+  await memory.getByLabel('Поставщик векторных представлений').fill('openai');
+  await memory.getByLabel('Модель векторных представлений').fill('text-embedding-3-small');
+  await memory.getByLabel('API-ключ', { exact: true }).fill('PRIVATE_EMBEDDING_KEY');
   await memory.getByRole('button', { name: 'Сохранить на Gateway' }).click();
   await expect(memory).not.toBeVisible();
   const config = await page.evaluate(() => window.pincer.configuration.memory());
@@ -621,8 +853,9 @@ test('tool cards, token footer, quotas and text selection are confined to the co
   await page.keyboard.press('Escape');
   const text = page.getByTestId('acp-assistant-message').getByText('Инструменты работают. Готово.', { exact: true });
   await expect(text).toHaveCSS('user-select', 'text');
-  await text.hover(); await expect(text).toHaveCSS('cursor', 'default');
-  await expect(page.getByTestId('chat-composer-input')).toHaveCSS('cursor', 'default');
+  await text.hover(); await expect(text).toHaveCSS('cursor', 'text');
+  await expect(page.getByTestId('chat-composer-input')).toHaveCSS('cursor', 'text');
+  await expect(page.getByTestId('sidebar-resize-handle')).toHaveCSS('cursor', 'col-resize');
   await expect(page.getByTestId('sidebar-new-chat')).toHaveCSS('cursor', 'default');
   await text.dblclick();
   const selectedText = await page.evaluate(() => window.getSelection()?.toString());

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { usePreferences } from '../preferences';
 import type { GatewayState, UpdateState, WorkspaceState } from '../../shared/contract';
@@ -14,7 +14,9 @@ import { Models } from '../donor/Models';
 import { Sidebar } from '../donor/Sidebar';
 import { DonorProvider } from '../donor/adapter';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Files } from '../features/Files';
+import { AnimatePresence } from 'framer-motion';
+
+const Files = lazy(() => import('../features/Files').then(module => ({ default: module.Files })));
 
 export function Shell({ state, language, updates, onDirty, active }: { state: GatewayState; language: Language; configure(): void; openSettings(): void; updates: UpdateState | null; onDirty(value: boolean): void; active: boolean }) {
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
@@ -41,7 +43,7 @@ export function Shell({ state, language, updates, onDirty, active }: { state: Ga
     <Sidebar active={active} />
     <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background p-6" data-testid="main-content">
       {error && <p role="alert" className="absolute left-6 right-6 top-2 z-30 rounded-lg bg-surface-modal p-3 text-sm text-destructive" onClick={() => setError('')}>{error}</p>}
-      <div className={view === 'chat' ? '-m-6 flex h-[calc(100%+3rem)]' : 'hidden'}><div className="min-w-0 flex-1"><Chat state={workspace} language={language} connected={ready} onDirty={setChatDirty} active={active && view === 'chat'} filesOpen={Boolean(fileKey)} openFiles={() => { if (workspace?.selected && (!filesDirty || fileKey === workspace.selected || window.confirm(language === 'ru' ? 'Отменить изменения файла?' : 'Discard file changes?'))) setFileKey(workspace.selected); }} /></div>{fileKey && <Files key={fileKey} sessionKey={fileKey} close={() => setFileKey(null)} onDirty={setFilesDirty} />}</div>
+      <div className={view === 'chat' ? '-m-6 flex h-[calc(100%+3rem)]' : 'hidden'}><div className="min-w-0 flex-1"><Chat state={workspace} language={language} connected={ready} onDirty={setChatDirty} active={active && view === 'chat'} filesOpen={Boolean(fileKey)} openFiles={() => { if (fileKey) { if (!filesDirty || window.confirm(language === 'ru' ? 'Отменить изменения файла?' : 'Discard file changes?')) setFileKey(null); return; } if (workspace?.selected) setFileKey(workspace.selected); }} /></div><Suspense fallback={null}><AnimatePresence initial={false}>{fileKey && <Files key={fileKey} sessionKey={fileKey} close={() => setFileKey(null)} onDirty={setFilesDirty} />}</AnimatePresence></Suspense></div>
       <div className={view === 'memory' ? 'h-full overflow-auto' : 'hidden'}><Memory state={workspace} language={language} connected={ready} onDirty={setMemoryDirty} /></div>
       {view === 'updates' && <div className="h-full overflow-auto"><UpdatesPage state={updates} language={language} dirty={chatDirty || memoryDirty || filesDirty} nodeVersion={state.nodeVersion} /></div>}
       {view === 'agents' && <Agents workspace={workspace} connected={ready} />}

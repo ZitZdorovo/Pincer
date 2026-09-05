@@ -1,6 +1,6 @@
 // Original OpenX ChatToolbar presentation, with Pincer callbacks.
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronDown, FolderTree } from 'lucide-react';
+import { Bot, Check, ChevronDown, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/utils';
@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next';
 export function ChatToolbar({ agents, currentAgentId, selectedAgentId, workspaceAvailable, openBrowser, onAgent, browserActive = false, disabled = false }: { agents: { id: string; name: string }[]; currentAgentId: string; selectedAgentId?: string; workspaceAvailable: boolean; openBrowser(): void; onAgent(id: string | null): void; browserActive?: boolean; disabled?: boolean }) {
  const { t, i18n } = useTranslation('chat'); const ru = i18n.language.startsWith('ru');
  const WORKSPACE_BROWSER_ENABLED = true;
- const closePanel = openBrowser;
  const [open, setOpen] = useState(false); const root = useRef<HTMLDivElement>(null);
  const effectiveId = selectedAgentId || currentAgentId; const effective = agents.find((agent) => agent.id === effectiveId); const label = effective?.name || effectiveId || 'main';
  useEffect(() => { const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); }; const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); }; window.addEventListener('pointerdown', close); window.addEventListener('keydown', escape); return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', escape); }; }, []);
@@ -28,14 +27,18 @@ export function ChatToolbar({ agents, currentAgentId, selectedAgentId, workspace
               variant="ghost"
               size="icon"
               className={cn(
-                'h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                'h-8 w-8 overflow-hidden hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
                 browserActive && 'bg-foreground/10 text-foreground',
               )}
-              onClick={() => (browserActive ? closePanel() : openBrowser())}
+              onClick={openBrowser}
               disabled={!workspaceAvailable}
               aria-label={t('toolbar.workspace')}
+              aria-pressed={browserActive}
             >
-              <FolderTree className="h-4 w-4" />
+              <span className="relative h-4 w-4" aria-hidden="true">
+                <PanelRightOpen data-testid="workspace-open-icon" className={cn('absolute inset-0 h-4 w-4 transition-[opacity,transform] duration-200 ease-out', browserActive ? 'translate-x-1 scale-90 opacity-0' : 'translate-x-0 scale-100 opacity-100')} />
+                <PanelRightClose data-testid="workspace-close-icon" className={cn('absolute inset-0 h-4 w-4 transition-[opacity,transform] duration-200 ease-out', browserActive ? 'translate-x-0 scale-100 opacity-100' : '-translate-x-1 scale-90 opacity-0')} />
+              </span>
             </Button>
           </TooltipTrigger>
           <TooltipContent>

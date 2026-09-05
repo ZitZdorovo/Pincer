@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 export type Preferences = {
   theme: 'system' | 'light' | 'dark'; language: 'ru' | 'en';
-  sidebarWidth: number; sidebarCollapsed: boolean; interfaceFontSize: 'small' | 'default' | 'large' | 'xl' | 'xxl';
+  sidebarWidth: number; sidebarCollapsed: boolean; workspacePanelWidth: number; interfaceFontSize: 'small' | 'default' | 'large' | 'xl' | 'xxl';
   interfaceFont: 'system' | 'sans' | 'serif' | 'mono'; chatFont: 'system' | 'sans' | 'serif' | 'mono';
   accentColor: 'default' | 'orange' | 'green' | 'violet' | 'rose'; chatWidth: number;
   collapseTools: boolean; showAgentActivity: boolean; responseNotifications: boolean;
@@ -19,6 +19,7 @@ function initial(): Preferences {
     language: (stored.language ?? storage?.getItem('pincer.language')) === 'en' ? 'en' : 'ru',
     sidebarWidth: typeof stored.sidebarWidth === 'number' && Number.isFinite(stored.sidebarWidth) ? Math.min(520, Math.max(240, stored.sidebarWidth)) : 320,
     sidebarCollapsed: stored.sidebarCollapsed === true,
+    workspacePanelWidth: typeof stored.workspacePanelWidth === 'number' && Number.isFinite(stored.workspacePanelWidth) ? Math.min(75, Math.max(28, stored.workspacePanelWidth)) : 45,
     interfaceFontSize: ['small', 'large', 'xl', 'xxl'].includes(stored.interfaceFontSize ?? '') ? stored.interfaceFontSize! : 'default',
     interfaceFont: ['sans', 'serif', 'mono'].includes(stored.interfaceFont ?? '') ? stored.interfaceFont! : 'system',
     chatFont: ['sans', 'serif', 'mono'].includes(stored.chatFont ?? '') ? stored.chatFont! : 'system',

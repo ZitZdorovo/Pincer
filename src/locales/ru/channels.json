@@ -48,7 +48,7 @@
     "mainAccount": "Основная учётная запись",
     "customIdLabel": "ID учётной записи",
     "customIdPlaceholder": "напр., feishu-sales-bot",
-    "customIdHint": "Используйте ID учётной записи из строчных букв (буквы, цифры, дефис, подчёркивание) для раз multiple учётных записей одного канала.",
+    "customIdHint": "Используйте идентификатор из строчных букв, цифр, дефисов и подчёркиваний для нескольких учётных записей одного канала.",
     "invalidId": "ID учётной записи не может быть пустым",
     "invalidCanonicalId": "ID учётной записи должен содержать строчные буквы, цифры, дефисы или подчёркивания, начинаться с буквы/цифры и быть не более 64 символов.",
     "idLabel": "ID: {{id}}",
@@ -149,7 +149,7 @@
       ]
     },
     "discord": {
-      "description": "Подключите Discord через токен бота из Developer Portal",
+      "description": "Подключите Discord через токен бота с портала разработчика",
       "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#QS6LdxnA2oNtfcxtFc8cgabnnNd",
       "fields": {
         "token": {
@@ -168,9 +168,9 @@
         }
       },
       "instructions": [
-        "Перейдите в Discord Developer Portal → Приложения → Новое приложение",
+        "Перейдите на портал разработчика Discord → Приложения → Новое приложение",
         "В разделе Бот: Добавить бота, затем скопируйте токен бота",
-        "Включите Message Content Intent + Server Members Intent в Бот → Privileged Gateway Intents",
+        "Включите доступ к содержимому сообщений и участникам сервера в разделе привилегированных разрешений бота",
         "В OAuth2 → URL Generator: выберите \"bot\" + \"applications.commands\", добавьте права на сообщения",
         "Пригласите бота на сервер через сгенерированный URL",
         "Вставьте токен бота ниже"
@@ -197,22 +197,22 @@
       ]
     },
     "dingtalk": {
-      "description": "Подключите DingTalk через плагин канала OpenClaw (режим Stream)",
+      "description": "Подключите DingTalk через плагин канала OpenClaw (потоковый режим)",
       "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
       "fields": {
         "clientId": {
-          "label": "Client ID (AppKey)",
+          "label": "Идентификатор клиента (AppKey)",
           "placeholder": "dingxxxxxx"
         },
         "clientSecret": {
-          "label": "Client Secret (AppSecret)",
+          "label": "Секрет клиента (AppSecret)",
           "placeholder": "Секрет вашего приложения"
         }
       },
       "instructions": [
         "Установите и включите плагин dingtalk в OpenClaw",
-        "Создайте внутреннее приложение DingTalk и включите режим Stream",
-        "Заполните Client ID (AppKey) и Client Secret (AppSecret)"
+        "Создайте внутреннее приложение DingTalk и включите потоковый режим",
+        "Заполните идентификатор и секрет клиента"
       ]
     },
     "signal": {
@@ -231,22 +231,22 @@
       ]
     },
     "feishu": {
-      "description": "Подключите бота Feishu/Lark через WebSocket",
+      "description": "Подключите бота Feishu/Lark через постоянное WebSocket-соединение",
       "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
       "fields": {
         "appId": {
-          "label": "App ID",
+          "label": "Идентификатор приложения",
           "placeholder": "cli_xxxxxx"
         },
         "appSecret": {
-          "label": "App Secret",
+          "label": "Секрет приложения",
           "placeholder": "Секрет вашего приложения"
         }
       },
       "instructions": [
         "Прочитайте документацию, затем перейдите на Feishu Open Platform",
         "Создайте новое приложение",
-        "Получите App ID и App Secret",
+        "Получите идентификатор и секрет приложения",
         "Настройте подписку на события"
       ]
     },
@@ -255,18 +255,18 @@
       "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
       "fields": {
         "botId": {
-          "label": "Bot ID",
+          "label": "Идентификатор бота",
           "placeholder": "ww_xxxxxx"
         },
         "secret": {
-          "label": "App Secret",
+          "label": "Секрет приложения",
           "placeholder": "Секрет вашего WeCom бота"
         }
       },
       "instructions": [
         "Создайте приложение в WeCom Admin Console для получения информации о конфигурации",
         "Убедитесь, что конфигурация сервера получения сообщений включена",
-        "Введите ваш Bot ID (или Corp ID) и Secret для установления соединения"
+        "Введите идентификатор бота (или организации) и секрет для соединения"
       ]
     },
     "imessage": {
@@ -293,18 +293,18 @@
       "docsUrl": "https://docs.openclaw.ai/channels/matrix",
       "fields": {
         "homeserver": {
-          "label": "URL Homeserver",
+          "label": "Адрес домашнего сервера",
           "placeholder": "https://matrix.org"
         },
         "accessToken": {
-          "label": "Access Token",
-          "placeholder": "Ваш access token"
+          "label": "Токен доступа",
+          "placeholder": "Ваш токен доступа"
         }
       },
       "instructions": [
         "Создайте учётную запись Matrix или используйте существующую",
-        "Получите access token из вашего клиента",
-        "Введите homeserver и token ниже"
+        "Получите токен доступа из вашего клиента",
+        "Введите адрес домашнего сервера и токен ниже"
       ]
     },
     "line": {
@@ -312,18 +312,18 @@
       "docsUrl": "https://docs.openclaw.ai/channels/line",
       "fields": {
         "channelAccessToken": {
-          "label": "Channel Access Token",
-          "placeholder": "Ваш LINE channel access token"
+          "label": "Токен доступа канала",
+          "placeholder": "Ваш токен доступа канала LINE"
         },
         "channelSecret": {
-          "label": "Channel Secret",
-          "placeholder": "Ваш LINE channel secret"
+          "label": "Секрет канала",
+          "placeholder": "Ваш секрет канала LINE"
         }
       },
       "instructions": [
         "Перейдите в LINE Developers Console",
         "Создайте канал Messaging API",
-        "Получите Channel Access Token и Secret"
+        "Получите токен доступа и секрет канала"
       ]
     },
     "msteams": {
@@ -331,23 +331,23 @@
       "docsUrl": "https://docs.openclaw.ai/channels/msteams",
       "fields": {
         "appId": {
-          "label": "App ID",
-          "placeholder": "Ваш Microsoft App ID"
+          "label": "Идентификатор приложения",
+          "placeholder": "Ваш идентификатор приложения Microsoft"
         },
         "appPassword": {
-          "label": "App Password",
-          "placeholder": "Ваш Microsoft App Password"
+          "label": "Пароль приложения",
+          "placeholder": "Ваш пароль приложения Microsoft"
         }
       },
       "instructions": [
         "Перейдите на Azure Portal",
         "Зарегистрируйте новое приложение бота",
-        "Получите App ID и создайте пароль",
+        "Получите идентификатор приложения и создайте пароль",
         "Настройте канал Teams"
       ]
     },
     "googlechat": {
-      "description": "Подключите Google Chat через webhook",
+      "description": "Подключите Google Chat через вебхук",
       "docsUrl": "https://docs.openclaw.ai/channels/googlechat",
       "fields": {
         "serviceAccountKey": {
@@ -371,14 +371,14 @@
           "placeholder": "https://your-mattermost.com"
         },
         "botToken": {
-          "label": "Bot Access Token",
-          "placeholder": "Ваш bot access token"
+          "label": "Токен доступа бота",
+          "placeholder": "Ваш токен доступа бота"
         }
       },
       "instructions": [
         "Перейдите в Mattermost Integrations",
         "Создайте новую учётную запись бота",
-        "Скопируйте access token"
+        "Скопируйте токен доступа"
       ]
     },
     "qqbot": {
@@ -386,17 +386,17 @@
       "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
       "fields": {
         "appId": {
-          "label": "App ID",
-          "placeholder": "Ваш QQ Bot App ID"
+          "label": "Идентификатор приложения",
+          "placeholder": "Ваш идентификатор приложения QQ Bot"
         },
         "clientSecret": {
-          "label": "Client Secret",
-          "placeholder": "Ваш QQ Bot Client Secret"
+          "label": "Секрет клиента",
+          "placeholder": "Ваш секрет клиента QQ Bot"
         }
       },
       "instructions": [
         "Зарегистрируйте приложение на QQ Bot Open Platform",
-        "Получите App ID и Client Secret",
+        "Получите идентификатор приложения и секрет клиента",
         "Заполните ваши учётные данные ниже"
       ]
     }

@@ -13,6 +13,7 @@ import { useSkillsData, type Skill } from './skills-adapter';
 import type { WorkspaceState } from '../../shared/contract';
 import { useGatewayStore } from './adapter';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { SettingsPageLoading } from '@/components/common/SettingsPageLoading';
 import { cn } from '@/lib/utils';
 
 const isGatewayStopped = (status: GatewayStatus) => status.state !== 'running';
@@ -90,10 +91,10 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto px-8 py-10">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 flex items-center justify-center rounded-full bg-surface-modal border border-black/5 dark:border-white/5 shrink-0 mb-4 relative shadow-sm">
+            <div className="w-16 h-16 flex items-center justify-center rounded-xl bg-surface-modal border border-black/5 dark:border-white/5 shrink-0 mb-4 relative shadow-sm">
               <span className="text-3xl">{skill.icon || '🔧'}</span>
               {skill.isCore && (
-                <div className="absolute -bottom-1 -right-1 bg-surface-modal rounded-full p-1 shadow-sm border border-black/5 dark:border-white/5">
+                <div className="absolute -bottom-1 -right-1 rounded-md border border-black/5 bg-surface-modal p-1 shadow-sm dark:border-white/5">
                   <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
                 </div>
               )}
@@ -108,14 +109,14 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
               {skill.version && (
                 <Badge
                   variant="secondary"
-                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
+                  className="shrink-0 whitespace-nowrap rounded-md bg-black/[0.04] px-3 py-0.5 font-mono text-tiny font-medium text-foreground/70 shadow-none transition-colors hover:bg-black/[0.08] dark:bg-white/[0.08] dark:hover:bg-white/[0.12]"
                 >
                   v{skill.version}
                 </Badge>
               )}
               <Badge
                 variant="secondary"
-                className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
+                className="shrink-0 whitespace-nowrap rounded-md bg-black/[0.04] px-3 py-0.5 font-mono text-tiny font-medium text-foreground/70 shadow-none transition-colors hover:bg-black/[0.08] dark:bg-white/[0.08] dark:hover:bg-white/[0.12]"
               >
                 {skill.isCore
                   ? t('detail.coreSystem')
@@ -139,7 +140,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge
                   variant="secondary"
-                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
+                  className="shrink-0 whitespace-nowrap rounded-md bg-black/[0.04] px-3 py-0.5 font-mono text-tiny font-medium text-foreground/70 shadow-none dark:bg-white/[0.08]"
                 >
                   {resolveSkillSourceLabel(skill, t)}
                 </Badge>
@@ -189,7 +190,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
             <div className="pt-8 pb-4 flex items-center justify-center w-full px-2 max-w-[340px] mx-auto">
               <Button
                 variant="outline"
-                className="w-full h-[42px] text-meta rounded-full font-semibold shadow-sm bg-transparent border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-foreground/80 hover:text-foreground"
+                className="h-[42px] w-full rounded-lg border-black/20 bg-transparent text-meta font-semibold text-foreground/80 shadow-sm transition-colors hover:bg-black/5 hover:text-foreground dark:border-white/20 dark:hover:bg-white/5"
                 onClick={() => {
                   if (uninstallable && onUninstall && skill.slug) {
                     onUninstall(skill.slug);
@@ -384,11 +385,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
   );
 
   if (loading) {
-    return (
-      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SettingsPageLoading testId="skills-page" title={t('title')} description={t('subtitle')} />;
   }
 
   return (
@@ -410,7 +407,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
             {hasInstalledSkills && (
               <button
                 onClick={handleOpenSkillsFolder}
-                className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0 text-meta font-medium px-4 h-8 rounded-full border border-black/10 dark:border-white/10 flex items-center justify-center text-foreground/80 hover:text-foreground"
+                className="flex h-8 shrink-0 items-center justify-center rounded-lg border border-black/10 px-4 text-meta font-medium text-foreground/80 transition-colors hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5"
               >
                 <FolderOpen className="h-4 w-4 mr-2" />
                 {t('openFolder')}
@@ -436,7 +433,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm">
             <div
               data-testid="skills-search"
-              className="group relative flex min-w-0 flex-[1_1_28rem] items-center rounded-xl border border-border bg-surface-input px-3 py-2 transition-colors focus-within:ring-2 focus-within:ring-ring"
+                className="group relative flex min-w-0 flex-[1_1_28rem] items-center rounded-xl border border-border bg-surface-input px-3 py-2 transition-colors focus-within:ring-1 focus-within:ring-ring"
             >
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
@@ -462,7 +459,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
               data-testid="skills-filter-enabled"
               onClick={() => handleStatusFilterClick('enabled')}
               className={cn(
-                'h-8 rounded-full px-3 text-meta font-medium border shadow-none',
+                'h-8 rounded-lg px-3 text-meta font-medium border shadow-none',
                 statusFilter === 'enabled'
                   ? 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-foreground'
                   : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -477,7 +474,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
               data-testid="skills-filter-disabled"
               onClick={() => handleStatusFilterClick('disabled')}
               className={cn(
-                'h-8 rounded-full px-3 text-meta font-medium border shadow-none',
+                'h-8 rounded-lg px-3 text-meta font-medium border shadow-none',
                 statusFilter === 'disabled'
                   ? 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-foreground'
                   : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -676,7 +673,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
                             size="sm"
                             onClick={() => handleInstall(skill.slug)}
                             disabled={isInstallLoading}
-                            className="h-8 px-4 rounded-full shadow-none font-medium text-xs"
+                            className="h-8 rounded-lg px-4 text-xs font-medium shadow-none"
                           >
                             {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', 'Install')}
                           </Button>

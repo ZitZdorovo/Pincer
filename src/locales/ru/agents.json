@@ -57,7 +57,7 @@
     "modelOverrideLabel": "Переопределение модели",
     "modelProviderLabel": "Провайдер",
     "modelProviderPlaceholder": "Выберите провайдера",
-    "modelProviderEmpty": "Учётные записи провайдеров не настроены. Добавьте в Настройки → AI-провайдеры.",
+    "modelProviderEmpty": "Учётные записи поставщиков не настроены. Добавьте их в Настройки → Поставщики моделей.",
     "modelIdLabel": "ID модели",
     "modelIdPlaceholder": "Выберите модель",
     "modelPreview": "Предпросмотр",
