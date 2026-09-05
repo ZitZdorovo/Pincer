@@ -62,6 +62,7 @@ export class MockGateway {
           const derivedValidator = 'validate' + frame.method.split('.').map((part) => part[0].toUpperCase() + part.slice(1)).join('') + 'Params';
           const validator = (protocol as unknown as Record<string, (input: unknown) => boolean>)[validatorName || derivedValidator];
           if (validator && !validator(frame.params)) { socket.send(JSON.stringify({ type: 'res', id: frame.id, ok: false, error: { code: 'INVALID_REQUEST', message: `Invalid ${frame.method} schema` } })); return; }
+          if (frame.method === 'sessions.create' && frame.params && typeof frame.params === 'object' && 'projectId' in frame.params && 'cwd' in frame.params) { socket.send(JSON.stringify({ type: 'res', id: frame.id, ok: false, error: { code: 'INVALID_REQUEST', message: 'sessions.create projectId cannot be combined with cwd or execNode' } })); return; }
           const payload = this.request(frame.method, frame.params as Record<string, unknown>);
           const respond = () => { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: 'res', id: frame.id, ok: true, payload })); };
           const delay = this.responseDelayMs.get(frame.method) ?? 0;

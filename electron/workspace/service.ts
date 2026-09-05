@@ -199,14 +199,19 @@ export class WorkspaceService {
   async create(agentId: unknown, location: unknown = {}): Promise<void> {
     const agent = bounded(agentId);
     if (!isRecord(location) || Object.keys(location).some((key) => !['projectId', 'cwd'].includes(key))) throw new Error('INVALID_INPUT');
+    const projectId = location.projectId === undefined ? undefined : bounded(location.projectId, 128);
+    const requestedCwd = location.cwd === undefined ? undefined : bounded(location.cwd, 8192);
+    const cwd = requestedCwd || this.state.projects.find((project) => project.id === projectId)?.path;
     const chosenMode = this.state.selected || this.state.permissionMode === undefined ? 'full' : this.state.permissionMode;
-    const params = { ...location, agentId: agent, ...(chosenMode ? { permissionMode: chosenMode } : {}), idempotencyKey: randomUUID() };
+    // Pincer project ids organize the local sidebar. Gateway sessions receive
+    // the resolved working directory, never projectId together with cwd.
+    const params = { agentId: agent, ...(cwd ? { cwd } : {}), ...(chosenMode ? { permissionMode: chosenMode } : {}), idempotencyKey: randomUUID() };
     if (!validateSessionsCreateParams(params)) throw new Error('INVALID_INPUT');
     const value = record(await this.rpc('sessions.create', params));
     const key = bounded(value.key);
     await this.select(key);
     // Keep the new session immediately visible even before the broadcast/list catches up.
-    if (!this.state.sessions.some((session) => session.key === key)) this.state.sessions.unshift({ key, title: key, agentId: agent, cwd: string(location.cwd) || this.state.projects.find((project) => project.id === location.projectId)?.path });
+    if (!this.state.sessions.some((session) => session.key === key)) this.state.sessions.unshift({ key, title: key, agentId: agent, cwd });
     this.emit();
   }
   async registerProject(name: unknown, path: unknown): Promise<void> {

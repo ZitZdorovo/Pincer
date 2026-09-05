@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="stemGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#2DD4BF" />
+    </linearGradient>
+    <linearGradient id="loopGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60A5FA" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+  </defs>
+  
+  <rect width="256" height="256" rx="56" fill="#0F172A" />
+  
+  <path d="M 114 64 H 98 A 16 16 0 0 0 82 80 V 176 A 16 16 0 0 0 98 192 H 114 Z" fill="url(#stemGrad)" />
+  
+  <path d="M 114 64 H 150 A 48 48 0 0 1 198 112 A 48 48 0 0 1 150 160 H 114 V 128 H 150 A 16 16 0 0 0 166 112 A 16 16 0 0 0 150 96 H 114 Z" fill="url(#loopGrad)" />
+        
+  <polygon points="216,74 216,150 164,112" fill="#0F172A" />
+  
+  <circle cx="192" cy="112" r="10" fill="url(#glow)" />
+</svg>

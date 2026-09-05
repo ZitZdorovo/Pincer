@@ -33,7 +33,9 @@ it('keeps a new chat local until the first send and stores non-Git project folde
   expect(workspace.snapshot()).toMatchObject({ selected: null, draftLocation: { projectId: project.id, cwd: project.path } });
   expect(mock.responses.filter((request) => request.method === 'sessions.create')).toHaveLength(existingCreates);
   await workspace.create('main', workspace.snapshot().draftLocation);
-  expect(mock.responses.findLast((request) => request.method === 'sessions.create')?.params).toMatchObject({ agentId: 'main', projectId: project.id, cwd: project.path });
+  const create = mock.responses.findLast((request) => request.method === 'sessions.create')?.params;
+  expect(create).toMatchObject({ agentId: 'main', cwd: project.path });
+  expect(create).not.toHaveProperty('projectId');
 });
 it('preserves 16-second measured duration through a racing history reload with identical timestamps', async () => {
   mock.holdRun = true; mock.deltaDelayMs = 60000; await workspace.create('main');

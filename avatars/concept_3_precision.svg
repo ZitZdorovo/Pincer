@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg_c3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181b"/>
+      <stop offset="100%" stop-color="#09090b"/>
+    </linearGradient>
+    <linearGradient id="claw_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg_c3)"/>
+  <!-- Abstract Tool / Pincers -->
+  <path d="M 64 196 L 116 110 L 86 60 L 102 52 L 128 96 L 154 52 L 170 60 L 140 110 L 192 196 L 166 196 L 128 136 L 90 196 Z" fill="url(#claw_grad)"/>
+  <circle cx="128" cy="80" r="12" fill="#f43f5e"/>
+</svg>
