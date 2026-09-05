@@ -27,6 +27,7 @@ const api: PincerApi = {
   },
   platform: process.platform,
   configuration: {
+    discoverModels: (input) => ipcRenderer.invoke('pincer:configuration:models-discover', input),
     providers: () => ipcRenderer.invoke('pincer:configuration:providers'),
     saveProvider: (hash, input) => ipcRenderer.invoke('pincer:configuration:provider-save', hash, input),
     deleteProvider: (hash, id) => ipcRenderer.invoke('pincer:configuration:provider-delete', hash, id),
@@ -61,7 +62,13 @@ const api: PincerApi = {
     jobRuns: (id) => ipcRenderer.invoke('pincer:management:job-runs', id),
     probeModel: (provider, agent) => ipcRenderer.invoke('pincer:management:model-probe', provider, agent),
   },
-  desktop: { chooseDirectory: () => ipcRenderer.invoke('pincer:desktop:choose-directory'), startup: () => ipcRenderer.invoke('pincer:desktop:startup'), setStartup: (enabled) => ipcRenderer.invoke('pincer:desktop:set-startup', enabled) },
+  desktop: {
+    chooseDirectory: () => ipcRenderer.invoke('pincer:desktop:choose-directory'),
+    startup: () => ipcRenderer.invoke('pincer:desktop:startup'),
+    setStartup: (enabled) => ipcRenderer.invoke('pincer:desktop:set-startup', enabled),
+    closeBehavior: () => ipcRenderer.invoke('pincer:desktop:close-behavior'),
+    setCloseBehavior: (value) => ipcRenderer.invoke('pincer:desktop:set-close-behavior', value),
+  },
   chat: {
     snapshot: () => ipcRenderer.invoke('pincer:chat:snapshot'),
     refresh: () => ipcRenderer.invoke('pincer:chat:refresh'),

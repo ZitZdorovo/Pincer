@@ -34,7 +34,7 @@ export function ToolActivity({ tools, live = false }: { tools: ToolCall[]; live?
   const summary = [commands ? `${ru ? 'Выполнено команд' : 'Commands'}: ${commands}` : '', ...[...others].map(([name, count]) => `${toolLabel(name)} ×${count}`)].filter(Boolean).join(', ');
   return <details data-live={live || undefined} data-testid="tool-activity" className="group/activity w-full text-xs text-muted-foreground">
     <summary className="flex cursor-pointer list-none items-center gap-2 py-1 hover:text-foreground"><ListTree size={14} /><span className="min-w-0 truncate">{summary}</span><ChevronDown size={12} className="-rotate-90 transition-transform group-open/activity:rotate-0" /></summary>
-    <div className="mt-1 max-h-[440px] space-y-0.5 overflow-y-auto pr-1">
+    <div className="ml-[22px] mt-1 max-h-[440px] space-y-0.5 overflow-y-auto pr-1">
       {tools.map((tool) => <details key={tool.id} data-testid="tool-call" className="group/tool">
         <summary className="flex cursor-pointer list-none items-center gap-2 py-1 hover:text-foreground">{commandTool(tool) ? <TerminalSquare size={14} className="shrink-0" /> : <Puzzle size={14} className="shrink-0" />}<span className="min-w-0 truncate">{commandTool(tool) ? '$ ' : toolLabel(tool.name) + ' '}{inputSummary(tool.input)}</span><ChevronDown size={12} className="shrink-0 -rotate-90 transition-transform group-open/tool:rotate-0" /></summary>
         <div className="overflow-hidden rounded-2xl border border-border text-foreground">

@@ -70,12 +70,16 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
  const guardNavigation = (action: () => void) => { if (settingsDirty || memoryDirty) setPendingNavigation(() => action); else action(); };
  const back = () => guardNavigation(leave);
  const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
- const { theme, language, interfaceFontSize, reducedMotion, agentBadgeMode, agentBadgeAliases, sendShortcut, chatWorkspacePath } = preferences;
+ const { theme, language, interfaceFontSize, reducedMotion, closeBehavior, agentBadgeMode, agentBadgeAliases, sendShortcut, chatWorkspacePath } = preferences;
  const devModeUnlocked = preferences.devMode;
  const setTheme = (value: typeof theme) => setPreferences({ theme: value });
  const handleLanguageChange = (value: typeof language) => setPreferences({ language: value });
  const setInterfaceFontSize = (value: typeof interfaceFontSize) => setPreferences({ interfaceFontSize: value });
  const setReducedMotion = (value: typeof reducedMotion) => setPreferences({ reducedMotion: value });
+ const setCloseBehavior = (value: typeof closeBehavior) => {
+   setPreferences({ closeBehavior: value });
+   void window.pincer.desktop.setCloseBehavior(value).then((result) => { if (!result.ok) toast.error(result.error.message); });
+ };
  const setAgentBadgeMode = (value: typeof agentBadgeMode) => setPreferences({ agentBadgeMode: value });
  const setAgentBadgeAlias = (id: string, value: string) => setPreferences({ agentBadgeAliases: { ...agentBadgeAliases, [id]: value } });
  const setDevModeUnlocked = (value: boolean) => setPreferences({ devMode: value });
@@ -106,6 +110,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
    const accept = (snapshot: Awaited<ReturnType<typeof window.pincer.chat.snapshot>>) => { if (alive && snapshot.revision >= revision) { revision = snapshot.revision; setAgents(snapshot.agents); setWorkspace(snapshot); } };
    const off = window.pincer.chat.onState(accept); void window.pincer.chat.snapshot().then(accept);
    void window.pincer.desktop.startup().then((value) => { if (alive) setStartup(value); });
+   void window.pincer.desktop.closeBehavior().then((value) => { if (alive && value !== preferences.closeBehavior) setPreferences({ closeBehavior: value }); });
    return () => { alive = false; off(); };
  }, []);
   useEffect(() => { const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"], [role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) { event.preventDefault(); back(); } }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [back]);
@@ -151,6 +156,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
     { section: 'appearance' as const, target: 'settings-font-size', label: t('appearance.fontSize') },
     { section: 'appearance' as const, target: 'settings-reduced-motion', label: t('appearance.reducedMotion') },
     { section: 'appearance' as const, target: 'settings-launch-at-startup', label: t('appearance.launchAtStartup') },
+    { section: 'appearance' as const, target: 'settings-close-behavior', label: ru ? 'При закрытии окна' : 'When closing the window' },
     { section: 'appearance' as const, target: 'agent-badge-mode', label: t('appearance.agentBadge') },
     { section: 'chat' as const, target: 'settings-default-workspace', label: t('chat.defaultWorkspace') },
     { section: 'chat' as const, target: 'settings-send-shortcut', label: t('chat.sendShortcut') },
@@ -359,6 +365,16 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   <p className="text-meta text-muted-foreground mt-1">{t('appearance.launchAtStartupDesc')}</p>
                 </div>
                 <Switch id="settings-launch-at-startup" checked={launchAtStartup} onCheckedChange={setLaunchAtStartup} disabled={!startup.supported || startupBusy} />
+              </div>
+              <div id="settings-close-behavior" className="flex items-center justify-between gap-6 border-t border-border pt-5">
+                <div>
+                  <Label htmlFor="close-behavior" className="text-sm font-medium text-foreground/80">{ru ? 'При закрытии окна' : 'When closing the window'}</Label>
+                  <p className="mt-1 text-meta text-muted-foreground">{ru ? 'Полностью завершить Pincer или оставить его работающим в системном трее.' : 'Quit Pincer completely or keep it running in the system tray.'}</p>
+                </div>
+                <Select id="close-behavior" aria-label={ru ? 'Действие при закрытии' : 'Close behavior'} value={closeBehavior} onChange={(event) => setCloseBehavior(event.target.value as typeof closeBehavior)}>
+                  <option value="quit">{ru ? 'Закрыть полностью' : 'Quit completely'}</option>
+                  <option value="tray">{ru ? 'Скрыть в трей' : 'Hide to tray'}</option>
+                </Select>
               </div>
               <div className="space-y-3 border-t border-border pt-5">
                 <div>

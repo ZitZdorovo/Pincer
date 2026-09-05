@@ -1,11 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, session, Tray } from 'electron';
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GatewayService } from './gateway/service';
 import { Vault } from './gateway/vault';
 import { parseConnection } from './gateway/validation';
-import type { Result } from '../shared/contract';
+import type { CloseBehavior, Result } from '../shared/contract';
 import { WorkspaceService } from './workspace/service';
 import { RunTiming } from './workspace/run-timing';
 import { QuotaService } from './workspace/quotas';
@@ -30,8 +31,19 @@ if (explicitProfile && !isAbsolute(explicitProfile)) throw new Error('PROFILE_PA
 app.setPath('userData', explicitProfile || testData || join(app.getPath('appData'), 'Pincer'));
 const root = fileURLToPath(new URL('../', import.meta.url));
 let window: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let gateway: GatewayService | null = null;
 let quitting = false;
+const desktopPreferencesPath = join(app.getPath('userData'), 'desktop-preferences.json');
+function loadCloseBehavior(): CloseBehavior {
+  try { return JSON.parse(readFileSync(desktopPreferencesPath, 'utf8')).closeBehavior === 'tray' ? 'tray' : 'quit'; }
+  catch { return 'quit'; }
+}
+let closeBehavior = loadCloseBehavior();
+function persistCloseBehavior(): void {
+  mkdirSync(app.getPath('userData'), { recursive: true });
+  writeFileSync(desktopPreferencesPath, JSON.stringify({ closeBehavior }), { encoding: 'utf8', mode: 0o600 });
+}
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -85,6 +97,38 @@ async function start(): Promise<void> {
       return { ok: false, error: { code: /^[A-Z_]+$/.test(message) ? message : 'CONNECTION_FAILED', message } };
     }
   };
+  function showWindow(): void {
+    if (!window || window.isDestroyed()) createWindow();
+    window?.show();
+    if (window?.isMinimized()) window.restore();
+    window?.focus();
+  }
+  function setCloseBehavior(value: unknown): CloseBehavior {
+    if (value !== 'quit' && value !== 'tray') throw new Error('INVALID_INPUT');
+    closeBehavior = value;
+    persistCloseBehavior();
+    updateTrayMenu();
+    return closeBehavior;
+  }
+  function updateTrayMenu(): void {
+    if (!tray || tray.isDestroyed()) return;
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Открыть Pincer', click: showWindow },
+      { type: 'separator' },
+      { label: 'Скрывать в трей при закрытии', type: 'radio', checked: closeBehavior === 'tray', click: () => setCloseBehavior('tray') },
+      { label: 'Закрывать полностью', type: 'radio', checked: closeBehavior === 'quit', click: () => setCloseBehavior('quit') },
+      { type: 'separator' },
+      { label: 'Выйти из Pincer', click: () => app.quit() },
+    ]));
+  }
+  function ensureTray(): void {
+    if (tray && !tray.isDestroyed()) return;
+    const image = nativeImage.createFromPath(join(root, 'assets/icon.png')).resize({ width: 18, height: 18 });
+    tray = new Tray(image);
+    tray.setToolTip('Pincer');
+    tray.on('click', showWindow);
+    updateTrayMenu();
+  }
   ipcMain.handle('pincer:gateway:snapshot', (event) => { trusted(event); return service.snapshot(); });
   const operation = (channel: string, action: (...args: unknown[]) => unknown, mutating = false) => {
     ipcMain.handle(`pincer:${channel}`, (event, ...args: unknown[]) => {
@@ -142,6 +186,7 @@ async function start(): Promise<void> {
   operation('drafts:read', (scope) => { if (scope !== workspace.snapshot().scope) throw new Error('CONNECTION_CHANGED'); return drafts.read(scope); });
   operation('drafts:write', (scope, key, text) => { if (scope !== workspace.snapshot().scope) throw new Error('CONNECTION_CHANGED'); return drafts.write(scope, key, text); });
   operation('configuration:providers', () => configuration.providers());
+  operation('configuration:models-discover', (input) => configuration.discoverModels(input));
   operation('settings:catalog', () => gatewaySettings.catalog());
   operation('settings:section', (root) => gatewaySettings.section(root));
   operation('settings:save', (lease, value) => gatewaySettings.save(lease, value), true);
@@ -159,6 +204,8 @@ async function start(): Promise<void> {
     const supported = app.isPackaged && !explicitProfile && ['win32', 'darwin'].includes(process.platform);
     return { supported, enabled: supported && app.getLoginItemSettings().openAtLogin };
   });
+  ipcMain.handle('pincer:desktop:close-behavior', (event) => { trusted(event); return closeBehavior; });
+  operation('desktop:set-close-behavior', (value) => setCloseBehavior(value));
   operation('desktop:set-startup', (enabled) => {
     if (typeof enabled !== 'boolean') throw new Error('INVALID_INPUT');
     if (!app.isPackaged || explicitProfile || !['win32', 'darwin'].includes(process.platform)) throw new Error('INSTALLED_APP_REQUIRED');
@@ -205,10 +252,10 @@ async function start(): Promise<void> {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   Menu.setApplicationMenu(null);
-  const createWindow = () => {
+  function createWindow(): void {
     window = new BrowserWindow({
       width: 1280, height: 850, minWidth: 760, minHeight: 620, show: false,
-      title: 'Pincer', backgroundColor: '#f5f5f5',
+      title: 'Pincer', backgroundColor: '#f5f5f5', icon: join(root, 'assets/icon.png'),
       frame: process.platform !== 'win32',
       ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
       webPreferences: { preload: join(root, 'dist-electron/preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
@@ -229,14 +276,18 @@ async function start(): Promise<void> {
     });
     window.on('maximize', () => window?.webContents.send('pincer:window:maximized', true));
     window.on('unmaximize', () => window?.webContents.send('pincer:window:maximized', false));
+    window.on('close', (event) => {
+      if (!quitting && closeBehavior === 'tray') { event.preventDefault(); window?.hide(); }
+    });
     window.once('ready-to-show', () => window?.show());
     window.on('closed', () => { window = null; });
     void window.loadFile(join(root, 'dist/index.html'));
-  };
+  }
   service.subscribe((state) => {
     if (window && !window.isDestroyed()) window.webContents.send('pincer:gateway:state', state);
   });
   createWindow();
+  ensureTray();
   approvals.subscribe((state) => { if (window && !window.isDestroyed()) window.webContents.send('pincer:approvals:state', state); });
   workspace.subscribe((state) => { if (window && !window.isDestroyed()) window.webContents.send('pincer:chat:state', state); });
   updates.subscribe((state) => { if (window && !window.isDestroyed()) window.webContents.send('pincer:updates:state', state); });
@@ -249,14 +300,15 @@ async function start(): Promise<void> {
     setTimeout(() => { void updates.check(); }, 15000).unref();
     setInterval(() => { void updates.check(); }, 4 * 60 * 60 * 1000).unref();
   }
-  app.on('activate', () => { if (!window) createWindow(); });
+  app.on('activate', showWindow);
   if (vault.profile && vault.credential) service.connectSaved();
 }
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin' && closeBehavior === 'quit') app.quit(); });
 app.on('before-quit', (event) => {
   if (!gateway || quitting) return;
   event.preventDefault();
   quitting = true;
   void gateway.disconnect().finally(() => app.quit());
 });
+app.on('will-quit', () => { tray?.destroy(); tray = null; });

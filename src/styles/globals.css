@@ -7,6 +7,17 @@
   --radius-panel: .75rem;
 }
 
+/* Shared row geometry: keep fields flexible and action labels intact. */
+input { min-width: 0; }
+.settings-content article > .mt-4.flex.gap-2 { align-items: center; }
+.settings-content article > .mt-4.flex.gap-2 > input { flex: 1; }
+.settings-content article > .mt-4.flex.gap-2 > button { flex-shrink: 0; height: 40px; }
+[data-testid="chat-request-stats-button"] { gap: 6px; }
+[data-testid="memory-page"] .settings-card > :first-child { margin-bottom: 1rem; }
+[data-testid="memory-page"] .settings-card > form { align-items: stretch; }
+[data-testid="memory-page"] .settings-card > form > button { height: 40px; }
+[data-testid="chat-page"] { isolation: isolate; clip-path: inset(0 round 16px 0 0 0); }
+
 /* One shape language for the whole client: controls are 8px, surfaces are
  * 12px. Fully round shapes remain reserved for status/progress/switches. */
 .rounded-2xl,
@@ -918,7 +929,7 @@ select:focus {
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: normal;
-  hyphens: auto;
+  hyphens: none;
 }
 
 ::highlight(openx-chat-search) {

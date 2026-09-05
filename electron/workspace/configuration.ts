@@ -13,6 +13,36 @@ function endpoint(value: unknown): string {
 }
 export class ConfigurationService {
   constructor(private gateway: Pick<GatewayService, 'operatorRequest'>) {}
+  async discoverModels(input: unknown): Promise<string[]> {
+    if (!isRecord(input)) throw new Error('INVALID_INPUT');
+    const base = endpoint(input.baseUrl).replace(/\/$/, '').replace(/\/models$/, '');
+    const api = bounded(input.api, 64);
+    const key = input.apiKey ? bounded(input.apiKey, 8192) : '';
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (key) {
+      if (api === 'anthropic-messages') { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; }
+      else headers.Authorization = `Bearer ${key}`;
+    }
+    const url = new URL(api === 'ollama' ? `${base.replace(/\/v1$/, '')}/api/tags` : `${base}/models`);
+    const ids = new Set<string>();
+    const cursors = new Set<string>();
+    do {
+      let response: Response;
+      try { response = await fetch(url, { headers, redirect: 'error', signal: AbortSignal.timeout(15000) }); }
+      catch { throw new Error('MODEL_DISCOVERY_UNAVAILABLE'); }
+      if (!response.ok) throw new Error(`MODEL_DISCOVERY_HTTP_${response.status}`);
+      let value: Record<string, unknown>;
+      try { value = rec(await response.json()); } catch { throw new Error('INVALID_MODEL_CATALOG'); }
+      const rows = Array.isArray(value.data) ? value.data : Array.isArray(value.models) ? value.models : [];
+      for (const row of rows) { const model = rec(row); const id = str(model.id) || str(model.name); if (id) ids.add(bounded(id, 256)); }
+      const cursor = value.has_more === true ? str(value.last_id) : '';
+      if (!cursor) break;
+      if (cursors.has(cursor)) throw new Error('INVALID_MODEL_CATALOG');
+      cursors.add(cursor); url.searchParams.set('after_id', cursor);
+    } while (true);
+    if (!ids.size) throw new Error('EMPTY_MODEL_CATALOG');
+    return [...ids];
+  }
   private async snapshot() {
     const value = rec(await this.gateway.operatorRequest('config.get', {}));
     if (!str(value.hash) || !isRecord(value.config)) throw new Error('CONFIG_UNAVAILABLE');
@@ -36,13 +66,13 @@ export class ConfigurationService {
     if (!/^[a-z][a-z0-9_-]*$/.test(id) || ['constructor', 'prototype', '__proto__'].includes(id)) throw new Error('INVALID_PROVIDER');
     const api = bounded(input.api, 64);
     if (!['openai-completions', 'openai-responses', 'anthropic-messages', 'ollama'].includes(api)) throw new Error('INVALID_API');
-    if (!Array.isArray(input.models) || !input.models.length || input.models.length > 200) throw new Error('INVALID_MODELS');
+    if (!Array.isArray(input.models) || !input.models.length) throw new Error('INVALID_MODELS');
     const ids = [...new Set(input.models.map((model) => bounded(model, 256)))];
     const { hash: current, config } = await this.snapshot(); if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
     const previous = rec(rec(rec(config.models).providers)[id]);
     const existing = Array.isArray(previous.models) ? previous.models.map(rec) : [];
     const models = ids.map((model) => existing.find((entry) => entry.id === model) || { id: model, name: model });
-    const baseUrl = endpoint(input.baseUrl);
+    const baseUrl = endpoint(input.baseUrl).replace(/\/$/, '').replace(/\/models$/, '');
     if (previous.apiKey && str(previous.baseUrl) !== baseUrl && !input.apiKey) throw new Error('NEW_DESTINATION_REQUIRES_NEW_KEY');
     const provider = { baseUrl, api, models, ...(input.apiKey ? { apiKey: bounded(input.apiKey, 8192) } : {}) };
     await this.patch(current, { models: { providers: { [id]: provider } } }, [`models.providers.${id}.models`]);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { QuotaSnapshot, QuotaSource } from '../../shared/quotas';
+import { quotasForModel } from '../../shared/quotas';
 import { usePreferences } from '../preferences';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -41,13 +42,14 @@ export function useProviderQuotas(scope: string, enabled = true) {
   }, [scope, enabled]);
   return { data, loading, failed, refresh: (force = false) => { attempts.current = 0; return refresh(force); } };
 }
-export function QuotaList({ scope, enabled = true, compact = false }: { scope: string; enabled?: boolean; compact?: boolean }) {
+export function QuotaList({ scope, enabled = true, compact = false, model, provider }: { scope: string; enabled?: boolean; compact?: boolean; model?: string; provider?: string }) {
   const ru = usePreferences().language === 'ru'; const { data, loading, failed, refresh } = useProviderQuotas(scope, enabled); const navigate = useNavigate();
   const date = (n: number) => new Intl.DateTimeFormat(ru ? 'ru' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(n);
+  const providers = compact ? quotasForModel(data?.providers || [], model || '', provider) : data?.providers || [];
   return <section data-testid="provider-quotas" className={compact ? 'text-xs' : 'settings-card text-sm'}>
     <div className="flex items-center justify-between gap-3"><h3 className="font-medium">{ru ? 'Лимиты провайдеров' : 'Provider limits'}</h3><button type="button" disabled={loading || !enabled} onClick={() => void refresh(true)} aria-label={ru ? 'Обновить лимиты' : 'Refresh limits'} className="rounded-lg p-1.5 hover:bg-foreground/5"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button></div>
     {loading && !data && <p className="mt-3 text-muted-foreground">{ru ? 'Загружаем лимиты…' : 'Loading limits…'}</p>}
-    {data?.providers.map((p, i) => <div key={`${p.source}:${p.provider}:${i}`} className="mt-4 border-t border-border pt-3">
+    {providers.map((p, i) => <div key={`${p.source}:${p.provider}:${i}`} className="mt-4 border-t border-border pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><strong>{p.displayName}</strong><span className="text-[10px] text-muted-foreground">{p.source === 'gateway' ? 'Gateway' : 'OmniRoute'}{p.plan ? ` · ${p.plan}` : ''}</span></div>
       {p.error && <p className="mt-1 text-amber-700 dark:text-amber-400">{ru ? 'Последние данные. Не удалось обновить.' : 'Last known data. Refresh failed.'}</p>}
       {!p.windows.length && <p className="mt-2 text-muted-foreground">{ru ? 'Провайдер не сообщил лимиты.' : 'Provider did not report limits.'}</p>}
@@ -59,7 +61,7 @@ export function QuotaList({ scope, enabled = true, compact = false }: { scope: s
     </div>)}
     {data?.refreshing && <p role="status" className="mt-3 text-muted-foreground">{ru ? 'Gateway запрашивает свежие лимиты…' : 'Gateway is refreshing provider limits…'}</p>}
     {(failed || !!data?.errors.length) && <p role="alert" className="mt-3 text-amber-700 dark:text-amber-400">{ru ? 'Не удалось обновить часть лимитов. Проверь подключение и токен источника.' : 'Some limits could not be refreshed. Check the connection and source token.'}</p>}
-    {!loading && !data?.refreshing && !data?.providers.length && <p className="mt-3 leading-relaxed text-muted-foreground">{ru ? 'Gateway пока не передал квоты. Для моделей через OmniRoute подключи его ниже. Отсутствие данных не означает нулевой расход или полный остаток.' : 'Gateway has not supplied quotas. Connect OmniRoute for routed models. Missing data does not mean zero usage or full allowance.'}</p>}
+    {!loading && !data?.refreshing && !providers.length && <p className="mt-3 leading-relaxed text-muted-foreground">{compact ? (ru ? 'Лимиты выбранной модели пока не получены.' : 'Limits for the selected model are not available yet.') : (ru ? 'Лимиты провайдеров пока не получены.' : 'Provider limits are not available yet.')}</p>}
     {compact && <button
       type="button"
       data-testid="configure-quota-sources"

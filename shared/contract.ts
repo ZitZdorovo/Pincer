@@ -59,6 +59,7 @@ export type UpdateState = {
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: Failure };
 export type WindowAction = 'minimize' | 'maximize' | 'close' | 'quit';
+export type CloseBehavior = 'quit' | 'tray';
 export type MenuId = 'file' | 'edit' | 'view' | 'help';
 export type PincerApi = {
   settings: import('./settings').GatewaySettingsApi;
@@ -73,6 +74,8 @@ export type PincerApi = {
     chooseDirectory(): Promise<Result<string | null>>;
     startup(): Promise<{ enabled: boolean; supported: boolean }>;
     setStartup(enabled: boolean): Promise<Result<boolean>>;
+    closeBehavior(): Promise<CloseBehavior>;
+    setCloseBehavior(value: CloseBehavior): Promise<Result<CloseBehavior>>;
   };
   chat: {
     snapshot(): Promise<WorkspaceState>;

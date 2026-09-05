@@ -32,7 +32,14 @@ export function useProviderData(connected: boolean) {
   };
   return { accounts, statuses, vendors, defaultAccountId: null as string | null, loading, error, refreshProviderSnapshot,
     createAccount: save,
-    updateAccount: async (id: string, updates: Partial<ProviderAccount>, apiKey?: string) => { const account = accounts.find((item) => item.id === id); if (!account) throw new Error('Provider unavailable'); await save({ ...account, ...updates }, apiKey); },
+    updateAccount: async (id: string, updates: Partial<ProviderAccount>, apiKey?: string) => {
+      const account = accounts.find((item) => item.id === id); if (!account) throw new Error('Provider unavailable');
+      if (!apiKey && Object.keys(updates).every(key => key === 'label')) {
+        if (updates.label?.trim()) setProviderLabels(current => { const next = { ...current, [id]: updates.label!.trim() }; localStorage.setItem('pincer.provider-labels', JSON.stringify(next)); return next; });
+        return;
+      }
+      await save({ ...account, ...updates }, apiKey);
+    },
     removeAccount: async (id: string) => {
       if (!snapshot || !connected) throw new Error('Gateway configuration is unavailable.');
       const result = await window.pincer.configuration.deleteProvider(snapshot.hash, id);

@@ -34,7 +34,7 @@ export function RequestStats({ state }: { state: WorkspaceState | null }) {
     {open && <div role="dialog" aria-label={t('composer.requestStats')} data-testid="chat-request-stats-panel" className="absolute bottom-full right-0 z-[70] mb-2 max-h-[65vh] w-80 overflow-y-auto rounded-xl border border-border bg-surface-modal p-4 text-left shadow-2xl"><div className="flex justify-between gap-2 text-[11px] font-medium uppercase"><span className="text-muted-foreground">{t('composer.contextWindow')}</span><span>{used !== undefined ? number(used) : '—'} / {limit ? number(limit) : '—'}{percent !== undefined ? ` · ${percent}%` : ''}</span></div>
     <div className="mt-2 h-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10"><div className="h-full bg-foreground/55 transition-[width]" style={{ width: `${percent ?? 0}%` }} /></div>
     {!!last && <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">{(['input', 'output', 'cacheRead', 'cacheWrite'] as const).map((key) => last[key] !== undefined && <div key={key} className="bg-black/[0.025] p-2 dark:bg-white/[0.035]"><p className="text-[10px] text-muted-foreground">{t(`composer.${key}`)}</p><p className="font-mono text-xs">{number(last[key]!)}</p></div>)}</div>}
-    <div className="mt-4 border-t border-border pt-3"><QuotaList key={state?.scope} scope={state?.scope || ''} compact /></div>
+    <div className="mt-4 border-t border-border pt-3"><QuotaList key={state?.scope} scope={state?.scope || ''} compact model={state?.model || ''} provider={model?.provider} /></div>
     </div>}
   </div>;
 }

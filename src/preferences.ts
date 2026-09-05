@@ -5,7 +5,7 @@ export type Preferences = {
   interfaceFont: 'system' | 'sans' | 'serif' | 'mono'; chatFont: 'system' | 'sans' | 'serif' | 'mono';
   accentColor: 'default' | 'orange' | 'green' | 'violet' | 'rose'; chatWidth: number;
   collapseTools: boolean; showAgentActivity: boolean; responseNotifications: boolean;
-  reducedMotion: 'system' | 'on' | 'off'; sendShortcut: 'enter' | 'ctrl-enter';
+  reducedMotion: 'system' | 'on' | 'off'; sendShortcut: 'enter' | 'ctrl-enter'; closeBehavior: 'quit' | 'tray';
   agentBadgeMode: 'full' | 'initial' | 'hidden' | 'custom'; agentBadgeAliases: Record<string, string>;
   devMode: boolean; chatWorkspacePath: string;
 };
@@ -28,6 +28,7 @@ function initial(): Preferences {
     collapseTools: stored.collapseTools === true, showAgentActivity: stored.showAgentActivity !== false, responseNotifications: stored.responseNotifications !== false,
     reducedMotion: stored.reducedMotion === 'on' || stored.reducedMotion === 'off' ? stored.reducedMotion : 'system',
     sendShortcut: stored.sendShortcut === 'ctrl-enter' ? 'ctrl-enter' : 'enter',
+    closeBehavior: stored.closeBehavior === 'tray' ? 'tray' : 'quit',
     agentBadgeMode: ['initial', 'hidden', 'custom'].includes(stored.agentBadgeMode ?? '') ? stored.agentBadgeMode! : 'full',
     agentBadgeAliases: Object.fromEntries(Object.entries(stored.agentBadgeAliases ?? {}).filter(([, value]) => typeof value === 'string').slice(0, 200)),
     devMode: stored.devMode === true,

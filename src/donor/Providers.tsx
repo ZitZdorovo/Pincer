@@ -296,6 +296,7 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
               onSaveEdits={async (payload) => {
                 const updates: Partial<ProviderAccount> = {};
                 if (payload.updates) {
+                  if (payload.updates.name !== undefined) updates.label = payload.updates.name;
                   if (payload.updates.baseUrl !== undefined) updates.baseUrl = payload.updates.baseUrl;
                   if (payload.updates.apiProtocol !== undefined) updates.apiProtocol = payload.updates.apiProtocol;
                   if (payload.updates.headers !== undefined) updates.headers = payload.updates.headers;
@@ -368,6 +369,7 @@ function ProviderCard({
   const { account, vendor, status } = item;
   const defaultAgent = useAgentsStore((state) => state.agents[0]?.id || '');
   const [newKey, setNewKey] = useState('');
+  const [providerName, setProviderName] = useState(account.label);
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>(account.apiProtocol || 'openai-completions');
   const [userAgent, setUserAgent] = useState(getUserAgentHeader(account.headers));
@@ -402,6 +404,7 @@ function ProviderCard({
 
   useEffect(() => {
     if (isEditing) {
+      setProviderName(account.label);
       setNewKey('');
       setShowKey(false);
       setBaseUrl(account.baseUrl || '');
@@ -445,7 +448,7 @@ function ProviderCard({
       }
 
       {
-        const updates: Partial<ProviderConfig> = {};
+        const updates: Partial<ProviderConfig> = { name: providerName.trim() || account.label };
         if (typeInfo?.showBaseUrl && (baseUrl.trim() || undefined) !== (account.baseUrl || undefined)) {
           updates.baseUrl = baseUrl.trim() || undefined;
         }
@@ -534,7 +537,7 @@ function ProviderCard({
               {account.model && (
                 <>
                   <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
-                  <span className="truncate max-w-[200px]">{account.model}</span>
+                  <span className="truncate max-w-[200px]">{(account.metadata?.customModels?.length || 0) > 1 ? `${i18n.language.startsWith('ru') ? 'Моделей' : 'Models'}: ${account.metadata!.customModels!.length}` : account.model}</span>
                 </>
               )}
               <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
@@ -631,22 +634,11 @@ function ProviderCard({
               )}
               {showModelIdField && (
                 <div className="space-y-1.5 pt-2">
-                  <Label className={currentLabelClasses}>{t('aiProviders.dialog.modelId')}</Label>
-                  <Input
-                    data-testid={`provider-edit-model-id-${account.id}`}
-                    value={modelId}
-                    disabled
-                    placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
-                    className={cn(currentInputClasses, 'cursor-not-allowed opacity-70')}
-                  />
-                  <p
-                    data-testid={`provider-edit-model-id-help-${account.id}`}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {t('aiProviders.dialog.modelIdEditDisabled')}
-                  </p>
+                  <Label className={currentLabelClasses}>{i18n.language.startsWith('ru') ? 'Доступные модели' : 'Available models'}</Label>
+                  <div className="flex max-h-48 flex-wrap gap-2 overflow-auto">{(account.metadata?.customModels || [modelId]).filter(Boolean).map(id => <span key={id} className="max-w-full break-words rounded-lg border border-border px-2 py-1 text-xs">{id}</span>)}</div>
                 </div>
               )}
+              <div className="space-y-2"><Label htmlFor={`provider-name-${account.id}`}>{t('aiProviders.dialog.displayName')}</Label><Input id={`provider-name-${account.id}`} value={providerName} onChange={(event) => setProviderName(event.target.value)} /></div>
               <RemoteReadout label={t('pincer.probeModel')} request={() => window.pincer.management.probeModel(account.id, defaultAgent)} />
               {codePlanPreset && (
                 <div className="space-y-1.5 pt-2">
@@ -863,6 +855,8 @@ function ProviderCard({
                     || saving
                     || (
                       !newKey.trim()
+                      && providerName.trim() === account.label
+                      && apiProtocol === (account.apiProtocol || 'openai-completions')
                       && (baseUrl.trim() || undefined) === (account.baseUrl || undefined)
                       && userAgent.trim() === getUserAgentHeader(account.headers).trim()
                       && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), account.fallbackModels)
@@ -950,6 +944,7 @@ function AddProviderDialog({
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [discovering, setDiscovering] = useState(false);
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>('openai-completions');
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [userAgent, setUserAgent] = useState('');
@@ -1028,6 +1023,23 @@ function AddProviderDialog({
   const useOAuthFlow = isOAuth && !oauthUiHidden && (!supportsApiKey || authMode === 'oauth');
 
   useEffect(() => {
+    if (!open || !selectedType || useOAuthFlow) return;
+    setModelId('');
+    const url = baseUrl.trim() || typeInfo?.defaultBaseUrl || '';
+    if (!url || (typeInfo?.requiresApiKey && !apiKey.trim())) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      setDiscovering(true); setValidationError(null);
+      void window.pincer.configuration.discoverModels({ baseUrl: url, api: selectedType === 'anthropic' ? 'anthropic-messages' : apiProtocol || 'openai-completions', apiKey: normalizeProviderApiKeyInput(apiKey) }).then((result) => {
+        if (!active) return;
+        if (result.ok) setModelId(result.value.join('\n'));
+        else setValidationError(i18n.language.startsWith('ru') ? 'Не удалось загрузить каталог моделей. Проверьте адрес и ключ или добавьте модели вручную.' : 'Could not load the model catalog. Check the URL and key or add models manually.');
+      }).catch(() => { if (active) setValidationError(i18n.language.startsWith('ru') ? 'Каталог моделей недоступен.' : 'Model catalog unavailable.'); }).finally(() => { if (active) setDiscovering(false); });
+    }, 700);
+    return () => { active = false; clearTimeout(timer); setDiscovering(false); };
+  }, [open, selectedType, baseUrl, apiKey, apiProtocol, useOAuthFlow]);
+
+  useEffect(() => {
     if (!selectedVendor || !isOAuth || !supportsApiKey) {
       return;
     }
@@ -1103,7 +1115,12 @@ function AddProviderDialog({
         return;
       }
 
-      const ids = (modelId.trim() || typeInfo?.defaultModelId || '').split(/[\n,]/).map((id) => id.trim()).filter(Boolean);
+      let ids = modelId.trim().split(/[\n,]/).map((id) => id.trim()).filter(Boolean);
+      if (!ids.length) {
+        const result = await window.pincer.configuration.discoverModels({ baseUrl: baseUrl.trim() || typeInfo?.defaultBaseUrl || '', api: selectedType === 'anthropic' ? 'anthropic-messages' : apiProtocol || 'openai-completions', apiKey: normalizedApiKey });
+        if (!result.ok) throw new Error(i18n.language.startsWith('ru') ? 'Не удалось загрузить модели. Проверьте адрес и API-ключ.' : 'Could not load models. Check the URL and API key.');
+        ids = result.value;
+      }
       if (!ids.length) { setValidationError(t('pincer.modelIdRequired')); return; }
       const discovery = { defaultModelId: ids[0], models: ids };
       await onAdd(
@@ -1164,7 +1181,7 @@ function AddProviderDialog({
                     setSelectedType(type.id);
                     setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
                     setBaseUrl(type.defaultBaseUrl || '');
-                    setModelId(type.defaultModelId || '');
+                    setModelId('');
                     setUserAgent('');
                     setShowAdvancedConfig(false);
                     setCodePlanMode('apikey');
@@ -1329,7 +1346,7 @@ function AddProviderDialog({
                 <div className="space-y-2.5">
                   <Label htmlFor="provider-models" className={labelClasses}>{i18n.language.startsWith('ru') ? 'Модели' : 'Models'}</Label>
                   <p data-testid="add-provider-models-auto-hint" className="text-xs text-muted-foreground">
-                    {i18n.language.startsWith('ru') ? 'Добавьте все ID моделей: по одному в строке или через запятую.' : 'Add every model ID, one per line or separated by commas.'}
+                    {discovering ? (i18n.language.startsWith('ru') ? 'Загружаем все доступные модели…' : 'Loading all available models…') : (i18n.language.startsWith('ru') ? 'Каталог загружается автоматически по адресу и API-ключу. При необходимости можно добавить модели вручную.' : 'The catalog loads automatically using the URL and API key. You can also add models manually.')}
                   </p>
                   <Textarea id="provider-models" data-testid="add-provider-models-input" rows={3} value={modelId} onChange={(event) => setModelId(event.target.value)} placeholder={typeInfo?.defaultModelId || 'model-id'} className={cn(inputClasses, 'h-auto min-h-[92px] resize-y py-3')} />
                   {!!modelId.trim() && <div data-testid="add-provider-model-list" className="flex flex-wrap gap-1.5">{[...new Set(modelId.split(/[\n,]/).map((id) => id.trim()).filter(Boolean))].map((id) => <span key={id} className="max-w-full truncate rounded-lg border border-border bg-black/[.025] px-2 py-1 font-mono text-xs dark:bg-white/[.035]">{id}</span>)}</div>}
@@ -1583,7 +1600,7 @@ function AddProviderDialog({
                   data-testid="add-provider-submit-button"
                   onClick={handleAdd}
                   className={cn("h-[42px] rounded-lg px-8 text-meta font-semibold shadow-sm", useOAuthFlow && "hidden")}
-                  disabled={!selectedType || saving}
+                  disabled={!selectedType || saving || discovering}
                 >
                   {saving ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />

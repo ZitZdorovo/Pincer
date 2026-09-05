@@ -1,26 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <defs>
-    <linearGradient id="stemGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#3B82F6" />
-      <stop offset="100%" stop-color="#2DD4BF" />
-    </linearGradient>
-    <linearGradient id="loopGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3B82F6" />
-      <stop offset="100%" stop-color="#8B5CF6" />
-    </linearGradient>
-    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#60A5FA" />
-      <stop offset="100%" stop-color="#C084FC" />
-    </linearGradient>
-  </defs>
-  
-  <rect width="256" height="256" rx="56" fill="#0F172A" />
-  
-  <path d="M 114 64 H 98 A 16 16 0 0 0 82 80 V 176 A 16 16 0 0 0 98 192 H 114 Z" fill="url(#stemGrad)" />
-  
-  <path d="M 114 64 H 150 A 48 48 0 0 1 198 112 A 48 48 0 0 1 150 160 H 114 V 128 H 150 A 16 16 0 0 0 166 112 A 16 16 0 0 0 150 96 H 114 Z" fill="url(#loopGrad)" />
-        
-  <polygon points="216,74 216,150 164,112" fill="#0F172A" />
-  
-  <circle cx="192" cy="112" r="10" fill="url(#glow)" />
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="284 203 691 924"
+     width="691" height="924">
+  <path d="M 817 264 L 779 247 L 758 241 L 728 236 L 517 235 L 490 238 L 465 244 L 441 253 L 423 262 L 401 276 L 386 288 L 367 307 L 352 326 L 339 347 L 323 387 L 319 403 L 316 425 L 316 1070 L 320 1081 L 329 1090 L 336 1093 L 344 1094 L 515 1094 L 526 1092 L 534 1088 L 540 1083 L 545 1076 L 549 1061 L 550 873 L 718 873 L 760 867 L 787 859 L 812 848 L 826 840 L 859 816 L 888 786 L 911 752 L 922 730 L 934 696 L 940 666 L 942 638 L 940 638 L 937 645 L 931 651 L 804 744 L 788 753 L 767 761 L 742 766 L 683 767 L 658 763 L 628 754 L 599 740 L 570 720 L 544 694 L 523 664 L 511 638 L 503 609 L 501 595 L 501 562 L 505 538 L 515 508 L 533 476 L 558 447 L 574 433 L 594 419 L 626 403 L 661 392 L 698 386 L 741 386 L 769 391 L 790 399 L 807 409 L 925 500 L 934 509 L 936 514 L 939 514 L 940 459 L 938 440 L 930 404 L 918 373 L 904 347 L 882 317 L 857 292 L 839 278 Z" fill="#F7F4EC"/>
+  <path d="M 936 613 L 928 606 L 921 603 L 912 602 L 894 607 L 849 624 L 829 630 L 722 670 L 694 679 L 681 685 L 670 698 L 668 705 L 669 716 L 672 722 L 718 766 L 749 764 L 779 756 L 804 743 L 931 650 L 938 642 L 941 634 L 941 624 Z" fill="#A6D8B6"/>
+  <path d="M 669 435 L 668 447 L 671 456 L 679 465 L 690 471 L 810 514 L 903 549 L 916 549 L 927 544 L 933 538 L 936 532 L 936 515 L 933 509 L 925 501 L 807 410 L 792 401 L 778 395 L 750 388 L 716 387 L 674 426 Z" fill="#A6D8B6"/>
 </svg>

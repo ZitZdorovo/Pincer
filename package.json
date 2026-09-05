@@ -1,6 +1,6 @@
 {
   "name": "pincer",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "author": "ZitZdorovo",
   "license": "MIT",
@@ -65,6 +65,7 @@
     "electron-builder": "26.8.1",
     "esbuild": "0.25.12",
     "postcss": "8.5.6",
+    "rcedit": "^5.0.2",
     "tailwindcss": "3.4.19",
     "tailwindcss-animate": "1.0.7",
     "typescript": "5.9.3",

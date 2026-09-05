@@ -3,6 +3,7 @@ export type ProviderInput = Omit<ProviderConfig, 'hasKey'> & { apiKey?: string }
 export type MemoryConfig = { hash: string; path: string; provider: string; model: string; baseUrl: string; hasKey: boolean };
 export type MemoryInput = { provider: string; model: string; baseUrl?: string; apiKey?: string };
 export type ConfigurationApi = {
+  discoverModels(input: { baseUrl: string; api: string; apiKey?: string }): Promise<import('./contract').Result<string[]>>;
   providers(): Promise<import('./contract').Result<{ hash: string; providers: ProviderConfig[] }>>;
   saveProvider(hash: string, input: ProviderInput): Promise<import('./contract').Result<void>>;
   deleteProvider(hash: string, id: string): Promise<import('./contract').Result<void>>;

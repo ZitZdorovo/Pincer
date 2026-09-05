@@ -5,6 +5,7 @@ import type { ApprovalItem, ApprovalState } from '../../shared/approvals';
 import { usePreferences } from '../preferences';
 import { Modal } from '../components/ui/modal';
 import { Button } from '../components/ui/button';
+import { useLocation } from 'react-router-dom';
 
 function Scope({ scope, ru }: { scope: ApprovalScope; ru: boolean }) {
   const labels: Record<string, string> = ru
@@ -46,6 +47,7 @@ function Card({ item, connected, now, ru }: { item: ApprovalItem; connected: boo
 }
 
 export function Approvals({ updateBusy, inline = false }: { updateBusy: boolean; inline?: boolean }) {
+  const location = useLocation();
   const ru = usePreferences().language === 'ru';
   const [state, setState] = useState<ApprovalState | null>(null); const [open, setOpen] = useState(false);
   const [now, setNow] = useState(Date.now()); const [error, setError] = useState(false); const [refreshing, setRefreshing] = useState(false);
@@ -58,14 +60,15 @@ export function Approvals({ updateBusy, inline = false }: { updateBusy: boolean;
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   useEffect(() => { if (updateBusy) setOpen(false); }, [updateBusy]);
   const pending = state?.items.filter((item) => item.approval.status === 'pending' && item.approval.expiresAtMs > now).length || 0;
-  if (!state || (!inline && !state.items.length && !state.error)) return null;
+  useEffect(() => { if (!pending || location.pathname !== '/') setOpen(false); }, [pending, location.pathname]);
+  if (!state || (!inline && !pending)) return null;
   const content = <><Button size="sm" variant="ghost" disabled={!state.connected || refreshing} onClick={() => { setRefreshing(true); setError(false); void window.pincer.approvals.refresh().then((result) => setError(!result.ok)).catch(() => setError(true)).finally(() => setRefreshing(false)); }}><RefreshCw size={14} className="mr-2" />{ru ? 'Обновить' : 'Refresh'}</Button>
       {!state.connected && <p className="my-2 text-xs text-muted-foreground">{ru ? 'Нет подключения. Решения временно недоступны.' : 'Disconnected. Decisions are temporarily unavailable.'}</p>}
       {(state.error || error) && <p role="alert" className="my-2 text-xs text-destructive">{ru ? 'Не удалось обновить запросы. Проверьте подключение и поддержку approvals на Gateway.' : 'Could not refresh requests. Check the connection and Gateway approvals support.'}</p>}
       <div className="mt-3 max-h-[60vh] space-y-3 overflow-auto">{state.items.map((item) => <Card key={item.approval.id + item.reviewToken} item={item} connected={state.connected && !updateBusy} now={now} ru={ru} />)}{!state.items.length && <p className="text-sm text-muted-foreground">{ru ? 'Нет ожидающих или недавних запросов.' : 'No pending or recent requests.'}</p>}</div></>;
   if (inline) return <section className="space-y-5"><div><h2 className="openx-section-title !mb-2">{ru ? 'Одобрения Gateway' : 'Gateway approvals'}</h2><p className="text-sm text-muted-foreground">{ru ? 'Ожидающие запросы и недавние решения. Решение всегда принимает пользователь.' : 'Pending requests and recent decisions. The user always makes the decision.'}</p></div><div className="settings-card">{content}</div></section>;
   return <>
-    <button disabled={updateBusy} onClick={() => setOpen(true)} className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-surface-modal px-4 py-2 text-xs shadow-lg" aria-label={ru ? 'Разрешения' : 'Approvals'}><ShieldQuestion size={15} className="text-amber-600 dark:text-amber-400" />{ru ? 'Разрешения' : 'Approvals'}{pending > 0 && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 font-medium" aria-live="polite">{pending}</span>}</button>
+    <button disabled={updateBusy} onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-surface-modal px-3 py-2 text-xs shadow-sm" aria-label={ru ? 'Разрешения' : 'Approvals'}><ShieldQuestion size={15} className="text-amber-600 dark:text-amber-400" />{ru ? 'Разрешения' : 'Approvals'}{pending > 0 && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 font-medium" aria-live="polite">{pending}</span>}</button>
     <Modal open={open} title={ru ? 'Разрешения' : 'Approvals'} close={() => setOpen(false)} description={ru ? 'Решения принимает пользователь. Правила и срок запроса задаёт Gateway.' : 'You choose whether to approve. The Gateway sets the rules and expiry.'}>
       {content}
     </Modal>

@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { cn } from '../lib/utils';
 import { resolveModelDisplayName, thinkingLevelLabel } from './model-display';
 import { AccessPicker, RequestStats } from './RequestControls';
+import { Approvals } from '../features/Approvals';
 import { useComposer, type ComposerProps, type FileAttachment, type QuickAccessSkill } from './composer-controller';
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
 const formatFileSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -58,6 +59,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
           'relative mx-auto w-full shrink-0 px-4 pb-[15px] pt-[15px]',
       )}
     >
+      <div className="relative z-40 mb-2 flex justify-end"><Approvals updateBusy={false} /></div>
       <input ref={fileRef} type="file" multiple hidden onChange={(event) => { props.attach(Array.from(event.target.files || [])); event.target.value = ''; }} />
       <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}><DialogContent className="max-w-md rounded-2xl border border-border bg-surface-modal p-6 shadow-2xl"><DialogTitle className="text-xl font-semibold">{t('composer.chooseOtherWorkspaceOption')}</DialogTitle><DialogDescription className="mt-2 text-sm text-muted-foreground">{t('pincer.remoteWorkspace')}</DialogDescription><Input className="mt-4 font-mono" value={workspaceDraft} onChange={(event) => setWorkspaceDraft(event.target.value)} /><div className="mt-4 flex justify-end gap-2"><Button variant="ghost" onClick={() => setWorkspaceDialogOpen(false)}>{t('common:actions.cancel')}</Button><Button disabled={!workspaceDraft.trim()} onClick={() => { handleSelectWorkspace(workspaceDraft.trim()); setWorkspaceDialogOpen(false); }}>{t('common:actions.save')}</Button></div></DialogContent></Dialog>
       {dragOver && createPortal(

@@ -6,7 +6,6 @@ import { Shell } from './components/Shell';
 import { translator } from './i18n';
 import { UpdateModal } from './features/Updates';
 import { Settings } from './features/Settings';
-import { Approvals } from './features/Approvals';
 import { usePreferences } from './preferences';
 import { useLocation, useNavigate } from 'react-router-dom';
 import i18n from './donor/i18n';
@@ -77,7 +76,6 @@ export default function App() {
     {!state ? <main className="grid flex-1 place-items-center text-sm text-muted-foreground" role={error ? 'alert' : 'status'}>{t(error ? 'startupError' : 'loading')}</main>
       : <><div className={shell && !settings ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><Shell key={JSON.stringify(state.profile)} state={state} language={language} configure={() => setShell(false)} openSettings={() => setSettings(true)} updates={updates} onDirty={setDirty} active={shell && !settings} /></div>
         {settings ? <Settings initialSection={new URLSearchParams(location.search).get('section') === 'gateway' ? 'gateway' : new URLSearchParams(location.search).get('section') === 'updates' ? 'updates' : 'appearance'} gateway={state} updates={updates} back={() => { setShell(true); setSettings(false); }} dirty={dirty} /> : !shell && <ConnectionPage state={state} language={language} preview={() => setShell(true)} />}</>}
-    <Approvals updateBusy={updates?.phase === 'downloading' || updates?.phase === 'installing'} />
     <UpdateModal state={updates} language={language} />
   </div>;
 }

@@ -56,6 +56,22 @@ test('settings share the main sidebar width and bounded chat surface; preference
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'artifacts/pincer-donor/settings-minimum.png' });
 });
+test('closing can hide Pincer to the tray and the choice persists in the desktop process', async () => {
+  await connect();
+  await page.keyboard.press('Control+,');
+  const behavior = page.getByLabel('Действие при закрытии', { exact: true });
+  await chooseSelect(behavior, 'Скрыть в трей');
+  await expect.poll(() => page.evaluate(() => window.pincer.desktop.closeBehavior())).toBe('tray');
+  expect(JSON.parse(readFileSync(join(directory, 'desktop-preferences.json'), 'utf8')).closeBehavior).toBe('tray');
+
+  await page.evaluate(() => window.pincer.window.action('close'));
+  await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
+  await expect(page.getByTestId('settings-content')).toBeVisible();
+
+  await chooseSelect(behavior, 'Закрыть полностью');
+  await expect.poll(() => page.evaluate(() => window.pincer.desktop.closeBehavior())).toBe('quit');
+});
 test('complete Gateway settings are edited inside Pincer with profile, devices and logs', async () => {
   mock.config = { ...mock.config, ui: { enabled: false } };
   await connect(); await page.keyboard.press('Control+,');
@@ -188,7 +204,7 @@ test('OmniRoute source connects from API settings and exposes real quotas withou
     expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('QUOTA_TEST_SECRET');
     expect(JSON.stringify(await page.evaluate(() => window.pincer.management.quotas()))).not.toContain('MUST_NOT_REACH_UI');
     await page.screenshot({ path: 'artifacts/pincer-donor/settings-provider-limits.png' });
-    await page.keyboard.press('Escape'); await page.getByTestId('chat-request-stats-button').click(); await expect(page.getByTestId('chat-request-stats-panel')).toContainText('64% осталось');
+    await page.keyboard.press('Escape'); await page.getByTestId('chat-request-stats-button').click(); await expect(page.getByTestId('chat-request-stats-panel')).not.toContainText('Test account');
     const configureSources = page.getByTestId('configure-quota-sources');
     const restingBackground = await configureSources.evaluate(element => getComputedStyle(element).backgroundColor);
     await configureSources.hover();
@@ -199,7 +215,7 @@ test('OmniRoute source connects from API settings and exposes real quotas withou
 });
 test('provider quotas recheck an asynchronous Gateway refresh instead of claiming no limits', async () => {
   mock.quotaData = { providers: [], refreshing: true, updatedAt: Date.now() };
-  await connect(); await page.getByTestId('chat-request-stats-button').click();
+  await connect(); await page.getByTestId('chat-model-picker-button').click(); await page.locator('[data-testid^="chat-model-picker-option-"]').first().click(); await page.getByTestId('chat-request-stats-button').click();
   await expect(page.getByTestId('chat-request-stats-panel')).toContainText('Gateway запрашивает свежие лимиты');
   mock.quotaData = { providers: [{ provider: 'test', windows: [{ label: '5h', usedPercent: 40, resetAt: Date.now() + 50000 }] }] };
   await expect(page.getByTestId('chat-request-stats-panel')).toContainText('60% осталось', { timeout: 10000 });
@@ -229,7 +245,7 @@ test('closed advanced settings do no schema work and opening them loads once wit
 test('main chat has reproducible empty and conversation screenshots in both themes', async () => {
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
-  const output = join(process.cwd(), 'artifacts', 'chat-audit-0.4.0');
+  const output = join(process.cwd(), 'artifacts', 'chat-audit-0.4.1');
   mkdirSync(output, { recursive: true });
   await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
   await page.screenshot({ path: join(output, '01-empty-light.png') });
@@ -253,7 +269,7 @@ test('every settings page has the same frame and a reproducible visual audit', a
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
   await page.keyboard.press('Control+,');
-  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.4.0');
+  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.4.1');
   mkdirSync(output, { recursive: true });
   const pages = [
     'profile', 'appearance', 'chat', 'shortcuts', 'notifications',
@@ -707,15 +723,51 @@ test('provider and embedding forms write guarded settings, never return saved ke
   expect(JSON.stringify(config)).not.toContain('PRIVATE_EMBEDDING_KEY');
 });
 
+test('API catalog loads automatically and provider names remain editable', async () => {
+  const source = createServer((request, response) => {
+    expect(request.headers.authorization).toBe('Bearer isolated-test-key');
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify({ data: [{ id: 'gemini-pro-agent' }, { id: 'gemini-flash' }, { id: 'claude-sonnet' }] }));
+  });
+  await new Promise<void>(resolve => source.listen(0, '127.0.0.1', resolve));
+  try {
+    await connect(); await page.getByTestId('sidebar-nav-models').click();
+    await page.getByRole('button', { name: 'Добавить провайдера', exact: true }).click();
+    await page.getByTestId('add-provider-type-custom').click();
+    await expect(page.getByTestId('add-provider-models-input')).toHaveValue('');
+    await page.getByTestId('add-provider-name-input').fill('Мои модели');
+    await page.getByTestId('add-provider-base-url-input').fill(`http://127.0.0.1:${(source.address() as { port: number }).port}/v1`);
+    await page.getByTestId('add-provider-api-key-input').fill('isolated-test-key');
+    await expect(page.getByTestId('add-provider-model-list')).toContainText('claude-sonnet');
+    await page.getByTestId('add-provider-submit-button').click();
+    const card = page.locator('[data-testid^="provider-card-custom-"]');
+    await card.hover(); await card.locator('[data-testid^="provider-edit-"]').first().click();
+    await card.getByLabel('Отображаемое имя').fill('Рабочий аккаунт');
+    await card.locator('[data-testid^="provider-edit-save-"]').click();
+    await expect(card).toContainText('Рабочий аккаунт');
+    const saved = await page.evaluate(() => window.pincer.configuration.providers());
+    expect(saved).toMatchObject({ ok: true, value: { providers: [{ hasKey: true, models: ['gemini-pro-agent', 'gemini-flash', 'claude-sonnet'] }] } });
+    await page.screenshot({ path: 'artifacts/pincer-provider-catalog.png' });
+  } finally { source.closeAllConnections(); await new Promise<void>(resolve => source.close(() => resolve())); }
+});
+
 test('pending permissions recover at connection and require an explicit decision', async () => {
   const approval = pendingApproval(); mock.approvals.set(approval.id, approval);
-  await connect(); await page.getByRole('button', { name: 'Разрешения', exact: true }).click();
+  await connect();
+  const approvalButton = page.getByRole('button', { name: 'Разрешения', exact: true });
+  await expect(approvalButton).toBeVisible();
+  const approvalBox = await approvalButton.boundingBox();
+  const composerBox = await page.getByTestId('chat-composer-surface').boundingBox();
+  expect(approvalBox!.y + approvalBox!.height).toBeLessThanOrEqual(composerBox!.y);
+  expect(Math.abs(approvalBox!.x + approvalBox!.width - composerBox!.x - composerBox!.width)).toBeLessThan(2);
+  await page.screenshot({ path: 'artifacts/pincer-pending-permission.png' });
+  await approvalButton.click();
   const card = page.getByTestId('approval-card');
   await expect(card).toContainText('node --version');
   expect(mock.responses.filter((item) => item.method === 'approval.resolve')).toHaveLength(0);
   await page.screenshot({ path: 'artifacts/pincer-approval-light.png' });
   await card.getByRole('button', { name: 'Разрешить один раз' }).click();
-  await expect(card).toContainText('Разрешено');
+  await expect(page.getByRole('button', { name: 'Разрешения', exact: true })).not.toBeVisible();
   expect(mock.responses.filter((item) => item.method === 'approval.resolve')).toHaveLength(1);
   expect(JSON.stringify(await page.evaluate(() => window.pincer.approvals.snapshot()))).not.toContain('NEVER_FORWARD');
 });
@@ -731,7 +783,7 @@ test('standing permissions show the full action scope and a second confirmation'
   expect(mock.responses.filter((item) => item.method === 'approval.resolve')).toHaveLength(0);
   await card.getByRole('button', { name: 'Отмена', exact: true }).click();
   await card.getByRole('button', { name: 'Отклонить', exact: true }).click();
-  await expect(card).toContainText('Отклонено');
+  await expect(page.getByRole('button', { name: 'Разрешения', exact: true })).not.toBeVisible();
   expect(mock.responses.find((item) => item.method === 'approval.resolve')?.params).toMatchObject({ decision: 'deny', kind: 'plugin' });
 });
 
