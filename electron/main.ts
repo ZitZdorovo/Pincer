@@ -151,6 +151,7 @@ async function start(): Promise<void> {
   operation('gateway-admin:device-action', (action, id, label) => gatewayAdmin.deviceAction(action, id, label), true);
   operation('gateway-admin:logs', (cursor) => gatewayAdmin.logs(cursor));
   operation('configuration:provider-save', (hash, input) => configuration.saveProvider(hash, input), true);
+  operation('configuration:provider-delete', (hash, id) => configuration.deleteProvider(hash, id), true);
   operation('configuration:memory', () => configuration.memory());
   operation('configuration:memory-save', (hash, input) => configuration.saveMemory(hash, input), true);
   ipcMain.handle('pincer:desktop:startup', (event) => {
@@ -215,6 +216,17 @@ async function start(): Promise<void> {
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
+    window.webContents.on('context-menu', (_event, params) => {
+      const template: MenuItemConstructorOptions[] = params.isEditable
+        ? [
+            { role: 'undo', enabled: params.editFlags.canUndo }, { role: 'redo', enabled: params.editFlags.canRedo },
+            { type: 'separator' },
+            { role: 'cut', enabled: params.editFlags.canCut }, { role: 'copy', enabled: params.editFlags.canCopy },
+            { role: 'paste', enabled: params.editFlags.canPaste }, { role: 'selectAll', enabled: params.editFlags.canSelectAll },
+          ]
+        : params.selectionText ? [{ role: 'copy', enabled: params.editFlags.canCopy }, { role: 'selectAll' }] : [];
+      if (template.length) Menu.buildFromTemplate(template).popup({ window: window ?? undefined });
+    });
     window.on('maximize', () => window?.webContents.send('pincer:window:maximized', true));
     window.on('unmaximize', () => window?.webContents.send('pincer:window:maximized', false));
     window.once('ready-to-show', () => window?.show());

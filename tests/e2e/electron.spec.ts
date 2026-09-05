@@ -229,7 +229,7 @@ test('closed advanced settings do no schema work and opening them loads once wit
 test('main chat has reproducible empty and conversation screenshots in both themes', async () => {
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
-  const output = join(process.cwd(), 'artifacts', 'chat-audit-0.3.0');
+  const output = join(process.cwd(), 'artifacts', 'chat-audit-0.4.0');
   mkdirSync(output, { recursive: true });
   await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
   await page.screenshot({ path: join(output, '01-empty-light.png') });
@@ -253,7 +253,7 @@ test('every settings page has the same frame and a reproducible visual audit', a
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
   await page.keyboard.press('Control+,');
-  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.3.0');
+  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.4.0');
   mkdirSync(output, { recursive: true });
   const pages = [
     'profile', 'appearance', 'chat', 'shortcuts', 'notifications',
@@ -658,6 +658,13 @@ test('attachments are sent as validated content exactly once', async () => {
   expect(mock.responses.find((item) => item.method === 'chat.send')?.params).toMatchObject({ attachments: [{ fileName: 'notes.txt', mimeType: 'text/plain', content: Buffer.from('A user-selected attachment').toString('base64'), sizeBytes: 26 }] });
 });
 
+test('the client does not impose a ten-file selection limit', async () => {
+  await connect(); await page.getByTestId('sidebar-new-chat').click();
+  await page.locator('input[type=file]').setInputFiles(Array.from({ length: 11 }, (_, index) => ({ name: `file-${index}.txt`, mimeType: 'text/plain', buffer: Buffer.from('x') })));
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByTestId('chat-attachment-preview')).toHaveCount(11);
+});
+
 test('text drafts survive restart and are encrypted on disk', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
   const key = 'new';
@@ -674,12 +681,19 @@ test('provider and embedding forms write guarded settings, never return saved ke
   await page.getByRole('button', { name: 'Добавить провайдера', exact: true }).click();
   const provider = page.getByTestId('add-provider-dialog');
   await page.getByTestId('add-provider-type-custom').click();
+  await page.getByTestId('add-provider-name-input').fill('Мой провайдер');
   await page.getByTestId('add-provider-base-url-input').fill('https://provider.example/v1');
   await page.getByTestId('add-provider-api-key-input').fill('PRIVATE_PROVIDER_KEY');
-  await page.getByTestId('add-provider-models-input').fill('my-model');
+  await page.getByTestId('add-provider-models-input').fill('my-model\nmy-second-model');
+  await expect(page.getByTestId('add-provider-model-list')).toContainText('my-second-model');
   await page.getByTestId('add-provider-submit-button').click(); await expect(provider).not.toBeVisible();
+  const customCard = page.locator('[data-testid^="provider-card-custom-"]').filter({ hasText: 'Мой провайдер' });
+  await expect(customCard).toBeVisible();
   const providers = await page.evaluate(() => window.pincer.configuration.providers());
   expect(JSON.stringify(providers)).not.toContain('PRIVATE_PROVIDER_KEY');
+  expect(providers).toMatchObject({ ok: true, value: { providers: [{ models: ['my-model', 'my-second-model'] }] } });
+  await customCard.hover(); await customCard.locator('[data-testid^="provider-delete-"]').click();
+  await expect(customCard).toHaveCount(0);
   await openMemory();
   await page.getByRole('button', { name: 'Настроить векторный поиск' }).click();
   const memory = page.getByRole('dialog', { name: 'Семантическая память' });
@@ -731,6 +745,23 @@ test('new chats use the selected agent without altering existing conversations',
   await page.getByTestId('chat-composer-input').fill('Start research'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
   await expect.poll(() => mock.sessions.length).toBe(1);
   expect(mock.responses.find((item) => item.method === 'sessions.create')?.params).toMatchObject({ agentId: 'research' });
+  await expect(page.getByTestId('chat-header-agent')).toBeDisabled();
+});
+
+test('each existing chat restores its own model and hides Thinking for unsupported models', async () => {
+  mock.models.push({ id: 'plain-model', name: 'Plain Model', provider: 'plain', contextWindow: 64000, reasoning: false });
+  const first = 'agent:main:pincer:first-model'; const second = 'agent:main:pincer:second-model';
+  mock.sessions.push(
+    { key: first, label: 'First model', agentId: 'main', model: 'test/test-model' },
+    { key: second, label: 'Second model', agentId: 'main', model: 'plain/plain-model' },
+  );
+  mock.histories.set(first, []); mock.histories.set(second, []);
+  await connect(); await page.getByTestId(`sidebar-session-${second}`).click();
+  await expect(page.getByTestId('chat-model-picker-button')).toContainText('Plain Model');
+  await expect(page.getByTestId('chat-thinking-picker-button')).toHaveCount(0);
+  await page.getByTestId(`sidebar-session-${first}`).click();
+  await expect(page.getByTestId('chat-model-picker-button')).toContainText('Test Model');
+  await expect(page.getByTestId('chat-thinking-picker-button')).toBeVisible();
 });
 
 test('attachment-only messages remain visible after history reload', async () => {
@@ -779,7 +810,7 @@ test('OpenX scroll navigator stays on the left and previews question-answer turn
   const key = 'agent:main:pincer:navigator';
   mock.sessions.push({ key, label: 'Длинный разговор', agentId: 'main' });
   mock.histories.set(key, [
-    { role: 'user', content: 'Первый вопрос о подключении' }, { role: 'assistant', content: 'Первый ответ о Gateway' },
+    { role: 'user', content: 'Первый вопрос о подключении' }, { role: 'assistant', content: Array.from({ length: 35 }, (_, index) => `Первый ответ о Gateway, строка ${index + 1}.`).join('\n\n') },
     { role: 'user', content: 'Второй вопрос о памяти' }, { role: 'assistant', content: 'Второй ответ о семантическом поиске' },
     { role: 'user', content: 'Третий вопрос об обновлениях' }, { role: 'assistant', content: 'Третий ответ об установщике' },
   ]);
@@ -795,6 +826,12 @@ test('OpenX scroll navigator stays on the left and previews question-answer turn
   await markers.nth(1).hover();
   await expect(page.getByTestId('chat-scroll-preview')).toContainText('Второй вопрос о памяти');
   await expect(page.getByTestId('chat-scroll-preview')).toContainText('Второй ответ о семантическом поиске');
+  const container = page.getByTestId('chat-scroll-container');
+  await container.evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')); });
+  const down = page.getByRole('button', { name: 'Вернуться вниз', exact: true });
+  await expect(down).toBeVisible();
+  await down.click();
+  await expect.poll(() => container.evaluate((element) => Math.round(element.scrollHeight - element.scrollTop - element.clientHeight))).toBeLessThanOrEqual(1);
   await page.screenshot({ path: 'artifacts/pincer-donor/chat-scroll-navigator.png' });
 });
 
@@ -848,6 +885,7 @@ test('tool cards, token footer, quotas and text selection are confined to the co
   await expect(page.getByTestId('tool-result').first()).toContainText('123 electron');
   await expect(page.getByTestId('response-stats')).toHaveText('8 с · 171 выходных токенов');
   await page.getByTestId('chat-request-stats-button').click();
+  await expect(page.getByTestId('chat-request-stats-button')).toHaveCSS('border-top-width', '1px');
   await expect(page.getByTestId('chat-request-stats-panel')).toContainText('75% осталось');
   await page.screenshot({ path: 'artifacts/pincer-donor/tool-cards-quotas.png' });
   await page.keyboard.press('Escape');
@@ -897,20 +935,16 @@ test('a running chat stays marked while another session is selected', async () =
   await expect(page.getByTestId(`sidebar-session-${running}`)).not.toContainText('В работе');
 });
 
-test('agent picker dispatches the chosen profile; Russian creation and task listing work', async () => {
+test('an existing chat locks its agent; Russian creation and task listing work', async () => {
   mock.agents.push({ id: 'researcher', name: 'Исследователь' });
   mock.tasks.push({ id: 'subtask-1', title: 'Анализ проекта', status: 'running', runtime: 'subagent', agentId: 'researcher' });
   await connect(); await page.getByTestId('sidebar-new-chat').click();
   await page.getByTestId('chat-composer-input').fill('Родительский чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
   await expect.poll(() => mock.sessions.length).toBe(1);
   await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
-  const parent = mock.sessions[0].key;
-  await page.getByTestId('chat-header-agent').click(); await page.screenshot({ path: 'artifacts/pincer-donor/header-agent-picker.png' }); await page.getByTestId('chat-header-agent-menu').getByRole('button', { name: 'Исследователь', exact: true }).click();
-  await expect(page.getByTestId('chat-header-agent')).toContainText('Исследователь');
+  await expect(page.getByTestId('chat-header-agent')).toBeDisabled();
+  await expect(page.getByTestId('chat-header-agent-menu')).toHaveCount(0);
   await expect(page.getByTestId('chat-composer-agent')).toHaveCount(0);
-  await page.getByTestId('chat-composer-input').fill('Найди решение'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
-  await expect.poll(() => mock.sessions.length).toBe(2);
-  expect(mock.responses.findLast((r) => r.method === 'sessions.create')?.params).toMatchObject({ parentSessionKey: parent, agentId: 'researcher', message: 'Найди решение' });
   await page.getByTestId('sidebar-nav-agents').click(); await expect(page.getByTestId('subagent-task-card')).toContainText('Анализ проекта');
   await page.getByTestId('subagent-task-card').getByRole('button', { name: 'Остановить', exact: true }).click();
   await expect.poll(() => mock.tasks[0].status).toBe('cancelled');

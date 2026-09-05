@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { RemoteReadout } from './Readout';
 import { useAgentsStore } from './adapter';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -1325,10 +1326,14 @@ function AddProviderDialog({
                   </div>
                 )}
 
-                <p data-testid="add-provider-models-auto-hint" className="text-xs text-muted-foreground">
-                  {t('pincer.explicitModels')}
-                </p>
-                <div className="space-y-2.5"><Label htmlFor="provider-models" className={labelClasses}>{t('aiProviders.dialog.modelId')}</Label><Input id="provider-models" data-testid="add-provider-models-input" value={modelId} onChange={(event) => setModelId(event.target.value)} placeholder={typeInfo?.defaultModelId || 'model-id'} className={inputClasses} /></div>
+                <div className="space-y-2.5">
+                  <Label htmlFor="provider-models" className={labelClasses}>{i18n.language.startsWith('ru') ? 'Модели' : 'Models'}</Label>
+                  <p data-testid="add-provider-models-auto-hint" className="text-xs text-muted-foreground">
+                    {i18n.language.startsWith('ru') ? 'Добавьте все ID моделей: по одному в строке или через запятую.' : 'Add every model ID, one per line or separated by commas.'}
+                  </p>
+                  <Textarea id="provider-models" data-testid="add-provider-models-input" rows={3} value={modelId} onChange={(event) => setModelId(event.target.value)} placeholder={typeInfo?.defaultModelId || 'model-id'} className={cn(inputClasses, 'h-auto min-h-[92px] resize-y py-3')} />
+                  {!!modelId.trim() && <div data-testid="add-provider-model-list" className="flex flex-wrap gap-1.5">{[...new Set(modelId.split(/[\n,]/).map((id) => id.trim()).filter(Boolean))].map((id) => <span key={id} className="max-w-full truncate rounded-lg border border-border bg-black/[.025] px-2 py-1 font-mono text-xs dark:bg-white/[.035]">{id}</span>)}</div>}
+                </div>
                 {codePlanPreset && (
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between gap-2">

@@ -45,6 +45,13 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
   const end = useRef<HTMLDivElement>(null);
   const composerOverlay = useRef<HTMLDivElement>(null);
   const [composerHeight, setComposerHeight] = useState(164);
+  const scrollToBottom = useCallback((smooth = true) => {
+    const element = scroller.current;
+    if (!element) return;
+    setAtBottom(true);
+    element.scrollTo({ top: element.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+    if (smooth) window.setTimeout(() => element.scrollTo({ top: element.scrollHeight, behavior: 'auto' }), 280);
+  }, []);
   const attachScroller = useCallback((element: HTMLDivElement | null) => {
     scroller.current = element;
     setScrollElement((current) => current === element ? current : element);
@@ -102,8 +109,8 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     }
   }, [drafts, draftScope, state?.scope]);
   useEffect(() => { onDirty(Object.values(drafts).some((value) => value.length > 0) || Object.values(attachments).some((value) => value.length > 0)); }, [drafts, attachments, onDirty]);
-  useEffect(() => { if (atBottom && !find) end.current?.scrollIntoView({ block: 'end' }); }, [state?.stream, state?.messages.length]);
-  useEffect(() => { setAtBottom(true); setMatch(0); end.current?.scrollIntoView({ block: 'end' }); }, [key]);
+  useEffect(() => { if (atBottom && !find) scrollToBottom(false); }, [atBottom, find, scrollToBottom, state?.stream, state?.messages.length]);
+  useEffect(() => { setMatch(0); scrollToBottom(false); }, [key, scrollToBottom]);
   useEffect(() => { if (input.current) { input.current.style.height = '48px'; input.current.style.height = Math.min(240, input.current.scrollHeight) + 'px'; } }, [draft]);
   useEffect(() => {
     if (!active) return;
@@ -129,14 +136,13 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
       if (key === 'new') { setDrafts((previous) => ({ ...previous, new: '', [selected]: draft })); if (files) setAttachments((previous) => ({ ...previous, new: [], [selected]: files })); }
       if (pending.current?.key !== selected || pending.current.text !== draft || pending.current.files !== files) pending.current = { key: selected, text: draft, id: crypto.randomUUID(), files };
       const result = await window.pincer.chat.send(draft, pending.current.id, files, state?.selected ? targetAgent : undefined);
-      if (result.ok) { setDrafts((previous) => ({ ...previous, [key]: '', [selected]: '' })); setAttachments((previous) => ({ ...previous, [key]: [], [selected]: [] })); pending.current = null; setTargetAgent(undefined); draftSelection.current = {}; setDraftModel(undefined); setDraftThinking(undefined); setAtBottom(true); end.current?.scrollIntoView({ block: 'end' }); }
+      if (result.ok) { setDrafts((previous) => ({ ...previous, [key]: '', [selected]: '' })); setAttachments((previous) => ({ ...previous, [key]: [], [selected]: [] })); pending.current = null; setTargetAgent(undefined); draftSelection.current = {}; setDraftModel(undefined); setDraftThinking(undefined); scrollToBottom(false); }
       else setError(result.error.message);
     } catch { setError(t('loadFailed')); }
     finally { setBusy(false); input.current?.focus(); }
   };
   const attach = async (selectedFiles: File[]) => {
     if (busy || !connected || !selectedFiles.length) return;
-    if ((files?.length || 0) + selectedFiles.length > 10 || selectedFiles.some((file) => file.size > 20 * 1024 * 1024) || selectedFiles.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024) { setError(ru ? 'Не более 10 файлов и 20 МБ за один выбор. Лимит Gateway может быть меньше.' : 'Up to 10 files and 20 MB per selection. Gateway limits may be lower.'); return; }
     setBusy(true); setError('');
     try {
       const next = await Promise.all(selectedFiles.map((file) => new Promise<ChatAttachment>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('FILE_READ_FAILED')); reader.onload = () => resolve({ fileName: file.name || 'pasted-image.png', mimeType: file.type || 'application/octet-stream', content: String(reader.result).split(',')[1] || '' }); reader.readAsDataURL(file); })));
@@ -163,6 +169,6 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
       {state?.activeRun && <article className="chat-markdown text-sm leading-7" aria-live="polite"><RunStatus startedAt={state.runStartedAt} phase={state.runPhase} />{state.liveActivity?.length ? <ActivityStream blocks={state.liveActivity} tools={state.liveTools} live /> : <>{!!state.liveTools?.length && <ToolActivity tools={state.liveTools} live />}{state.stream && <DonorMarkdown text={state.stream} isAnimating />}</>}</article>}
       {(error || state?.error) && <p role="alert" className="whitespace-pre-wrap break-words rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{error || state?.error?.message}</p>}<div ref={end} />
     </div></div><ChatScrollNavigator items={navigatorItems} scrollElement={scrollElement} label={ru ? 'Навигация по вопросам и ответам' : 'Question and answer navigation'} concealed={filesOpen} /></div>
-    <div ref={composerOverlay} data-testid="chat-composer-overlay" className="pointer-events-none absolute bottom-0 left-0 right-[12px] z-30 translate-x-[2px]"><div className="relative"><div className="pointer-events-auto"><DonorComposer input={draft} setInput={(text) => setDrafts((previous) => ({ ...previous, [key]: text }))} files={files || []} attach={(incoming) => void attach(incoming)} removeFile={(index) => setAttachments((previous) => ({ ...previous, [key]: (previous[key] || []).filter((_, position) => position !== index) }))} send={() => void act()} stop={() => void window.pincer.chat.abort().then((result) => { if (!result.ok) setError(result.error.message); })} disabled={!connected || busy || draftScope !== state?.scope} sending={Boolean(state?.activeRun)} state={composerState} agentId={agentId} targetAgentId={targetAgent} onAgent={(id) => setTargetAgent(id || undefined)} onModel={selectModel} workspacePath={session?.cwd || workspacePath} onWorkspace={setWorkspacePath} scrollToLatestAction={!atBottom ? <button onClick={() => { setAtBottom(true); end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }); }} aria-label={c('scrollToLatest')} className="rounded-full border border-border bg-surface-modal p-2 shadow"><ArrowDown size={16} /></button> : undefined} /></div></div></div>
+    <div ref={composerOverlay} data-testid="chat-composer-overlay" className="pointer-events-none absolute bottom-0 left-0 right-[12px] z-30 translate-x-[2px]"><div className="relative"><div className="pointer-events-auto"><DonorComposer input={draft} setInput={(text) => setDrafts((previous) => ({ ...previous, [key]: text }))} files={files || []} attach={(incoming) => void attach(incoming)} removeFile={(index) => setAttachments((previous) => ({ ...previous, [key]: (previous[key] || []).filter((_, position) => position !== index) }))} send={() => void act()} stop={() => void window.pincer.chat.abort().then((result) => { if (!result.ok) setError(result.error.message); })} disabled={!connected || busy || draftScope !== state?.scope} sending={Boolean(state?.activeRun)} state={composerState} agentId={agentId} targetAgentId={targetAgent} onAgent={(id) => setTargetAgent(id || undefined)} onModel={selectModel} workspacePath={session?.cwd || workspacePath} onWorkspace={setWorkspacePath} scrollToLatestAction={!atBottom ? <button onClick={() => scrollToBottom(true)} aria-label={c('scrollToLatest')} className="rounded-lg border border-border bg-surface-modal p-2 shadow transition-[transform,background-color] duration-150 hover:bg-black/5 active:scale-90 dark:hover:bg-white/10"><ArrowDown size={16} /></button> : undefined} /></div></div></div>
   </div>;
 }

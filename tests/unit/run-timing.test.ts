@@ -19,6 +19,11 @@ it('never invents elapsed time from historical timestamps or matches an ambiguou
   const timer = new RunTiming(); timer.begin('run', 'scope', 'chat', { role: 'user', text: 'Question' }, [], 1000); timer.finish('run', 17000);
   expect(timer.apply('scope', 'chat', [...transcript(), ...transcript('Question', 2000)]).filter(m => m.durationMs !== undefined)).toEqual([]);
 });
+it('keeps completion duration by run id even when Gateway omits a usable user timestamp', () => {
+  const timer = new RunTiming(); timer.begin('run-with-id', 'scope', 'chat', { role: 'user', text: 'Question' }, [], 1000); timer.finish('run-with-id', 5500);
+  const messages = projectTranscript([{ role: 'user', content: 'Question' }, { role: 'assistant', runId: 'run-with-id', content: 'Answer' }]);
+  expect(timer.apply('scope', 'chat', messages)[1].durationMs).toBe(4500);
+});
 it('excludes previous identical requests and persists only hashed identity and duration', () => {
   const directory = mkdtempSync(join(tmpdir(), 'pincer-timing-')); const path = join(directory, 'timing');
   const storage = { path, cipher: { encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() } };

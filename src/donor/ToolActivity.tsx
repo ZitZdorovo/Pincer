@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ListTree, TerminalSquare, Puzzle, FoldVertical } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatMessage, ToolCall, RunPhase } from '../../shared/contract';
-import { usePreferences } from '../preferences';
 export function elapsedLabel(milliseconds: number, ru: boolean): string {
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));
   return seconds < 60 ? `${seconds} ${ru ? 'с' : 's'}` : `${Math.floor(seconds / 60)} ${ru ? 'мин' : 'min'} ${seconds % 60} ${ru ? 'с' : 's'}`;
@@ -30,11 +29,10 @@ export function CompactionActivity({ phase }: { phase: 'running' | 'completed' |
 }
 export function ToolActivity({ tools, live = false }: { tools: ToolCall[]; live?: boolean }) {
   const { i18n } = useTranslation(); const ru = i18n.language.startsWith('ru');
-  const { collapseTools } = usePreferences();
   const commands = tools.filter(commandTool).length;
   const others = new Map<string, number>(); for (const tool of tools.filter((t) => !commandTool(t))) others.set(tool.name, (others.get(tool.name) || 0) + 1);
   const summary = [commands ? `${ru ? 'Выполнено команд' : 'Commands'}: ${commands}` : '', ...[...others].map(([name, count]) => `${toolLabel(name)} ×${count}`)].filter(Boolean).join(', ');
-  return <details open={live && !collapseTools || undefined} data-testid="tool-activity" className="group/activity w-full text-xs text-muted-foreground">
+  return <details data-live={live || undefined} data-testid="tool-activity" className="group/activity w-full text-xs text-muted-foreground">
     <summary className="flex cursor-pointer list-none items-center gap-2 py-1 hover:text-foreground"><ListTree size={14} /><span className="min-w-0 truncate">{summary}</span><ChevronDown size={12} className="-rotate-90 transition-transform group-open/activity:rotate-0" /></summary>
     <div className="mt-1 max-h-[440px] space-y-0.5 overflow-y-auto pr-1">
       {tools.map((tool) => <details key={tool.id} data-testid="tool-call" className="group/tool">

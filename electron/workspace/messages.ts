@@ -7,8 +7,9 @@ export function messageFiles(message: unknown): MessageFile[] {
   const parts = [...(Array.isArray(message.content) ? message.content : []), ...(Array.isArray(message.attachments) ? message.attachments : [])];
   const files: MessageFile[] = [];
   for (const part of parts) {
-    if (files.length === 10) break;
-    if (!isRecord(part) || !['image', 'file', 'document', 'input_image', 'input_file'].includes(String(part.type))) continue;
+    if (!isRecord(part)) continue;
+    const attachmentLike = typeof part.fileName === 'string' && typeof part.mimeType === 'string';
+    if (!attachmentLike && !['image', 'file', 'document', 'input_image', 'input_file'].includes(String(part.type))) continue;
     const source = isRecord(part.source) ? part.source : {};
     const mimeType = typeof part.mimeType === 'string' ? part.mimeType : typeof source.media_type === 'string' ? source.media_type : '';
     const name = typeof part.fileName === 'string' ? part.fileName : typeof part.name === 'string' ? part.name : mimeType.startsWith('image/') || part.type === 'image' ? 'Image' : 'File';

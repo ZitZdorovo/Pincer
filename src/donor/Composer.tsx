@@ -577,7 +577,7 @@ function AttachmentPreview({
   const isImage = attachment.mimeType.startsWith('image/') && attachment.preview;
 
   return (
-    <div className="relative group rounded-lg overflow-hidden border border-border">
+    <div data-testid="chat-attachment-preview" className="relative group rounded-lg overflow-hidden border border-border">
       {isImage ? (
         // Image thumbnail
         <div className="w-16 h-16">

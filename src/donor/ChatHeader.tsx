@@ -123,7 +123,7 @@ export function ChatHeader({ session, agents, agentId, targetAgentId, connected,
             </div>
           )}
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10 flex items-center">
-            <ChatToolbar agents={agents} currentAgentId={agentId} selectedAgentId={targetAgentId} onAgent={onAgent} disabled={!connected || Boolean(session?.activeRunId)} workspaceAvailable={connected && Boolean(session)} openBrowser={openFiles} browserActive={filesOpen} />
+            <ChatToolbar agents={agents} currentAgentId={agentId} selectedAgentId={targetAgentId} onAgent={onAgent} disabled={!connected || Boolean(session)} workspaceAvailable={connected && Boolean(session)} openBrowser={openFiles} browserActive={filesOpen} />
           </div>
 {children}
 </div>

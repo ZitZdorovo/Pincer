@@ -34,7 +34,7 @@ export class GatewayService {
   private methods: string[] = [];
   operatorMethods(): string[] { return [...this.methods]; }
   private state: GatewayState;
-  private limits = { maxPayload: 25 * 1024 * 1024, maxBytes: 20 * 1024 * 1024, maxImageBytes: 6 * 1024 * 1024 };
+  private limits = { maxPayload: 25 * 1024 * 1024, maxBytes: 25 * 1024 * 1024, maxImageBytes: 25 * 1024 * 1024 };
   attachmentLimits() { return { ...this.limits }; }
 
   constructor(private readonly vault: Vault, version: string, private readonly factory: ClientFactory = (options) => new GatewayClient(options)) {
@@ -110,7 +110,7 @@ export class GatewayService {
           if (!current()) return;
           if (role === 'operator') {
             this.methods = [...hello.features.methods];
-            this.limits = { maxPayload: hello.policy.maxPayload, maxBytes: hello.policy.attachments?.maxBytes ?? 20 * 1024 * 1024, maxImageBytes: hello.policy.attachments?.maxImageBytes ?? 6 * 1024 * 1024 };
+            this.limits = { maxPayload: hello.policy.maxPayload, maxBytes: hello.policy.attachments?.maxBytes ?? hello.policy.maxPayload, maxImageBytes: hello.policy.attachments?.maxImageBytes ?? hello.policy.maxPayload };
           }
           this.set(role, {
             phase: 'connected', serverVersion: hello.server.version, protocol: hello.protocol,

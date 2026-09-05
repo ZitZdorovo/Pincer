@@ -29,6 +29,7 @@ const api: PincerApi = {
   configuration: {
     providers: () => ipcRenderer.invoke('pincer:configuration:providers'),
     saveProvider: (hash, input) => ipcRenderer.invoke('pincer:configuration:provider-save', hash, input),
+    deleteProvider: (hash, id) => ipcRenderer.invoke('pincer:configuration:provider-delete', hash, id),
     memory: () => ipcRenderer.invoke('pincer:configuration:memory'),
     saveMemory: (hash, input) => ipcRenderer.invoke('pincer:configuration:memory-save', hash, input),
   },

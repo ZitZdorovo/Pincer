@@ -47,6 +47,17 @@ export class ConfigurationService {
     const provider = { baseUrl, api, models, ...(input.apiKey ? { apiKey: bounded(input.apiKey, 8192) } : {}) };
     await this.patch(current, { models: { providers: { [id]: provider } } }, [`models.providers.${id}.models`]);
   }
+  async deleteProvider(hash: unknown, providerId: unknown): Promise<void> {
+    const id = bounded(providerId, 128);
+    const { hash: current, config } = await this.snapshot();
+    if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
+    const providers = { ...rec(rec(config.models).providers) };
+    if (!Object.hasOwn(providers, id)) throw new Error('PROVIDER_NOT_FOUND');
+    delete providers[id];
+    // Replace the providers map as a whole so deletion works on Gateways whose
+    // merge patch intentionally ignores null values.
+    await this.patch(current, { models: { providers } }, ['models.providers']);
+  }
   private async memoryPath(): Promise<'memory.search' | 'agents.defaults.memorySearch'> {
     for (const path of ['memory.search', 'agents.defaults.memorySearch'] as const) {
       try { const value = rec(await this.gateway.operatorRequest('config.schema.lookup', { path })); if (value.path === path && value.schema && Array.isArray(value.children)) return path; } catch { /* Explicit legacy schema fallback, not a guessed write. */ }

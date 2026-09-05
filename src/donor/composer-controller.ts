@@ -46,7 +46,12 @@ export function useComposer(props: ComposerProps) {
   const effectiveModelVariant = { ...parsedVariant, baseKey: `${providerKey(effectiveModelRef)}::${parsedVariant.baseKey}` };
   const currentModelGroup = modelGroups.find((group) => group.baseKey === effectiveModelVariant.baseKey);
   const variantLevels = availableThinkingLevels(currentModelGroup ?? null);
-  const thinkingLevels = variantLevels.length > 1 ? variantLevels : props.state?.thinkingOptions?.length ? props.state.thinkingOptions : currentAgent?.thinkingOptions?.length ? currentAgent.thinkingOptions : props.state?.models.find((model) => model.id === effectiveModelRef)?.reasoning ? ['off', 'minimal', 'low', 'medium', 'high'] : variantLevels;
+  const selectedModelSupportsThinking = props.state?.models.find((model) => model.id === effectiveModelRef)?.reasoning === true;
+  const thinkingLevels = variantLevels.length > 1
+    ? variantLevels
+    : selectedModelSupportsThinking
+      ? (props.state?.thinkingOptions?.length ? props.state.thinkingOptions : currentAgent?.thinkingOptions?.length ? currentAgent.thinkingOptions : ['off', 'minimal', 'low', 'medium', 'high'])
+      : [];
   const currentThinkingLevel = variantLevels.length > 1 ? effectiveModelVariant.level : props.state?.thinking || effectiveModelVariant.level;
   const currentModelLabel = effectiveModelRef ? resolveModelDisplayName(effectiveModelRef, modelAliases[effectiveModelVariant.baseKey] || modelAliases[effectiveModelRef], modelOptions.find((option) => option.modelRef === effectiveModelRef)?.label) : t('composer.pickModel');
   const close = () => { setPickerOpen(false); setSkillPickerOpen(false); setModelPickerOpen(false); setThinkingPickerOpen(false); setWorkspaceMenuOpen(false); };

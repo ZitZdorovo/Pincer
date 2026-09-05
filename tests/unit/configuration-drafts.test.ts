@@ -40,6 +40,15 @@ it('never moves a saved key to a different provider endpoint implicitly', async 
   const service = new ConfigurationService({ operatorRequest: request });
   await expect(service.saveProvider('v1', { id: 'custom', api: 'openai-completions', baseUrl: 'https://new.example/v1', models: ['model'] })).rejects.toThrow('NEW_DESTINATION_REQUIRES_NEW_KEY');
 });
+it('deletes a provider by replacing the complete provider map', async () => {
+  const request = vi.fn(async (method: string): Promise<unknown> => method === 'config.get'
+    ? { hash: 'v1', config: { models: { providers: { first: { apiKey: 'secret', models: [{ id: 'a' }] }, second: { models: [{ id: 'b' }] } } } } }
+    : { ok: true });
+  await new ConfigurationService({ operatorRequest: request }).deleteProvider('v1', 'first');
+  const [, params] = (request.mock.calls as unknown as Array<[string, { raw: string; replacePaths: string[] }]>).find(([method]) => method === 'config.patch')!;
+  expect(JSON.parse(params.raw)).toEqual({ models: { providers: { second: { models: [{ id: 'b' }] } } } });
+  expect(params.replacePaths).toEqual(['models.providers']);
+});
 it('checks the server memory schema before writing defaults and redacts key-bearing errors', async () => {
   const request = vi.fn(async (method: string): Promise<unknown> => {
     if (method === 'config.schema.lookup') return { path: 'memory.search', schema: { type: 'object' }, children: [] };

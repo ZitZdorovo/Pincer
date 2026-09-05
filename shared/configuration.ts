@@ -5,6 +5,7 @@ export type MemoryInput = { provider: string; model: string; baseUrl?: string; a
 export type ConfigurationApi = {
   providers(): Promise<import('./contract').Result<{ hash: string; providers: ProviderConfig[] }>>;
   saveProvider(hash: string, input: ProviderInput): Promise<import('./contract').Result<void>>;
+  deleteProvider(hash: string, id: string): Promise<import('./contract').Result<void>>;
   memory(): Promise<import('./contract').Result<MemoryConfig>>;
   saveMemory(hash: string, input: MemoryInput): Promise<import('./contract').Result<void>>;
 };

@@ -38,8 +38,11 @@ export class RunTiming {
       if (candidates.length === 1) { run.turnKey = candidates[0].turnKey; this.save(run); }
     }
     for (const message of messages) {
-      if (message.role !== 'assistant' || !message.turnKey) continue;
-      const duration = this.durations.get(hash([scope, session, message.turnKey]));
+      if (message.role !== 'assistant') continue;
+      const liveRun = message.runId ? this.runs.get(message.runId) : undefined;
+      const duration = liveRun?.scope === scope && liveRun.session === session
+        ? liveRun.duration
+        : message.turnKey ? this.durations.get(hash([scope, session, message.turnKey])) : undefined;
       if (duration !== undefined) message.durationMs = duration;
     }
     return messages;

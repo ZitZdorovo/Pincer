@@ -51,7 +51,7 @@ export function parseModelVariant(raw: string | null | undefined): ParsedModelVa
 
   const lower = source.toLowerCase();
   if (lower.includes('gemini-pro-agent')) {
-    return { baseKey: 'gemini-pro-agent', baseId: 'gemini-pro-agent', level: 'max' };
+    return { baseKey: 'gemini-pro-agent', baseId: 'gemini-pro-agent', level: 'high' };
   }
   if (lower.includes('gemini-3.1-pro-low') || lower.includes('gemeni-3.1-pro-low')) {
     return { baseKey: 'gemini-pro-agent', baseId: 'gemini-pro-agent', level: 'low' };

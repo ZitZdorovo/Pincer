@@ -3,6 +3,7 @@ import { messageFiles } from '../../electron/workspace/messages';
 import { parseAttachments } from '../../electron/workspace/attachments';
 it('preserves attachment-only messages and inline raster previews', () => {
   expect(messageFiles({ attachments: [{ type: 'file', fileName: 'notes.txt', mimeType: 'text/plain', content: 'aGk=' }] })).toEqual([{ name: 'notes.txt', mimeType: 'text/plain' }]);
+  expect(messageFiles({ attachments: [{ fileName: 'gateway.txt', mimeType: 'text/plain', content: 'aGk=' }] })).toEqual([{ name: 'gateway.txt', mimeType: 'text/plain' }]);
   expect(messageFiles({ content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGk=' } }] })).toEqual([{ name: 'Image', mimeType: 'image/png', imageData: 'data:image/png;base64,aGk=' }]);
 });
 it('never promotes external URLs, executable SVG or filesystem references to image sources', () => {

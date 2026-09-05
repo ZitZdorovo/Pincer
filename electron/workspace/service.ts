@@ -91,7 +91,7 @@ export class WorkspaceService {
         const serverRun = string(list(item.activeRunIds)[0]) || string(record(item.inFlightRun).runId);
         if (serverRun) this.runsBySession.set(key, { id: serverRun, startedAt: known?.startedAt ?? timestamp(item.runStartedAt ?? item.startedAt), phase: known?.phase ?? 'starting' });
         const run = serverRun ? this.runsBySession.get(key) : known;
-        return { key, title: string(item.label) || string(item.derivedTitle) || string(item.displayName) || key, agentId: string(item.agentId) || undefined, pinned: item.pinned === true, updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : undefined, model: string(item.model) || undefined, cwd: string(item.execCwd) || string(item.spawnedCwd) || string(item.spawnedWorkspaceDir) || undefined, activeRunId: run?.id, runStartedAt: run?.startedAt, runPhase: run?.phase };
+        return { key, title: string(item.label) || string(item.derivedTitle) || string(item.displayName) || key, agentId: string(item.agentId) || undefined, pinned: item.pinned === true, updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : undefined, model: string(item.modelOverride) || string(item.model) || undefined, cwd: string(item.execCwd) || string(item.spawnedCwd) || string(item.spawnedWorkspaceDir) || undefined, activeRunId: run?.id, runStartedAt: run?.startedAt, runPhase: run?.phase };
       }).filter((entry) => entry.key);
       const catalog = record(await this.rpc('models.list', { agentId: this.state.agentId, view: 'configured', includeProviderCapabilities: true }));
       if (epoch !== this.epoch) return;
@@ -128,7 +128,9 @@ export class WorkspaceService {
       this.state.messages = this.timing.apply(this.state.scope, selected, messages(this.rawHistory));
       const info = record(value.sessionInfo);
       const session = this.state.sessions.find((item) => item.key === selected);
-      const rawModel = string(info.modelOverride) || string(info.model) || string(value.model) || session?.model || '';
+      // The explicit per-session choice wins over the currently resolved agent
+      // default. This prevents every opened chat from appearing as that default.
+      const rawModel = session?.model || string(info.modelOverride) || string(value.modelOverride) || string(info.model) || string(value.model) || '';
       const provider = string(info.providerOverride) || string(info.modelProvider) || string(value.modelProvider);
       const qualified = provider && !rawModel.startsWith(`${provider}/`) ? `${provider}/${rawModel}` : rawModel;
       this.state.model = this.state.models.find((m) => m.id === qualified)?.id || this.state.models.find((m) => m.id === rawModel || m.id.endsWith('/' + rawModel))?.id || qualified || null;
@@ -146,10 +148,10 @@ export class WorkspaceService {
       this.state.contextWindow = metric(info.contextTokens, value.contextTokens, info.contextWindow, value.contextWindow, this.state.models.find((m) => m.id === this.state.model)?.contextWindow);
       const inFlight = record(value.inFlightRun);
       this.state.activeRun = string(inFlight.runId) || string(list(info.activeRunIds)[0]) || null;
-      if (this.state.activeRun) this.setSessionRun(selected, this.state.activeRun, this.timing.get(this.state.activeRun)?.phase ?? (inFlight.text ? 'responding' : 'starting'), this.timing.get(this.state.activeRun)?.started ?? timestamp(inFlight.startedAt ?? inFlight.startedAtMs));
+      if (this.state.activeRun) this.setSessionRun(selected, this.state.activeRun, this.timing.get(this.state.activeRun)?.phase ?? (inFlight.text ? 'responding' : 'starting'), this.timing.get(this.state.activeRun)?.started ?? timestamp(inFlight.startedAt ?? inFlight.startedAtMs) ?? Date.now());
       else this.setSessionRun(selected, null);
       const observed = this.timing.get(this.state.activeRun);
-      this.state.runStartedAt = this.state.activeRun ? observed?.started ?? timestamp(inFlight.startedAt ?? inFlight.startedAtMs) ?? this.state.runStartedAt : undefined;
+      this.state.runStartedAt = this.state.activeRun ? observed?.started ?? timestamp(inFlight.startedAt ?? inFlight.startedAtMs) ?? this.runsBySession.get(selected)?.startedAt ?? Date.now() : undefined;
       this.state.runPhase = this.state.activeRun ? observed?.phase ?? (inFlight.text ? 'responding' : 'starting') : undefined;
       this.state.liveTools = this.state.activeRun && this.state.activeRun === previousRun ? previousTools ?? [] : [];
       this.state.stream = string(inFlight.text);
@@ -461,7 +463,7 @@ export class WorkspaceService {
     else if (['final', 'aborted', 'error'].includes(string(payload.state))) {
       const finalText = messageText(payload.message) || this.state.stream;
       activityText(this.state.liveActivity ??= [], finalText);
-      if (finalText || this.state.liveTools?.length || this.state.liveActivity?.length) this.state.messages.push({ role: 'assistant', text: this.state.liveActivity.filter(b => b.kind === 'text').map(b => b.text).join('\n\n') || finalText, tools: this.state.liveTools, activity: this.state.liveActivity, usage: tokenUsage(record(payload.message).usage), durationMs: observed?.duration ?? (this.state.runStartedAt !== undefined ? Math.max(0, Date.now() - this.state.runStartedAt) : undefined) });
+      if (finalText || this.state.liveTools?.length || this.state.liveActivity?.length) this.state.messages.push({ role: 'assistant', text: this.state.liveActivity.filter(b => b.kind === 'text').map(b => b.text).join('\n\n') || finalText, tools: this.state.liveTools, activity: this.state.liveActivity, usage: tokenUsage(record(payload.message).usage), runId, durationMs: observed?.duration ?? (this.state.runStartedAt !== undefined ? Math.max(0, Date.now() - this.state.runStartedAt) : undefined) });
       this.state.activeRun = null; this.state.stream = ''; this.state.tool = null;
       this.state.runStartedAt = undefined; this.state.runPhase = undefined; this.state.liveTools = []; this.state.liveActivity = [];
       if (payload.state === 'error') this.fail(new Error(string(payload.errorMessage) || 'CHAT_FAILED'));

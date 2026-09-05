@@ -34,6 +34,7 @@ it('restores donor names and sends the exact configured Thinking variant', () =>
   const [group] = groupConfiguredModels([{ modelRef: 'p/model-low', label: 'model-low' }, { modelRef: 'p/model-high', label: 'model-high' }]);
   expect(availableThinkingLevels(group)).toEqual(['low', 'high']);
   expect(resolveGroupVariant(group, 'high').modelRef).toBe('p/model-high');
+  expect(availableThinkingLevels(groupConfiguredModels([{ modelRef: 'google/gemini-pro-agent', label: 'Gemini Pro Agent' }])[0])).toEqual(['high']);
   expect(elapsedLabel(59000, true)).toBe('59 с'); expect(elapsedLabel(61000, true)).toBe('1 мин 1 с');
 });
 it('attributes usage to each actual model, not the current session model', () => {
