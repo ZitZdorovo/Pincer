@@ -30,6 +30,21 @@ it('reports an empty catalog without inventing a default model', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"data":[]}')));
   await expect(new ConfigurationService({ operatorRequest: vi.fn() }).discoverModels({ baseUrl: 'https://example.test/v1', api: 'openai-completions' })).rejects.toThrow('EMPTY_MODEL_CATALOG');
 });
+it('supports native Google catalogs and preserves every model id', async () => {
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ models: [{ name: 'models/gemini-2.5-pro' }], nextPageToken: 'next-page' })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ models: [{ name: 'models/gemini-2.5-flash' }] })));
+  vi.stubGlobal('fetch', fetcher);
+  const service = new ConfigurationService({ operatorRequest: vi.fn() });
+  await expect(service.discoverModels({ baseUrl: 'https://generativelanguage.googleapis.com/v1beta', api: 'google-generative-ai', apiKey: 'google-key' })).resolves.toEqual(['gemini-2.5-pro', 'gemini-2.5-flash']);
+  expect(fetcher.mock.calls[0][1]).toMatchObject({ headers: { 'x-goog-api-key': 'google-key' } });
+  expect(String(fetcher.mock.calls[1][0])).toContain('pageToken=next-page');
+});
+it('accepts a newly introduced OpenClaw provider protocol without a client release', async () => {
+  const request = vi.fn(async (method: string): Promise<unknown> => method === 'config.get' ? { hash: 'v1', config: {} } : { ok: true });
+  await new ConfigurationService({ operatorRequest: request }).saveProvider('v1', { id: 'custom', baseUrl: 'https://provider.example/v1', api: 'future-provider-protocol', models: ['model'] });
+  expect(request.mock.calls.some(([method]) => method === 'config.patch')).toBe(true);
+});
 it('shows only matching model windows and their accounts for routed models', () => {
   const providers = [{ provider: 'gemini', displayName: 'Gemini', source: 'omniroute' as const, windows: [{ label: 'Pro', model: 'gemini-pro-agent', accountId: 'work' }, { label: 'Flash', model: 'gemini-flash', accountId: 'personal' }] }, { provider: 'claude', displayName: 'Claude', source: 'gateway' as const, windows: [{ label: 'Week' }] }];
   expect(quotasForModel(providers, 'custom/gemini-pro-agent', 'custom')).toEqual([{ ...providers[0], windows: [providers[0].windows[0]] }]);

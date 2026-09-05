@@ -37,6 +37,20 @@ export type ProviderProtocol =
   | 'ollama'
   | 'azure-openai-responses';
 
+/** Protocol values understood by OpenClaw model provider entries. Keep this
+ * list in one place so custom providers can use the same set as built-ins. */
+export const PROVIDER_PROTOCOLS = [
+  'openai-completions',
+  'openai-responses',
+  'openai-chatgpt-responses',
+  'anthropic-messages',
+  'google-generative-ai',
+  'github-copilot',
+  'bedrock-converse-stream',
+  'ollama',
+  'azure-openai-responses',
+] as const satisfies readonly ProviderProtocol[];
+
 export const BUILTIN_PROVIDER_TYPES = [
   'anthropic',
   'openai',
@@ -157,6 +171,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     placeholder: 'sk-ant-api03-...',
     model: 'Claude',
     requiresApiKey: true,
+    defaultBaseUrl: 'https://api.anthropic.com/v1',
     showModelId: true,
     defaultModelId: 'claude-opus-4-8',
     modelIdPlaceholder: 'claude-opus-4-8',
@@ -171,6 +186,8 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     requiresApiKey: true,
     isOAuth: true,
     supportsApiKey: true,
+    hideOAuthUi: true,
+    defaultBaseUrl: 'https://api.openai.com/v1',
     defaultModelId: 'gpt-5.6-sol',
     showModelId: true,
     modelIdPlaceholder: 'gpt-5.6-sol',
@@ -183,18 +200,19 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     placeholder: 'AIza...',
     model: 'Gemini',
     requiresApiKey: true,
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModelId: 'gemini-3.1-pro-preview',
     showModelId: true,
     modelIdPlaceholder: 'gemini-3.1-pro-preview',
     apiKeyUrl: 'https://aistudio.google.com/app/apikey',
   },
-  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, showModelId: true, modelIdPlaceholder: 'openai/gpt-5.6-sol', defaultModelId: 'openai/gpt-5.6-sol', docsUrl: 'https://openrouter.ai/models' },
-  { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimaxi.com/' },
+  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://openrouter.ai/api/v1', showModelId: true, modelIdPlaceholder: 'openai/gpt-5.6-sol', defaultModelId: 'openai/gpt-5.6-sol', docsUrl: 'https://openrouter.ai/models' },
+  { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: true, isOAuth: true, supportsApiKey: true, hideOAuthUi: true, defaultBaseUrl: 'https://api.minimaxi.com/v1', defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimaxi.com/' },
   { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.cn/' },
   { id: 'moonshot-global', name: 'Moonshot (Global)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.ai/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.ai/' },
   { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3', docsUrl: 'https://docs.siliconflow.cn/cn/userguide/introduction' },
   { id: 'deepseek', name: 'DeepSeek', icon: '🐋', placeholder: 'sk-...', model: 'DeepSeek', requiresApiKey: true, defaultBaseUrl: 'https://api.deepseek.com/v1', showModelId: true, modelIdPlaceholder: 'deepseek-v4-pro', defaultModelId: 'deepseek-v4-pro', apiKeyUrl: 'https://platform.deepseek.com/api_keys', docsUrl: 'https://api-docs.deepseek.com/' },
-  { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimax.io' },
+  { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: true, isOAuth: true, supportsApiKey: true, hideOAuthUi: true, defaultBaseUrl: 'https://api.minimax.io/v1', defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimax.io' },
   {
     id: 'zai',
     name: 'Z.AI (CN)',
@@ -300,6 +318,15 @@ export function resolveProviderModelForSave(
 
 export function normalizeProviderApiKeyInput(apiKey: string): string {
   return apiKey.trim();
+}
+
+/** Select the wire protocol for a built-in provider when the user has not
+ * supplied a custom protocol. Custom providers default to OpenAI Completions. */
+export function getDefaultProviderProtocol(type: ProviderType | string): ProviderProtocol {
+  if (type === 'anthropic') return 'anthropic-messages';
+  if (type === 'google') return 'google-generative-ai';
+  if (type === 'ollama') return 'ollama';
+  return 'openai-completions';
 }
 
 /** Normalize provider API key before saving; Ollama uses a local placeholder when blank. */

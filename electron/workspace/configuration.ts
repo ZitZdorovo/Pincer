@@ -4,6 +4,12 @@ import { bounded } from './service';
 import type { MemoryConfig, ProviderConfig } from '../../shared/configuration';
 const rec = (value: unknown): Record<string, unknown> => isRecord(value) ? value : {};
 const str = (value: unknown) => typeof value === 'string' ? value : '';
+const safeModelId = (value: string, api: string): string => {
+  const id = value.trim();
+  // Google's REST catalog returns names such as "models/gemini-2.5-pro";
+  // OpenClaw expects the model id without the resource prefix.
+  return api === 'google-generative-ai' ? id.replace(/^models\//, '') : id;
+};
 function endpoint(value: unknown): string {
   const raw = bounded(value, 2048); let url: URL;
   try { url = new URL(raw); } catch { throw new Error('INVALID_ENDPOINT'); }
@@ -21,6 +27,7 @@ export class ConfigurationService {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (key) {
       if (api === 'anthropic-messages') { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; }
+      else if (api === 'google-generative-ai') headers['x-goog-api-key'] = key;
       else headers.Authorization = `Bearer ${key}`;
     }
     const url = new URL(api === 'ollama' ? `${base.replace(/\/v1$/, '')}/api/tags` : `${base}/models`);
@@ -34,11 +41,17 @@ export class ConfigurationService {
       let value: Record<string, unknown>;
       try { value = rec(await response.json()); } catch { throw new Error('INVALID_MODEL_CATALOG'); }
       const rows = Array.isArray(value.data) ? value.data : Array.isArray(value.models) ? value.models : [];
-      for (const row of rows) { const model = rec(row); const id = str(model.id) || str(model.name); if (id) ids.add(bounded(id, 256)); }
-      const cursor = value.has_more === true ? str(value.last_id) : '';
+      for (const row of rows) { const model = rec(row); const id = safeModelId(str(model.id) || str(model.name), api); if (id) ids.add(bounded(id, 256)); }
+      const cursor = api === 'google-generative-ai'
+        ? str(value.nextPageToken) || str(value.next_page_token)
+        : value.has_more === true ? str(value.last_id) : '';
       if (!cursor) break;
       if (cursors.has(cursor)) throw new Error('INVALID_MODEL_CATALOG');
       cursors.add(cursor); url.searchParams.set('after_id', cursor);
+      if (api === 'google-generative-ai') {
+        url.searchParams.delete('after_id');
+        url.searchParams.set('pageToken', cursor);
+      }
     } while (true);
     if (!ids.size) throw new Error('EMPTY_MODEL_CATALOG');
     return [...ids];
@@ -61,11 +74,13 @@ export class ConfigurationService {
     } catch { throw new Error('CONFIG_UPDATE_FAILED'); } // A validation error may echo a newly entered key.
   }
   async saveProvider(hash: unknown, input: unknown): Promise<void> {
-    if (!isRecord(input) || Object.keys(input).some((key) => !['id', 'baseUrl', 'api', 'models', 'apiKey'].includes(key))) throw new Error('INVALID_INPUT');
+    if (!isRecord(input) || Object.keys(input).some((key) => !['id', 'baseUrl', 'api', 'models', 'apiKey', 'headers'].includes(key))) throw new Error('INVALID_INPUT');
     const id = bounded(input.id, 128);
     if (!/^[a-z][a-z0-9_-]*$/.test(id) || ['constructor', 'prototype', '__proto__'].includes(id)) throw new Error('INVALID_PROVIDER');
-    const api = bounded(input.api, 64);
-    if (!['openai-completions', 'openai-responses', 'anthropic-messages', 'ollama'].includes(api)) throw new Error('INVALID_API');
+    const api = bounded(input.api, 64).trim();
+    // OpenClaw accepts provider protocols added independently of Pincer's UI.
+    // Validate the shape, but do not reject a newly introduced protocol here.
+    if (!/^[a-z][a-z0-9-]{1,63}$/.test(api)) throw new Error('INVALID_API');
     if (!Array.isArray(input.models) || !input.models.length) throw new Error('INVALID_MODELS');
     const ids = [...new Set(input.models.map((model) => bounded(model, 256)))];
     const { hash: current, config } = await this.snapshot(); if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
@@ -74,7 +89,10 @@ export class ConfigurationService {
     const models = ids.map((model) => existing.find((entry) => entry.id === model) || { id: model, name: model });
     const baseUrl = endpoint(input.baseUrl).replace(/\/$/, '').replace(/\/models$/, '');
     if (previous.apiKey && str(previous.baseUrl) !== baseUrl && !input.apiKey) throw new Error('NEW_DESTINATION_REQUIRES_NEW_KEY');
-    const provider = { baseUrl, api, models, ...(input.apiKey ? { apiKey: bounded(input.apiKey, 8192) } : {}) };
+    const headers = isRecord(input.headers)
+      ? Object.fromEntries(Object.entries(input.headers).map(([key, value]) => [bounded(key, 128), bounded(value, 2048)]).filter(([key, value]) => Boolean(key) && Boolean(value)))
+      : undefined;
+    const provider = { baseUrl, api, models, ...(headers && Object.keys(headers).length ? { headers } : {}), ...(input.apiKey ? { apiKey: bounded(input.apiKey, 8192) } : {}) };
     await this.patch(current, { models: { providers: { [id]: provider } } }, [`models.providers.${id}.models`]);
   }
   async deleteProvider(hash: unknown, providerId: unknown): Promise<void> {

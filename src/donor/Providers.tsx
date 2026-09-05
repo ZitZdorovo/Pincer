@@ -17,6 +17,7 @@ import {
   Copy,
   XCircle,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RemoteReadout } from './Readout';
@@ -35,6 +36,8 @@ import {
 } from './providers-adapter';
 import {
   PROVIDER_TYPE_INFO,
+  getDefaultProviderProtocol,
+  PROVIDER_PROTOCOLS,
   getProviderDocsUrl,
   type ProviderType,
   getProviderIconUrl,
@@ -214,7 +217,7 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
         label: name,
         authMode: options?.authMode || vendor?.defaultAuthMode || (type === 'ollama' ? 'local' : 'api_key'),
         baseUrl: options?.baseUrl,
-        apiProtocol: options?.apiProtocol,
+        apiProtocol: options?.apiProtocol || getDefaultProviderProtocol(type),
         headers: options?.headers,
         model: options?.model,
         metadata: options?.customModels?.length
@@ -258,10 +261,10 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
         <h2 data-testid="providers-settings-title" className="openx-section-title !mb-0">
           {t('aiProviders.title', 'AI Providers')}
         </h2>
-        <Button data-testid="providers-add-button" onClick={() => setShowAddDialog(true)} className="h-9 rounded-lg px-4 text-meta font-medium shadow-none">
+        <div className="flex items-center gap-2"><Button variant="outline" size="icon" aria-label={t('aiProviders.refresh', 'Обновить API')} title={t('aiProviders.refresh', 'Обновить API')} onClick={() => void refreshProviderSnapshot()} disabled={loading} className="h-9 w-9"><RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} /></Button><Button data-testid="providers-add-button" onClick={() => setShowAddDialog(true)} className="h-9 rounded-lg px-4 text-meta font-medium shadow-none">
           <Plus className="h-4 w-4 mr-2" />
           {t('aiProviders.add')}
-        </Button>
+        </Button></div>
       </div>}
 
       {loading ? (
@@ -534,10 +537,10 @@ function ProviderCard({
               <span className="capitalize">{vendor?.name || account.vendorId}</span>
               <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
               <span>{getAuthModeLabel(account.authMode, t)}</span>
-              {account.model && (
+              {(account.metadata?.customModels?.length || account.model) && (
                 <>
                   <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
-                  <span className="truncate max-w-[200px]">{(account.metadata?.customModels?.length || 0) > 1 ? `${i18n.language.startsWith('ru') ? 'Моделей' : 'Models'}: ${account.metadata!.customModels!.length}` : account.model}</span>
+                  <span className="truncate max-w-[200px]">{(account.metadata?.customModels?.length || 0) > 0 ? `${i18n.language.startsWith('ru') ? 'Моделей' : 'Models'}: ${account.metadata!.customModels!.length}` : account.model}</span>
                 </>
               )}
               <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
@@ -665,7 +668,7 @@ function ProviderCard({
                         setCodePlanMode('apikey');
                         setBaseUrl(typeInfo?.defaultBaseUrl || '');
                         if (modelId.trim() === codePlanPreset.modelId) {
-                          setModelId(typeInfo?.defaultModelId || '');
+                          setModelId('');
                         }
                       }}
                       className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", codePlanMode === 'apikey' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
@@ -699,29 +702,9 @@ function ProviderCard({
               {account.vendorId === 'custom' && (
                 <div className="space-y-1.5 pt-2">
                   <Label className={currentLabelClasses}>{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
-                  <div className="flex gap-2 text-meta">
-                    <button
-                      type="button"
-                      onClick={() => setApiProtocol('openai-completions')}
-                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'openai-completions' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
-                    >
-                      {t('aiProviders.protocols.openaiCompletions', 'OpenAI Completions')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setApiProtocol('openai-responses')}
-                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'openai-responses' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
-                    >
-                      {t('aiProviders.protocols.openaiResponses', 'OpenAI Responses')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setApiProtocol('anthropic-messages')}
-                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'anthropic-messages' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
-                    >
-                      {t('aiProviders.protocols.anthropic', 'Anthropic')}
-                    </button>
-                  </div>
+                  <select value={apiProtocol} onChange={(event) => setApiProtocol(event.target.value as ProviderAccount['apiProtocol'])} className={cn(currentInputClasses, 'w-full px-3')}>
+                    {PROVIDER_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{protocol}</option>)}
+                  </select>
                 </div>
               )}
               {showUserAgentField && (
@@ -1030,7 +1013,7 @@ function AddProviderDialog({
     let active = true;
     const timer = setTimeout(() => {
       setDiscovering(true); setValidationError(null);
-      void window.pincer.configuration.discoverModels({ baseUrl: url, api: selectedType === 'anthropic' ? 'anthropic-messages' : apiProtocol || 'openai-completions', apiKey: normalizeProviderApiKeyInput(apiKey) }).then((result) => {
+      void window.pincer.configuration.discoverModels({ baseUrl: url, api: apiProtocol || getDefaultProviderProtocol(selectedType), apiKey: normalizeProviderApiKeyInput(apiKey) }).then((result) => {
         if (!active) return;
         if (result.ok) setModelId(result.value.join('\n'));
         else setValidationError(i18n.language.startsWith('ru') ? 'Не удалось загрузить каталог моделей. Проверьте адрес и ключ или добавьте модели вручную.' : 'Could not load the model catalog. Check the URL and key or add models manually.');
@@ -1117,21 +1100,23 @@ function AddProviderDialog({
 
       let ids = modelId.trim().split(/[\n,]/).map((id) => id.trim()).filter(Boolean);
       if (!ids.length) {
-        const result = await window.pincer.configuration.discoverModels({ baseUrl: baseUrl.trim() || typeInfo?.defaultBaseUrl || '', api: selectedType === 'anthropic' ? 'anthropic-messages' : apiProtocol || 'openai-completions', apiKey: normalizedApiKey });
+        const result = await window.pincer.configuration.discoverModels({ baseUrl: baseUrl.trim() || typeInfo?.defaultBaseUrl || '', api: apiProtocol || getDefaultProviderProtocol(selectedType), apiKey: normalizedApiKey });
         if (!result.ok) throw new Error(i18n.language.startsWith('ru') ? 'Не удалось загрузить модели. Проверьте адрес и API-ключ.' : 'Could not load models. Check the URL and API key.');
         ids = result.value;
       }
       if (!ids.length) { setValidationError(t('pincer.modelIdRequired')); return; }
-      const discovery = { defaultModelId: ids[0], models: ids };
+      const discovery = { models: ids };
       await onAdd(
         selectedType,
         name || (typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name) || selectedType,
         normalizedApiKey,
         {
           baseUrl: baseUrl.trim() || undefined,
-          apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
+          apiProtocol: apiProtocol || getDefaultProviderProtocol(selectedType),
           headers: userAgent.trim() ? { 'User-Agent': userAgent.trim() } : undefined,
-          model: discovery.defaultModelId,
+          // Keep the account model unset: the chat chooses from the complete
+          // discovered catalog instead of silently pinning the first entry.
+          model: '',
           customModels: discovery.models,
           authMode: useOAuthFlow ? (preferredOAuthMode || 'oauth_device') : selectedType === 'ollama'
             ? 'local'
@@ -1181,6 +1166,7 @@ function AddProviderDialog({
                     setSelectedType(type.id);
                     setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
                     setBaseUrl(type.defaultBaseUrl || '');
+                    setApiProtocol(getDefaultProviderProtocol(type.id));
                     setModelId('');
                     setUserAgent('');
                     setShowAdvancedConfig(false);
@@ -1217,6 +1203,7 @@ function AddProviderDialog({
                     setSelectedType(null);
                     setValidationError(null);
                     setBaseUrl('');
+                    setApiProtocol('openai-completions');
                     setModelId('');
                     setUserAgent('');
                     setShowAdvancedConfig(false);
@@ -1348,7 +1335,7 @@ function AddProviderDialog({
                   <p data-testid="add-provider-models-auto-hint" className="text-xs text-muted-foreground">
                     {discovering ? (i18n.language.startsWith('ru') ? 'Загружаем все доступные модели…' : 'Loading all available models…') : (i18n.language.startsWith('ru') ? 'Каталог загружается автоматически по адресу и API-ключу. При необходимости можно добавить модели вручную.' : 'The catalog loads automatically using the URL and API key. You can also add models manually.')}
                   </p>
-                  <Textarea id="provider-models" data-testid="add-provider-models-input" rows={3} value={modelId} onChange={(event) => setModelId(event.target.value)} placeholder={typeInfo?.defaultModelId || 'model-id'} className={cn(inputClasses, 'h-auto min-h-[92px] resize-y py-3')} />
+                  <Textarea id="provider-models" data-testid="add-provider-models-input" rows={3} value={modelId} onChange={(event) => setModelId(event.target.value)} placeholder="model-id" className={cn(inputClasses, 'h-auto min-h-[92px] resize-y py-3')} />
                   {!!modelId.trim() && <div data-testid="add-provider-model-list" className="flex flex-wrap gap-1.5">{[...new Set(modelId.split(/[\n,]/).map((id) => id.trim()).filter(Boolean))].map((id) => <span key={id} className="max-w-full truncate rounded-lg border border-border bg-black/[.025] px-2 py-1 font-mono text-xs dark:bg-white/[.035]">{id}</span>)}</div>}
                 </div>
                 {codePlanPreset && (
@@ -1376,7 +1363,7 @@ function AddProviderDialog({
                           setCodePlanMode('apikey');
                           setBaseUrl(typeInfo?.defaultBaseUrl || '');
                           if (modelId.trim() === codePlanPreset.modelId) {
-                            setModelId(typeInfo?.defaultModelId || '');
+                            setModelId('');
                           }
                           setValidationError(null);
                         }}
@@ -1411,29 +1398,9 @@ function AddProviderDialog({
                 {selectedType === 'custom' && (
                 <div className="space-y-2.5">
                   <Label className={labelClasses}>{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
-                  <div className="flex gap-2 text-meta">
-                    <button
-                      type="button"
-                        onClick={() => setApiProtocol('openai-completions')}
-                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'openai-completions' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
-                    >
-                      {t('aiProviders.protocols.openaiCompletions', 'OpenAI Completions')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setApiProtocol('openai-responses')}
-                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'openai-responses' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
-                    >
-                      {t('aiProviders.protocols.openaiResponses', 'OpenAI Responses')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setApiProtocol('anthropic-messages')}
-                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'anthropic-messages' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
-                      >
-                        {t('aiProviders.protocols.anthropic', 'Anthropic')}
-                      </button>
-                    </div>
+                  <select value={apiProtocol} onChange={(event) => setApiProtocol(event.target.value as ProviderAccount['apiProtocol'])} className={cn(inputClasses, 'w-full px-3')}>
+                    {PROVIDER_PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{protocol}</option>)}
+                  </select>
                   </div>
                 )}
                 {showUserAgentInAddDialog && (

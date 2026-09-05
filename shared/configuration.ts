@@ -1,5 +1,5 @@
 export type ProviderConfig = { id: string; baseUrl: string; api: string; models: string[]; hasKey: boolean };
-export type ProviderInput = Omit<ProviderConfig, 'hasKey'> & { apiKey?: string };
+export type ProviderInput = Omit<ProviderConfig, 'hasKey'> & { apiKey?: string; headers?: Record<string, string> };
 export type MemoryConfig = { hash: string; path: string; provider: string; model: string; baseUrl: string; hasKey: boolean };
 export type MemoryInput = { provider: string; model: string; baseUrl?: string; apiKey?: string };
 export type ConfigurationApi = {
