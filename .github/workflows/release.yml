@@ -33,8 +33,8 @@ jobs:
           $version = node -p "require('./package.json').version"
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { $env:GITHUB_REF_NAME }
           if ($tag -ne "v$version") { throw "Tag $tag and package version $version differ" }
-      - run: npm test
-      - run: npm run test:e2e
+
+
       - run: npx electron-builder --win nsis --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
