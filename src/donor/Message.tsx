@@ -85,6 +85,27 @@ export function DonorMarkdown({ text, isAnimating = false }: { text: string; isA
     }
   }, [isAnimating]);
 
+  useEffect(() => {
+    if (isAnimating) return;
+    const root = containerRef.current;
+    if (!root) return;
+    const prepare = () => {
+      for (const block of root.querySelectorAll<HTMLElement>('[data-streamdown="code-block"]')) {
+        const body = block.querySelector<HTMLElement>('[data-streamdown="code-block-body"]');
+        if (!body || body.scrollHeight <= 360 || block.querySelector('[data-testid="code-expand"]')) continue;
+        block.classList.add('openx-code-collapsed');
+        const button = document.createElement('button');
+        button.type = 'button'; button.dataset.testid = 'code-expand'; button.className = 'openx-code-expand';
+        const update = () => { button.textContent = block.classList.contains('openx-code-collapsed') ? (document.documentElement.lang === 'ru' ? 'Развернуть код' : 'Expand code') : (document.documentElement.lang === 'ru' ? 'Свернуть код' : 'Collapse code'); };
+        button.addEventListener('click', () => { block.classList.toggle('openx-code-collapsed'); update(); });
+        update(); block.append(button);
+      }
+    };
+    const frame = requestAnimationFrame(prepare);
+    const observer = new MutationObserver(prepare); observer.observe(root, { childList: true, subtree: true });
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [isAnimating, text]);
+
   return (
     <div ref={containerRef} className="contents">
       <Streamdown
@@ -123,13 +144,15 @@ export function ActivityStream({ blocks, tools = [], live = false }: { blocks: A
 }
 export function DonorMessage({ message }: { message: ChatMessage }) {
  const { t } = useTranslation('chat'); const [copied, setCopied] = useState(false); const isUser = message.role === 'user';
+ const files = message.files?.map((file, index) => <div key={index} data-testid="message-attachment" className={file.imageData && safeAcpImageSource(file.imageData) ? 'max-w-full overflow-hidden rounded-xl border border-border/60 bg-surface-input p-1' : 'max-w-full rounded-xl border border-border/60 bg-surface-input px-3 py-2'}>{file.imageData && safeAcpImageSource(file.imageData) ? <img src={file.imageData} alt={file.name} title={file.name} className="h-20 w-20 rounded-lg object-cover" /> : <p className="max-w-[260px] truncate text-xs text-muted-foreground" title={file.name}>{file.name}</p>}</div>);
  return <div data-testid={isUser ? 'acp-user-message' : 'acp-assistant-message'} className={`openx-copy-surface group flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
   <div className={`flex min-w-0 flex-col gap-2 ${isUser ? 'w-fit max-w-[82%] items-end' : 'w-full items-start'}`}>
+   {isUser && files}
    {!isUser && message.activity?.length ? <ActivityStream blocks={message.activity} tools={message.tools} /> : <>
    {!!message.tools?.length && <ToolActivity tools={message.tools} />}
-   {message.text && (isUser ? <div className="rounded-2xl bg-surface-input px-4 py-2.5 text-foreground"><p className="openx-readable-text whitespace-pre-wrap break-words">{message.text}</p></div> : <DonorMarkdown text={message.text} />)}
+   {message.text && (isUser ? <div data-testid="user-message-bubble" className="rounded-2xl bg-surface-input px-4 py-2.5 text-foreground"><p className="openx-readable-text whitespace-pre-wrap break-words">{message.text}</p></div> : <DonorMarkdown text={message.text} />)}
    </>}
-   {message.files?.map((file, index) => <div key={index} className="max-w-full rounded-xl border border-border/60 bg-surface-input px-3 py-2">{file.imageData && safeAcpImageSource(file.imageData) && <img src={file.imageData} alt={file.name} className="max-h-64 max-w-full rounded-lg" />}<p className="break-all text-xs text-muted-foreground">{file.name}</p></div>)}
+   {!isUser && files}
    {!isUser && <ResponseStats message={message} />}
    {!isUser && message.text && <div className="flex w-full justify-start px-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"><button type="button" data-testid="acp-assistant-copy" aria-label={copied ? t('acp.copied') : t('acp.copy')} onClick={() => void navigator.clipboard.writeText(message.text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); }).catch((error) => toast.error(String(error)))} className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring dark:hover:bg-white/10">{copied ? <Check className="h-3.5 w-3.5 text-green-700 dark:text-green-400" /> : <Copy className="h-3.5 w-3.5" />}</button></div>}
   </div>

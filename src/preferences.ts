@@ -14,12 +14,13 @@ function initial(): Preferences {
   let stored: Partial<Preferences> = {};
   try { const value: unknown = JSON.parse(storage?.getItem('pincer.preferences') || '{}'); if (value && typeof value === 'object') stored = value as Partial<Preferences>; } catch { /* Keep valid defaults; credentials are stored separately in Main. */ }
   const theme = stored.theme ?? storage?.getItem('pincer.theme');
+  const storedWorkspaceWidth = typeof stored.workspacePanelWidth === 'number' && Number.isFinite(stored.workspacePanelWidth) ? stored.workspacePanelWidth : 45;
   return {
     theme: theme === 'light' || theme === 'dark' ? theme : 'system',
     language: (stored.language ?? storage?.getItem('pincer.language')) === 'en' ? 'en' : 'ru',
     sidebarWidth: typeof stored.sidebarWidth === 'number' && Number.isFinite(stored.sidebarWidth) ? Math.min(520, Math.max(240, stored.sidebarWidth)) : 320,
     sidebarCollapsed: stored.sidebarCollapsed === true,
-    workspacePanelWidth: typeof stored.workspacePanelWidth === 'number' && Number.isFinite(stored.workspacePanelWidth) ? Math.min(75, Math.max(28, stored.workspacePanelWidth)) : 45,
+    workspacePanelWidth: storedWorkspaceWidth === 100 ? 100 : Math.min(65, Math.max(28, storedWorkspaceWidth)),
     interfaceFontSize: ['small', 'large', 'xl', 'xxl'].includes(stored.interfaceFontSize ?? '') ? stored.interfaceFontSize! : 'default',
     interfaceFont: ['sans', 'serif', 'mono'].includes(stored.interfaceFont ?? '') ? stored.interfaceFont! : 'system',
     chatFont: ['sans', 'serif', 'mono'].includes(stored.chatFont ?? '') ? stored.chatFont! : 'system',

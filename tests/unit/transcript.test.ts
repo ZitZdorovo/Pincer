@@ -30,11 +30,23 @@ it('supports orphan results, errors, envelopes and missing telemetry without fak
 it('restores donor names and sends the exact configured Thinking variant', () => {
   expect(resolveModelDisplayName('custom-customb3/agy/agy/gemini-3.7-flash-high', undefined, 'agy/agy/gemini-3.7-flash-high')).toBe('Gemini 3.7 Flash');
   expect(resolveModelDisplayName('codex/gpt-5.6-sol-high')).toBe('GPT 5.6 Sol');
+  expect(resolveModelDisplayName('anthropic/claude-opus-4-6-max')).toBe('Claude Opus 4.6');
+  expect(resolveModelDisplayName('anthropic/claude-sonnet-4-6', undefined, 'Claude Sonnet 4 6')).toBe('Claude Sonnet 4.6');
   expect(resolveModelDisplayName('provider/id', 'Моя модель')).toBe('Моя модель');
   const [group] = groupConfiguredModels([{ modelRef: 'p/model-low', label: 'model-low' }, { modelRef: 'p/model-high', label: 'model-high' }]);
   expect(availableThinkingLevels(group)).toEqual(['low', 'high']);
   expect(resolveGroupVariant(group, 'high').modelRef).toBe('p/model-high');
-  expect(availableThinkingLevels(groupConfiguredModels([{ modelRef: 'google/gemini-pro-agent', label: 'Gemini Pro Agent' }])[0])).toEqual(['high']);
+  const gemini = groupConfiguredModels([{ modelRef: 'google/gemini-3.1-pro-low', label: 'Gemini 3.1 Pro Low' }, { modelRef: 'google/gemini-pro-agent', label: 'Gemini Pro Agent' }])[0];
+  expect(availableThinkingLevels(gemini)).toEqual(['low']);
+  expect(gemini.explicitThinking).toBe(true);
+  expect(resolveGroupVariant(gemini, 'off').modelRef).toBe('google/gemini-3.1-pro-low');
+  expect(availableThinkingLevels(groupConfiguredModels([{ modelRef: 'google/gemini-pro-agent', label: '' }])[0])).toEqual([]);
+  expect(availableThinkingLevels(groupConfiguredModels([{ modelRef: 'p/model', label: '' }, { modelRef: 'p/model-ultra', label: '' }])[0])).toEqual(['ultra']);
+  const singleMax = groupConfiguredModels([{ modelRef: 'openai/example-max', label: 'Example Max' }])[0];
+  expect(availableThinkingLevels(singleMax)).toEqual(['max']);
+  expect(singleMax.explicitThinking).toBe(true);
+  expect(availableThinkingLevels(groupConfiguredModels([{ modelRef: 'p/model-minimal', label: 'Minimal' }, { modelRef: 'p/model-adaptive', label: 'Adaptive' }])[0])).toEqual(['minimal', 'adaptive']);
+  expect(groupConfiguredModels([{ modelRef: 'custom/team-a/model-high', label: 'A' }, { modelRef: 'custom/team-b/model-high', label: 'B' }])).toHaveLength(2);
   expect(elapsedLabel(59000, true)).toBe('59 с'); expect(elapsedLabel(61000, true)).toBe('1 мин 1 с');
 });
 it('attributes usage to each actual model, not the current session model', () => {

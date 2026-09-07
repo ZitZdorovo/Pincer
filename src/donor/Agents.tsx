@@ -402,13 +402,13 @@ function AgentCard({
             </Button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
+        <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]" title={t('modelLine', { model: agent.modelDisplay, suffix: agent.inheritedModel ? ` (${t('inherited')})` : '' })}>
           {t('modelLine', {
             model: agent.modelDisplay,
             suffix: agent.inheritedModel ? ` (${t('inherited')})` : '',
           })}
         </p>
-        <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
+        <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]" title={t('channelsLine', { channels: channelsText })}>
           {t('channelsLine', { channels: channelsText })}
         </p>
       </div>
@@ -756,7 +756,7 @@ function AgentSettingsModal({
                 />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="pincer-grid-2 gap-4">
                 <div className="space-y-1 rounded-2xl border border-border bg-surface-modal p-4 shadow-sm">
                   <p className="text-tiny uppercase tracking-[0.08em] text-muted-foreground/80 font-medium">
                     {t('settingsDialog.agentIdLabel')}

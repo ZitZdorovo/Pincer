@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 
 
@@ -55,6 +56,7 @@ interface ChannelConfigModalProps {
   accountId?: string;
   onClose: () => void;
   onChannelSaved?: (channelType: ChannelType) => void | Promise<void>;
+  onChannelConfigured?: (channelType: ChannelType, accountId: string, values: Record<string, string>) => void | Promise<void>;
 }
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
@@ -62,16 +64,17 @@ const labelClasses = 'text-sm text-foreground/80 font-bold';
 const outlineButtonClasses = 'h-9 text-meta font-medium rounded-lg px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
 const primaryButtonClasses = 'h-9 text-meta font-medium rounded-lg px-4 shadow-none';
 
-export function ChannelConfigModal({ initialSelectedType = null, configuredTypes = [], showChannelName = true, allowEditAccountId = false, accountId, onClose, onChannelSaved }: ChannelConfigModalProps) {
+export function ChannelConfigModal({ initialSelectedType = null, configuredTypes = [], showChannelName = true, allowEditAccountId = false, accountId, initialConfigValues, onClose, onChannelSaved, onChannelConfigured }: ChannelConfigModalProps) {
  const { t } = useTranslation('channels');
  const [selectedType, setSelectedType] = useState<ChannelType | null>(initialSelectedType);
- const [configValues, setConfigValues] = useState<Record<string, string>>({});
+ const [configValues, setConfigValues] = useState<Record<string, string>>(initialConfigValues || {});
  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
  const [channelName, setChannelName] = useState(''); const [accountIdInput, setAccountIdInput] = useState(accountId || '');
  const [accountIdError, setAccountIdError] = useState<string | null>(null);
  const [qrCode, setQrCode] = useState<string | null>(null);
  const firstInputRef = useRef<HTMLInputElement>(null);
  const [actionBusy, setActionBusy] = useState(false); const [actionError, setActionError] = useState('');
+ const [confirmLogout, setConfirmLogout] = useState(false);
  useEffect(() => {
    const previous = document.activeElement as HTMLElement | null;
    const root = document.querySelector<HTMLElement>('[data-testid="channel-config-dialog"]'); root?.focus();
@@ -80,22 +83,54 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
      if (event.key === 'Tab' && root) { const targets = [...root.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]')]; const first = targets[0], last = targets.at(-1); if (event.shiftKey && (document.activeElement === first || document.activeElement === root)) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); } }
    }; root?.addEventListener('keydown', handle); return () => { root?.removeEventListener('keydown', handle); previous?.focus(); };
  }, [onClose, actionBusy]);
- const channelAction = async (action: 'start' | 'stop' | 'logout') => {
+ const performChannelAction = async (action: 'start' | 'stop' | 'logout') => {
    if (!selectedType || !accountId || actionBusy) return;
-   if (action === 'logout' && !window.confirm(t('pincer.logoutConfirm'))) return;
    setActionBusy(true); setActionError('');
    try { const result = await window.pincer.management.channelAction(selectedType, accountId, action); if (!result.ok) setActionError(result.error.message); else await onChannelSaved?.(selectedType); }
    catch (error) { setActionError(String(error)); } finally { setActionBusy(false); }
  };
+ const channelAction = (action: 'start' | 'stop' | 'logout') => { if (action === 'logout') setConfirmLogout(true); else void performChannelAction(action); };
  const meta = selectedType ? CHANNEL_META[selectedType] : null;
  const connecting = false, validating = false, loadingConfig = false, isExistingConfig = Boolean(accountId), showAccountIdEditor = allowEditAccountId, shouldUseCredentialValidation = true;
  const validationResult: { valid: boolean; errors: string[]; warnings: string[] } | null = null as { valid: boolean; errors: string[]; warnings: string[] } | null;
  const updateConfigValue = (key: string, value: string) => setConfigValues((all) => ({ ...all, [key]: value }));
  const toggleSecretVisibility = (key: string) => setShowSecrets((all) => ({ ...all, [key]: !all[key] }));
- const handleConnect = () => { toast.info(t('pincer.channelConfigUnavailable')); };
+ const handleConnect = async () => {
+   if (!selectedType || actionBusy) return;
+   const values = Object.fromEntries(Object.entries(configValues).filter(([, value]) => value.trim()).map(([key, value]) => [key, value.trim()]));
+   const missing = (CHANNEL_META[selectedType]?.configFields || []).filter((field) => field.required && !values[field.key] && !isExistingConfig);
+   if (missing.length) { setActionError(t('dialog.requiredFields', 'Заполните обязательные поля')); return; }
+   const resolvedAccountId = (accountIdInput || accountId || 'default').trim();
+   setActionBusy(true); setActionError('');
+   try {
+     if (selectedType === 'whatsapp') {
+       const saved = await window.pincer.management.saveChannel(selectedType, resolvedAccountId, values);
+       if (!saved.ok) throw new Error(saved.error.message);
+       const started = await window.pincer.management.channelQrStart(resolvedAccountId);
+       if (!started.ok) throw new Error(started.error.message);
+       const start = started.value as Record<string, unknown>;
+       if (start.connected === true) { await onChannelSaved?.(selectedType); return; }
+       if (typeof start.qrDataUrl !== 'string') throw new Error(t('dialog.qrUnavailable'));
+       setQrCode(start.qrDataUrl);
+       const waited = await window.pincer.management.channelQrWait(resolvedAccountId, start.qrDataUrl);
+       if (!waited.ok) throw new Error(waited.error.message);
+       if ((waited.value as Record<string, unknown>).connected !== true) throw new Error(t('dialog.qrExpired'));
+       toast.success(t('toast.qrConnected', { name: CHANNEL_NAMES[selectedType] }));
+       await onChannelSaved?.(selectedType);
+     } else if (onChannelConfigured) await onChannelConfigured(selectedType, resolvedAccountId, values);
+     else await onChannelSaved?.(selectedType);
+   }
+   catch (error) { setActionError(error instanceof Error ? error.message : String(error)); }
+   finally { setActionBusy(false); }
+ };
  const handleValidate = handleConnect;
- const openDocs = () => { if (meta) void navigator.clipboard.writeText(t(meta.docsUrl)).then(() => toast.success(t('pincer.linkCopied'))); };
-  return (
+ const openDocs = () => {
+   if (!meta) return;
+   void window.pincer.desktop.openExternal(t(meta.docsUrl)).then((result) => {
+     if (!result.ok) toast.error(result.error.message);
+   });
+ };
+  return (<>
     <div data-testid="channel-config-dialog" tabIndex={-1} role="dialog" aria-modal="true" aria-label={t('dialog.configureTitle', { name: selectedType ? CHANNEL_NAMES[selectedType] : '' })}
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
       onMouseDown={(event) => {
@@ -129,6 +164,7 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
             size="icon"
             onClick={onClose}
             className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+            aria-label={t('dialog.close', 'Закрыть')}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -165,7 +201,7 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
+                      <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]" title={t(channelMeta.description.replace('channels:', ''))}>
                         {t(channelMeta.description.replace('channels:', ''))}
                       </p>
                       <p className="text-xs font-medium text-muted-foreground/80 mt-2">
@@ -345,8 +381,8 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
                 </div>
               )}
 
-              <p role="status" className="text-sm text-muted-foreground">{t('pincer.channelConfigUnavailable')}</p>
-              {accountId && <div className="flex flex-wrap gap-2">{(['start', 'stop', 'logout'] as const).map((action) => <Button key={action} variant="outline" disabled={actionBusy} className={outlineButtonClasses} onClick={() => void channelAction(action)}>{t(`pincer.${action}`)}</Button>)}</div>}
+              <p role="status" className="text-sm text-muted-foreground">{t('dialog.configurationReady', 'Изменения будут сохранены на Gateway.')}</p>
+              {accountId && <div className="flex flex-wrap gap-2">{(['start', 'stop', 'logout'] as const).map((action) => <Button key={action} variant="outline" disabled={actionBusy} className={outlineButtonClasses} onClick={() => channelAction(action)}>{t(`pincer.${action}`)}</Button>)}</div>}
               {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
               <Separator className="bg-black/10 dark:bg-white/10" />
 
@@ -355,8 +391,8 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
                   {meta?.connectionType === 'token' && shouldUseCredentialValidation && (
                     <Button
                       variant="outline"
-                      onClick={handleValidate}
-                      disabled title={t('pincer.channelConfigUnavailable')}
+                      onClick={() => void handleValidate()}
+                      disabled={actionBusy}
                       className={outlineButtonClasses}
                     >
                       {validating ? (
@@ -373,10 +409,8 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
                     </Button>
                   )}
                   <Button
-                    onClick={() => {
-                      void handleConnect();
-                    }}
-                    disabled title={t('pincer.channelConfigUnavailable')}
+                    onClick={() => { void handleConnect(); }}
+                    disabled={actionBusy}
                     className={primaryButtonClasses}
                   >
                     {connecting ? (
@@ -400,7 +434,8 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
         </CardContent>
       </Card>
     </div>
-  );
+    <ConfirmDialog open={confirmLogout} title={t('pincer.logout', 'Выйти из канала?')} message={t('pincer.logoutConfirm')} confirmLabel={t('pincer.logout', 'Выйти')} cancelLabel={t('dialog.cancel', 'Отмена')} variant="destructive" onCancel={() => setConfirmLogout(false)} onConfirm={() => { setConfirmLogout(false); return performChannelAction('logout'); }} onError={(error) => setActionError(String(error))} />
+  </>);
 }
 
 interface ConfigFieldProps {

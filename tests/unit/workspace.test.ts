@@ -23,6 +23,24 @@ it('creates a full-permission session and sends exactly one request', async () =
   expect(mock.responses.filter((request) => request.method === 'chat.send')).toHaveLength(1);
   expect(mock.responses.find((request) => request.method === 'sessions.create')?.params).toMatchObject({ permissionMode: 'full' });
 });
+it('keeps a successful model change selected after history reload', async () => {
+  mock.models.push({ id: 'alternate-model', name: 'Alternate Model', provider: 'alternate', contextWindow: 64000, reasoning: false });
+  await workspace.refresh(); await workspace.create('main');
+  await workspace.setModel('alternate/alternate-model');
+  expect(mock.sessions[0].model).toBe('alternate/alternate-model');
+  expect(workspace.snapshot().model).toBe('alternate/alternate-model');
+  expect(workspace.snapshot().sessions[0].model).toBe('alternate/alternate-model');
+});
+it('refreshes the configured model catalog without changing the selected chat model', async () => {
+  await workspace.create('main'); await workspace.setModel('test/test-model');
+  const selected = workspace.snapshot().selected;
+  const freshModel = { id: 'fresh-model', name: 'Fresh Gateway Model', provider: 'fresh', contextWindow: 128000, reasoning: true, thinkingLevels: [{ id: 'low', label: 'Low' }, { id: 'max', label: 'Max' }], thinkingDefault: 'low' };
+  mock.models.splice(0, 1, freshModel, { ...freshModel });
+  await workspace.refreshModels();
+  expect(workspace.snapshot()).toMatchObject({ selected, model: 'test/test-model', loading: false });
+  expect(workspace.snapshot().models).toEqual([{ id: 'fresh/fresh-model', name: 'Fresh Gateway Model', provider: 'fresh', contextWindow: 128000, reasoning: true, thinkingLevels: [{ id: 'low', label: 'Low' }, { id: 'max', label: 'Max' }], thinkingDefault: 'low' }]);
+  expect(mock.responses.findLast((request) => request.method === 'models.list')?.params).toMatchObject({ agentId: 'main', view: 'configured' });
+});
 it('keeps a new chat local until the first send and stores non-Git project folders in Pincer', async () => {
   const existingCreates = mock.responses.filter((request) => request.method === 'sessions.create').length;
   await workspace.registerProject('Far Cry 4', 'C:\\Users\\zdawn\\Documents\\My Games\\Far Cry 4');

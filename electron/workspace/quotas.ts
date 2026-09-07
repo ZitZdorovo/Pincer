@@ -27,11 +27,16 @@ export function omniQuotas(limits: unknown, catalog: unknown): ProviderQuota[] {
   for (const [id, value] of Object.entries(rec(rec(limits).caches)).slice(0, 500)) {
     const account = connections.get(id); if (!account) continue;
     const cache = rec(value); const windows: QuotaWindow[] = [];
+    const accountModels = [account.model, account.modelId, account.modelRef, account.models, cache.model]
+      .flatMap((raw) => Array.isArray(raw) ? raw : [raw])
+      .map((raw) => str(raw) || str(rec(raw).id) || str(rec(raw).model) || str(rec(raw).modelId))
+      .filter(Boolean);
+    const uniqueAccountModels = [...new Set(accountModels)];
     for (const [label, raw] of Object.entries(rec(cache.quotas)).slice(0, 500)) {
       const w = rec(raw); const total = num(w.total); const remaining = num(w.remaining); const used = num(w.used);
       const remainingPercent = percent(w.remainingPercentage);
       const usedPercent = remainingPercent !== undefined ? 100 - remainingPercent : total && used !== undefined ? percent(100 * used / total) : total && remaining !== undefined ? percent(Math.max(0, 100 - 100 * remaining / total)) : undefined;
-      windows.push({ label: str(w.displayName) || label, usedPercent, resetAt: at(w.resetAt), unlimited: w.unlimited === true, accountId: id, accountName: str(account.name) || str(account.email) || undefined, model: str(w.model) || undefined });
+      windows.push({ label: str(w.displayName) || label, usedPercent, resetAt: at(w.resetAt), unlimited: w.unlimited === true, accountId: id, accountName: str(account.name) || str(account.email) || undefined, model: str(w.model) || (uniqueAccountModels.length === 1 ? uniqueAccountModels[0] : undefined) });
     }
     providers.push({ provider: str(account.provider) || 'omniroute', displayName: str(account.provider) || 'OmniRoute', source: 'omniroute', windows, plan: str(cache.plan) || undefined, error: cache.error ? 'PROVIDER_QUOTAS_UNAVAILABLE' : undefined, updatedAt: at(cache.fetchedAt) });
   }

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { EventFrame } from '@openclaw/gateway-protocol';
 import { validateSessionsCreateParams, validateSessionsPatchParams } from '@openclaw/gateway-protocol';
-import type { ChatMessage, MemoryFile, MemoryHealth, MemorySearch, WorkspaceState } from '../../shared/contract';
+import type { ChatMessage, MemoryFile, MemoryHealth, MemorySearch, ModelInfo, WorkspaceState } from '../../shared/contract';
 import { GatewayService } from '../gateway/service';
 import { isRecord } from '../gateway/validation';
 import { parseAttachments } from './attachments';
@@ -33,6 +33,7 @@ const hash = (content: string, missing: boolean) => createHash('sha256').update(
 /** Explicit product operations. This class is the only chat/memory RPC adapter. */
 export class WorkspaceService {
   private state: WorkspaceState = { scope: '', revision: 0, loading: false, agents: [], agentId: '', sessions: [], selected: null, messages: [], activeRun: null, stream: '', tool: null, hasMore: false, error: null, models: [], model: null, thinking: null, projects: [], projectError: null };
+  private modelCatalogGeneration = 0;
   private listeners = new Set<(state: WorkspaceState) => void>();
   private epoch = 0;
   private endpoint = '';
@@ -73,6 +74,40 @@ export class WorkspaceService {
     if (record(value).ok === false) throw new Error(string(record(record(value).error).message) || 'OPERATION_FAILED');
     return value;
   }
+  private async loadModels(agentId: string): Promise<ModelInfo[]> {
+    const catalog = record(await this.rpc('models.list', { agentId, view: 'configured', includeProviderCapabilities: true }));
+    const models = list(catalog.models).map((entry) => {
+      const model = record(entry); const provider = string(model.provider); const rawId = string(model.id) || string(model.key);
+      const id = provider && !rawId.startsWith(`${provider}/`) ? `${provider}/${rawId}` : rawId;
+      const thinkingLevels = Array.isArray(model.thinkingLevels)
+        ? list(model.thinkingLevels).map((level) => {
+          const item = record(level); const levelId = string(item.id);
+          return { id: levelId, label: string(item.label) || levelId };
+        }).filter((level) => level.id)
+        : undefined;
+      return {
+        id,
+        name: string(model.name) || string(model.displayName) || rawId,
+        provider,
+        contextWindow: typeof model.contextWindow === 'number' ? model.contextWindow : undefined,
+        reasoning: model.reasoning === true,
+        ...(thinkingLevels !== undefined ? { thinkingLevels } : {}),
+        ...(string(model.thinkingDefault) ? { thinkingDefault: string(model.thinkingDefault) } : {}),
+      };
+    }).filter((model) => model.id);
+    // A provider can briefly report the same configured id through multiple
+    // auth/config sources. The picker is a snapshot, not an append-only log.
+    return [...new Map(models.map((model) => [model.id, model])).values()];
+  }
+  /** Refreshes only the configured model catalog used by the chat picker. */
+  async refreshModels(): Promise<void> {
+    const epoch = this.epoch;
+    const generation = ++this.modelCatalogGeneration;
+    const models = await this.loadModels(this.state.agentId);
+    if (epoch !== this.epoch || generation !== this.modelCatalogGeneration) return;
+    this.state.models = models;
+    this.emit();
+  }
   async refresh(): Promise<void> {
     const epoch = this.epoch;
     this.state.loading = true; this.state.error = null; this.emit();
@@ -93,12 +128,10 @@ export class WorkspaceService {
         const run = serverRun ? this.runsBySession.get(key) : known;
         return { key, title: string(item.label) || string(item.derivedTitle) || string(item.displayName) || key, agentId: string(item.agentId) || undefined, pinned: item.pinned === true, updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : undefined, model: string(item.modelOverride) || string(item.model) || undefined, cwd: string(item.execCwd) || string(item.spawnedCwd) || string(item.spawnedWorkspaceDir) || undefined, activeRunId: run?.id, runStartedAt: run?.startedAt, runPhase: run?.phase };
       }).filter((entry) => entry.key);
-      const catalog = record(await this.rpc('models.list', { agentId: this.state.agentId, view: 'configured', includeProviderCapabilities: true }));
+      const modelGeneration = ++this.modelCatalogGeneration;
+      const models = await this.loadModels(this.state.agentId);
       if (epoch !== this.epoch) return;
-      this.state.models = list(catalog.models).map((entry) => {
-        const model = record(entry); const provider = string(model.provider); const id = string(model.id);
-        return { id: provider && !id.startsWith(`${provider}/`) ? `${provider}/${id}` : id, name: string(model.name) || id, provider, contextWindow: typeof model.contextWindow === 'number' ? model.contextWindow : undefined, reasoning: model.reasoning === true };
-      }).filter((model) => model.id);
+      if (modelGeneration === this.modelCatalogGeneration) this.state.models = models;
       try { this.state.projects = this.projects.list(this.state.scope); this.state.projectError = null; }
       catch (error) { if (epoch === this.epoch) this.state.projectError = this.redact(error instanceof Error ? error.message : 'PROJECTS_UNAVAILABLE'); }
       // Subscription is re-established after every transport reconnect.
@@ -317,8 +350,19 @@ export class WorkspaceService {
     if (this.state.activeRun) throw new Error('RUN_ACTIVE');
     const epoch = this.epoch;
     const id = bounded(model, 512); const effort = thinking === undefined ? undefined : bounded(thinking, 64);
-    await this.rpc('sessions.patch', { key: selected, model: id, ...(effort ? { thinkingLevel: effort } : {}) });
-    if (epoch === this.epoch) { this.state.model = id; if (effort) this.state.thinking = effort; this.state.contextWindow = this.state.models.find((model) => model.id === id)?.contextWindow; this.emit(); await this.select(selected); }
+    await this.rpc('sessions.patch', { key: selected, model: id, thinkingLevel: effort || null });
+    if (epoch === this.epoch) {
+      const session = this.state.sessions.find((entry) => entry.key === selected);
+      // Keep the local session projection in sync before reloading history. Otherwise
+      // select() gives the stale list value priority and makes a successful change
+      // appear to snap back to the previous model.
+      if (session) session.model = id;
+      this.state.model = id;
+      this.state.thinking = effort || null;
+      this.state.contextWindow = this.state.models.find((entry) => entry.id === id)?.contextWindow;
+      this.emit();
+      await this.select(selected);
+    }
   }
   async setThinking(thinking: unknown): Promise<void> {
     const selected = this.state.selected; const epoch = this.epoch;

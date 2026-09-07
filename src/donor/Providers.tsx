@@ -162,6 +162,11 @@ export type ProvidersSettingsHandle = {
 export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected: boolean; embedded?: boolean }>(function ProvidersSettings({ connected, embedded = false }, ref) {
   const { t } = useTranslation('settings');
   const devModeUnlocked = usePreferences().devMode;
+  const ru = usePreferences().language === 'ru';
+  const [refreshKeyProvider, setRefreshKeyProvider] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState('');
+  const [refreshBusy, setRefreshBusy] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
   const currentAgentId = useAgentsStore((state) => state.agents[0]?.id || '');
   const {
     statuses,
@@ -171,6 +176,7 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
     loading,
     refreshProviderSnapshot,
     refreshProviderModels,
+    deleteProviderModel,
     createAccount,
     removeAccount,
     updateAccount,
@@ -252,12 +258,32 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
       await refreshProviderModels(providerId);
       toast.success(t('aiProviders.refresh', 'Модели обновлены'));
     } catch (error) {
+      if (String(error).includes('MODEL_DISCOVERY_KEY_REQUIRED')) { setRefreshKeyProvider(providerId); setRefreshKey(''); setRefreshError(''); return; }
       toast.error(`${t('aiProviders.refresh', 'Не удалось обновить модели')}: ${error}`);
+    }
+  };
+  const handleDeleteProviderModel = async (providerId: string, modelId: string) => {
+    try {
+      await deleteProviderModel(providerId, modelId);
+      toast.success(t('aiProviders.modelDeleted', 'Модель удалена'));
+    } catch (error) {
+      toast.error(`${t('aiProviders.modelDeleteFailed', 'Не удалось удалить модель')}: ${error}`);
     }
   };
 
   return (
     <div data-testid="providers-settings" className="space-y-6">
+      <Dialog open={refreshKeyProvider !== null} onOpenChange={open => { if (!open && !refreshBusy) { setRefreshKeyProvider(null); setRefreshKey(''); } }}>
+        <DialogContent>
+          <DialogTitle>{ru ? 'Обновить модели провайдера' : 'Refresh provider models'}</DialogTitle>
+          <DialogDescription>{ru ? 'Gateway скрывает сохранённый ключ этого провайдера. Введите API-ключ один раз: Pincer сохранит его с шифрованием ОС для следующих обновлений.' : 'Gateway hides this provider’s saved key. Enter the API key once; Pincer will store it with OS encryption for future refreshes.'}</DialogDescription>
+          <form className="space-y-4" onSubmit={async event => { event.preventDefault(); if (!refreshKeyProvider || refreshBusy) return; setRefreshBusy(true); setRefreshError(''); try { await refreshProviderModels(refreshKeyProvider, refreshKey.trim()); setRefreshKeyProvider(null); setRefreshKey(''); toast.success(ru ? 'Модели обновлены' : 'Models refreshed'); } catch (error) { setRefreshError(String(error)); } finally { setRefreshBusy(false); } }}>
+            <Input type="password" autoComplete="off" aria-label="API key" value={refreshKey} onChange={event => setRefreshKey(event.target.value)} disabled={refreshBusy} />
+            {refreshError && <p role="alert" className="text-sm text-destructive">{refreshError}</p>}
+            <Button type="submit" disabled={!refreshKey.trim() || refreshBusy}>{refreshBusy ? (ru ? 'Загрузка…' : 'Loading…') : (ru ? 'Обновить модели' : 'Refresh models')}</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
       {!embedded && <div className="flex items-center justify-between">
         <h2 data-testid="providers-settings-title" className="openx-section-title !mb-0">
           {t('aiProviders.title', 'AI Providers')}
@@ -297,6 +323,7 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
               onCancelEdit={() => setEditingProvider(null)}
               onDelete={() => handleDeleteProvider(item.account.id)}
               onRefreshModels={() => handleRefreshProviderModels(item.account.id)}
+              onDeleteModel={(modelId) => handleDeleteProviderModel(item.account.id, modelId)}
               onSaveEdits={async (payload) => {
                 const updates: Partial<ProviderAccount> = {};
                 if (payload.updates) {
@@ -309,6 +336,16 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
                   if (payload.updates.fallbackProviderIds !== undefined) {
                     updates.fallbackAccountIds = payload.updates.fallbackProviderIds;
                   }
+                }
+                if (payload.models !== undefined) {
+                  updates.metadata = { ...(item.account.metadata || {}), customModels: payload.models };
+                }
+                if (payload.newApiKey && item.account.vendorId !== 'ollama') {
+                  const baseUrl = payload.updates?.baseUrl || item.account.baseUrl || vendorMap.get(item.account.vendorId)?.defaultBaseUrl || '';
+                  const api = payload.updates?.apiProtocol || item.account.apiProtocol || getDefaultProviderProtocol(item.account.vendorId);
+                  const discovered = await window.pincer.configuration.discoverModels({ baseUrl, api, apiKey: payload.newApiKey });
+                  if (!discovered.ok) throw new Error(discovered.error.message);
+                  updates.metadata = { ...(item.account.metadata || {}), customModels: discovered.value };
                 }
                 await updateAccount(
                   item.account.id,
@@ -334,7 +371,7 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
         onOAuthComplete={async () => {
           await window.pincer.configuration.authStatus(true);
           await refreshProviderSnapshot();
-          await window.pincer.chat.refresh();
+          await window.pincer.chat.refreshModels();
           setShowAddDialog(false);
         }}
         onValidateKey={(type, key, options) => validateAccountApiKey(type, key, options)}
@@ -352,7 +389,8 @@ interface ProviderCardProps {
   onCancelEdit: () => void;
   onDelete: () => void;
   onRefreshModels: () => void;
-  onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
+  onDeleteModel: (modelId: string) => Promise<void>;
+  onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig>; models?: string[] }) => Promise<void>;
   onValidateKey: (
     key: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
@@ -371,6 +409,7 @@ function ProviderCard({
   onCancelEdit,
   onDelete,
   onRefreshModels,
+  onDeleteModel,
   onSaveEdits,
   onValidateKey: _onValidateKey,
   devModeUnlocked: _devModeUnlocked,
@@ -396,6 +435,11 @@ function ProviderCard({
   const [saving, setSaving] = useState(false);
   const [codePlanMode, setCodePlanMode] = useState<CodePlanMode>('apikey');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [deletingModel, setDeletingModel] = useState<string | null>(null);
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [modelsExpanded, setModelsExpanded] = useState(false);
+  const [modelList, setModelList] = useState<string[]>(Array.from(new Set([...(account.metadata?.customModels || []), ...(account.model ? [account.model] : [])].filter(Boolean))));
+  const [modelToAdd, setModelToAdd] = useState('');
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === account.vendorId);
   const providerDocsUrl = getProviderDocsUrl(typeInfo, i18n.language);
@@ -411,6 +455,7 @@ function ProviderCard({
     : providerDocsUrl;
   const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || showModelIdField);
   const showUserAgentField = shouldShowUserAgentField(account);
+  const usesOAuthAuth = account.authMode === 'oauth_browser' || account.authMode === 'oauth_device';
 
   useEffect(() => {
     if (isEditing) {
@@ -424,6 +469,10 @@ function ProviderCard({
       setFallbackModelsText(normalizeFallbackModels(account.fallbackModels).join('\n'));
       setFallbackProviderIds(normalizeFallbackProviderIds(account.fallbackAccountIds));
       setValidationError(null);
+      setSelectedModels([]);
+      setModelsExpanded(false);
+      setModelList(Array.from(new Set([...(account.metadata?.customModels || []), ...(account.model ? [account.model] : [])].filter(Boolean))));
+      setModelToAdd('');
       setCodePlanMode(
         isCodePlanMode(
           account.baseUrl,
@@ -436,6 +485,30 @@ function ProviderCard({
   }, [isEditing, account.baseUrl, account.headers, account.fallbackModels, account.fallbackAccountIds, account.model, account.apiProtocol, account.vendorId, typeInfo?.codePlanPresetBaseUrl, typeInfo?.codePlanPresetModelId]);
 
   const fallbackOptions = allProviders.filter((candidate) => candidate.account.id !== account.id);
+  const availableModelIds = modelList;
+  const visibleModelIds = modelsExpanded ? availableModelIds : availableModelIds.slice(0, 8);
+  const allModelsSelected = availableModelIds.length > 0 && availableModelIds.every((id) => selectedModels.includes(id));
+  const originalModelIds = Array.from(new Set([...(account.metadata?.customModels || []), ...(account.model ? [account.model] : [])].filter(Boolean)));
+  const modelsChanged = modelList.length !== originalModelIds.length || modelList.some((id, index) => id !== originalModelIds[index]);
+  const appendProviderModels = () => {
+    const additions = modelToAdd.split(/[\n,]/).map((id) => id.trim()).filter(Boolean);
+    if (!additions.length) return;
+    setModelList((current) => Array.from(new Set([...current, ...additions])));
+    setModelToAdd('');
+  };
+
+  const deleteSelectedModels = async () => {
+    const ids = selectedModels.filter((id) => availableModelIds.includes(id));
+    if (!ids.length) return;
+    setDeletingModel('__bulk__');
+    try {
+      for (const id of ids) await onDeleteModel(id);
+      setSelectedModels([]);
+      setModelList((current) => current.filter((id) => !ids.includes(id)));
+    } finally {
+      setDeletingModel(null);
+    }
+  };
 
   const toggleFallbackProvider = (providerId: string) => {
     setFallbackProviderIds((current) => (
@@ -449,7 +522,7 @@ function ProviderCard({
     setSaving(true);
     setValidationError(null);
     try {
-      const payload: { newApiKey?: string; updates?: Partial<ProviderConfig> } = {};
+      const payload: { newApiKey?: string; updates?: Partial<ProviderConfig>; models?: string[] } = {};
       const normalizedFallbackModels = normalizeFallbackModels(fallbackModelsText.split('\n'));
       const normalizedNewKey = normalizeProviderApiKeyInput(newKey);
 
@@ -480,6 +553,7 @@ function ProviderCard({
           payload.updates = updates;
         }
       }
+      if (modelsChanged) payload.models = modelList;
 
       // Keep Ollama key optional in UI, but persist a placeholder when
       // editing legacy configs that have no stored key.
@@ -487,7 +561,7 @@ function ProviderCard({
         payload.newApiKey = resolveProviderApiKeyForSave(account.vendorId, '') as string;
       }
 
-      if (!payload.newApiKey && !payload.updates) {
+      if (!payload.newApiKey && !payload.updates && payload.models === undefined) {
         onCancelEdit();
         setSaving(false);
         return;
@@ -642,8 +716,26 @@ function ProviderCard({
               )}
               {showModelIdField && (
                 <div className="space-y-1.5 pt-2">
-                  <Label className={currentLabelClasses}>{i18n.language.startsWith('ru') ? 'Доступные модели' : 'Available models'}</Label>
-                  <div className="flex max-h-48 flex-wrap gap-2 overflow-auto">{(account.metadata?.customModels || [modelId]).filter(Boolean).map(id => <span key={id} className="max-w-full break-words rounded-lg border border-border px-2 py-1 text-xs">{id}</span>)}</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className={currentLabelClasses}>{i18n.language.startsWith('ru') ? 'Доступные модели' : 'Available models'}</Label>
+                    <span className="text-xs text-muted-foreground">{availableModelIds.length}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <button type="button" onClick={() => setSelectedModels(allModelsSelected ? [] : availableModelIds)} className="text-blue-500 hover:text-blue-600">
+                      {allModelsSelected ? (i18n.language.startsWith('ru') ? 'Снять выбор' : 'Clear selection') : (i18n.language.startsWith('ru') ? 'Выбрать все' : 'Select all')}
+                    </button>
+                    {selectedModels.length > 0 && <button type="button" disabled={deletingModel !== null} onClick={() => void deleteSelectedModels()} className="text-destructive hover:text-destructive/80 disabled:opacity-50">
+                      {i18n.language.startsWith('ru') ? `Удалить выбранные (${selectedModels.length})` : `Delete selected (${selectedModels.length})`}
+                    </button>}
+                    {availableModelIds.length > 8 && <button type="button" onClick={() => setModelsExpanded((value) => !value)} className="ml-auto text-muted-foreground hover:text-foreground">
+                      {modelsExpanded ? (i18n.language.startsWith('ru') ? 'Свернуть' : 'Show less') : (i18n.language.startsWith('ru') ? `Показать все (+${availableModelIds.length - 8})` : `Show all (+${availableModelIds.length - 8})`)}
+                    </button>}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input value={modelToAdd} onChange={(event) => setModelToAdd(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); appendProviderModels(); } }} placeholder={i18n.language.startsWith('ru') ? 'Добавить модель' : 'Add model'} className={cn(currentInputClasses, 'flex-1')} />
+                    <Button type="button" variant="outline" onClick={appendProviderModels} disabled={!modelToAdd.trim()} className="shrink-0"><Plus className="mr-1.5 h-4 w-4" />{i18n.language.startsWith('ru') ? 'Добавить' : 'Add'}</Button>
+                  </div>
+                  <div className="flex max-h-56 flex-wrap gap-2 overflow-auto rounded-xl border border-border/70 p-2">{visibleModelIds.map(id => <span key={id} className={cn("inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 text-xs", selectedModels.includes(id) ? 'border-blue-500/60 bg-blue-500/10' : 'border-border')}><input type="checkbox" aria-label={`${i18n.language.startsWith('ru') ? 'Выбрать модель' : 'Select model'} ${id}`} checked={selectedModels.includes(id)} onChange={() => setSelectedModels((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} className="h-3 w-3 rounded border-border text-blue-500 focus:ring-blue-500/50" /><span className="max-w-[24rem] break-words">{id}</span><button type="button" aria-label={`${t('aiProviders.modelDelete', 'Удалить модель')} ${id}`} title={t('aiProviders.modelDelete', 'Удалить модель')} disabled={deletingModel !== null} onClick={() => { setDeletingModel(id); void onDeleteModel(id).then(() => setModelList((current) => current.filter((value) => value !== id))).finally(() => setDeletingModel(null)); }} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"><X className="h-3 w-3" /></button></span>)}</div>
                 </div>
               )}
               <div className="space-y-2"><Label htmlFor={`provider-name-${account.id}`}>{t('aiProviders.dialog.displayName')}</Label><Input id={`provider-name-${account.id}`} value={providerName} onChange={(event) => setProviderName(event.target.value)} /></div>
@@ -775,6 +867,7 @@ function ProviderCard({
               </div>
             )}
           </div>
+          {!usesOAuthAuth && (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-0.5">
@@ -849,6 +942,7 @@ function ProviderCard({
                       && userAgent.trim() === getUserAgentHeader(account.headers).trim()
                       && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), account.fallbackModels)
                       && fallbackProviderIdsEqual(fallbackProviderIds, account.fallbackAccountIds)
+                      && !modelsChanged
                     )
                   }
                 >
@@ -887,6 +981,7 @@ function ProviderCard({
               </p>
             </div>
           </div>
+          )}
         </div>
       )}
     </div>
@@ -942,6 +1037,9 @@ function AddProviderDialog({
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [modelToAdd, setModelToAdd] = useState('');
+  const [selectedAddModels, setSelectedAddModels] = useState<string[]>([]);
+  const [modelsExpanded, setModelsExpanded] = useState(false);
 
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
@@ -976,6 +1074,9 @@ function AddProviderDialog({
       setApiKey('');
       setBaseUrl('');
       setModelId('');
+      setModelToAdd('');
+      setSelectedAddModels([]);
+      setModelsExpanded(false);
       setApiProtocol('openai-completions');
       setShowAdvancedConfig(false);
       setUserAgent('');
@@ -1017,6 +1118,23 @@ function AddProviderDialog({
       : null);
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
   const useOAuthFlow = isOAuth && !oauthUiHidden && (!supportsApiKey || authMode === 'oauth');
+  const addModelIds = Array.from(new Set(modelId.split(/[\n,]/).map((id) => id.trim()).filter(Boolean)));
+  const visibleAddModelIds = modelsExpanded ? addModelIds : addModelIds.slice(0, 8);
+  const allAddModelsSelected = addModelIds.length > 0 && addModelIds.every((id) => selectedAddModels.includes(id));
+  const appendModels = () => {
+    const additions = modelToAdd.split(/[\n,]/).map((id) => id.trim()).filter(Boolean);
+    if (!additions.length) return;
+    setModelId(Array.from(new Set([...addModelIds, ...additions])).join('\n'));
+    setModelToAdd('');
+  };
+  const removeSelectedAddModels = () => {
+    setModelId(addModelIds.filter((id) => !selectedAddModels.includes(id)).join('\n'));
+    setSelectedAddModels([]);
+  };
+
+  useEffect(() => {
+    setSelectedAddModels((current) => current.filter((id) => addModelIds.includes(id)));
+  }, [modelId]);
 
   useEffect(() => {
     if (!open || !selectedType || useOAuthFlow) return;
@@ -1306,7 +1424,7 @@ function AddProviderDialog({
         </CardHeader>
         <CardContent className="overflow-y-auto flex-1 p-6">
           {!selectedType ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="pincer-grid-3 gap-3">
               {availableTypes.map((type) => (
                 <button
                   data-testid={`add-provider-type-${type.id}`}
@@ -1317,6 +1435,9 @@ function AddProviderDialog({
                     setBaseUrl(type.defaultBaseUrl || '');
                     setApiProtocol(getDefaultProviderProtocol(type.id));
                     setModelId('');
+                    setModelToAdd('');
+                    setSelectedAddModels([]);
+                    setModelsExpanded(false);
                     setUserAgent('');
                     setShowAdvancedConfig(false);
                     setCodePlanMode('apikey');
@@ -1354,6 +1475,9 @@ function AddProviderDialog({
                     setBaseUrl('');
                     setApiProtocol('openai-completions');
                     setModelId('');
+                    setModelToAdd('');
+                    setSelectedAddModels([]);
+                    setModelsExpanded(false);
                     setUserAgent('');
                     setShowAdvancedConfig(false);
                     setCodePlanMode('apikey');
@@ -1485,7 +1609,20 @@ function AddProviderDialog({
                     {discovering ? (i18n.language.startsWith('ru') ? 'Загружаем все доступные модели…' : 'Loading all available models…') : (i18n.language.startsWith('ru') ? 'Каталог загружается автоматически по адресу и API-ключу. При необходимости можно добавить модели вручную.' : 'The catalog loads automatically using the URL and API key. You can also add models manually.')}
                   </p>
                   <Textarea id="provider-models" data-testid="add-provider-models-input" rows={3} value={modelId} onChange={(event) => setModelId(event.target.value)} placeholder="model-id" className={cn(inputClasses, 'h-auto min-h-[92px] resize-y py-3')} />
-                  {!!modelId.trim() && <div data-testid="add-provider-model-list" className="flex flex-wrap gap-1.5">{[...new Set(modelId.split(/[\n,]/).map((id) => id.trim()).filter(Boolean))].map((id) => <span key={id} className="max-w-full truncate rounded-lg border border-border bg-black/[.025] px-2 py-1 font-mono text-xs dark:bg-white/[.035]">{id}</span>)}</div>}
+                  <div className="flex gap-2">
+                    <Input value={modelToAdd} onChange={(event) => setModelToAdd(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); appendModels(); } }} placeholder={i18n.language.startsWith('ru') ? 'Добавить модель' : 'Add model'} className={cn(inputClasses, 'flex-1')} />
+                    <Button type="button" variant="outline" onClick={appendModels} disabled={!modelToAdd.trim()} className="shrink-0"><Plus className="mr-1.5 h-4 w-4" />{i18n.language.startsWith('ru') ? 'Добавить' : 'Add'}</Button>
+                  </div>
+                  {!!addModelIds.length && <>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <button type="button" onClick={() => setSelectedAddModels(allAddModelsSelected ? [] : addModelIds)} className="text-blue-500 hover:text-blue-600">
+                        {allAddModelsSelected ? (i18n.language.startsWith('ru') ? 'Снять выбор' : 'Clear selection') : (i18n.language.startsWith('ru') ? 'Выбрать все' : 'Select all')}
+                      </button>
+                      {selectedAddModels.length > 0 && <button type="button" onClick={removeSelectedAddModels} className="text-destructive hover:text-destructive/80">{i18n.language.startsWith('ru') ? `Удалить выбранные (${selectedAddModels.length})` : `Delete selected (${selectedAddModels.length})`}</button>}
+                      {addModelIds.length > 8 && <button type="button" onClick={() => setModelsExpanded((value) => !value)} className="ml-auto text-muted-foreground hover:text-foreground">{modelsExpanded ? (i18n.language.startsWith('ru') ? 'Свернуть' : 'Show less') : (i18n.language.startsWith('ru') ? `Показать все (+${addModelIds.length - 8})` : `Show all (+${addModelIds.length - 8})`)}</button>}
+                    </div>
+                    <div data-testid="add-provider-model-list" className="flex max-h-56 flex-wrap gap-1.5 overflow-auto rounded-xl border border-border/70 p-2">{visibleAddModelIds.map((id) => <span key={id} className={cn("inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 font-mono text-xs", selectedAddModels.includes(id) ? 'border-blue-500/60 bg-blue-500/10' : 'border-border bg-black/[.025] dark:bg-white/[.035]')}><input type="checkbox" aria-label={`${i18n.language.startsWith('ru') ? 'Выбрать модель' : 'Select model'} ${id}`} checked={selectedAddModels.includes(id)} onChange={() => setSelectedAddModels((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} className="h-3 w-3 rounded border-border text-blue-500 focus:ring-blue-500/50" /><span className="max-w-[24rem] break-words">{id}</span><button type="button" aria-label={`${i18n.language.startsWith('ru') ? 'Удалить модель' : 'Delete model'} ${id}`} onClick={() => { setModelId(addModelIds.filter((value) => value !== id).join('\n')); setSelectedAddModels((current) => current.filter((value) => value !== id)); }} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X className="h-3 w-3" /></button></span>)}</div>
+                  </>}
                 </div>
                 {codePlanPreset && (
                   <div className="space-y-2.5">

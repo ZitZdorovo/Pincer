@@ -2,6 +2,7 @@ import type { GatewayService } from '../gateway/service';
 import { isRecord } from '../gateway/validation';
 import { bounded } from './service';
 import type { MemoryConfig, ProviderConfig } from '../../shared/configuration';
+import type { ProviderCredentials } from './provider-credentials';
 const rec = (value: unknown): Record<string, unknown> => isRecord(value) ? value : {};
 const str = (value: unknown) => typeof value === 'string' ? value : '';
 const safeModelId = (value: string, api: string): string => {
@@ -18,7 +19,7 @@ function endpoint(value: unknown): string {
   return raw;
 }
 export class ConfigurationService {
-  constructor(private gateway: Pick<GatewayService, 'operatorRequest'>) {}
+  constructor(private gateway: Pick<GatewayService, 'operatorRequest'>, private credentials?: ProviderCredentials) {}
   async discoverModels(input: unknown): Promise<string[]> {
     if (!isRecord(input)) throw new Error('INVALID_INPUT');
     const base = endpoint(input.baseUrl).replace(/\/$/, '').replace(/\/models$/, '');
@@ -59,7 +60,7 @@ export class ConfigurationService {
   private async snapshot() {
     const value = rec(await this.gateway.operatorRequest('config.get', {}));
     if (!str(value.hash) || !isRecord(value.config)) throw new Error('CONFIG_UNAVAILABLE');
-    return { hash: str(value.hash), config: value.config };
+    return { hash: str(value.hash), config: value.config, sourceConfig: rec(value.sourceConfig) };
   }
   private async authStatusSnapshot(refresh = false, agentId?: string): Promise<Record<string, unknown>> {
     try {
@@ -108,42 +109,56 @@ export class ConfigurationService {
   async modelsList(agentId?: string): Promise<unknown> {
     return this.gateway.operatorRequest('models.list', agentId ? { agentId } : {});
   }
-  async refreshProviderModels(hash: unknown, providerId: unknown): Promise<void> {
+  async refreshProviderModels(hash: unknown, providerId: unknown, apiKey?: unknown): Promise<void> {
     const id = bounded(providerId, 128);
     const { hash: current, config } = await this.snapshot();
     if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
     const previous = rec(rec(rec(config.models).providers)[id]);
     const baseUrl = str(previous.baseUrl);
     const api = str(previous.api);
-    const key = str(previous.apiKey);
+    const enteredKey = apiKey ? bounded(apiKey, 8192).trim() : '';
+    const key = enteredKey || this.credentials?.get(id, baseUrl) || str(previous.apiKey);
     let ids: string[] = [];
-    if (baseUrl && api) {
-      try { ids = await this.discoverModels({ baseUrl, api, ...(key ? { apiKey: key } : {}) }); } catch { /* OAuth/native providers use models.list below. */ }
+    if (baseUrl && api && key !== '__OPENCLAW_REDACTED__' && (key || !previous.apiKey)) {
+      ids = await this.discoverModels({ baseUrl, api, ...(key ? { apiKey: key } : {}) });
     }
     if (!ids.length) {
-      const catalog = rec(await this.gateway.operatorRequest('models.list', {}));
+      const catalog = rec(await this.gateway.operatorRequest('models.list', { view: 'all', refresh: true, includeProviderCapabilities: true }));
+      const outcome = (Array.isArray(catalog.providerOutcomes) ? catalog.providerOutcomes : []).map(rec).find((row) => row.provider === id && row.status !== 'ready');
+      if (outcome) throw new Error(outcome.status === 'auth-rejected' ? 'MODEL_DISCOVERY_HTTP_401' : 'MODEL_DISCOVERY_UNAVAILABLE');
+      if (baseUrl && previous.apiKey && (!key || key === '__OPENCLAW_REDACTED__') && !(Array.isArray(catalog.providerOutcomes) && catalog.providerOutcomes.some((row) => rec(row).provider === id && rec(row).status === 'ready'))) throw new Error('MODEL_DISCOVERY_KEY_REQUIRED');
       const rows = Array.isArray(catalog.models) ? catalog.models : Array.isArray(catalog.data) ? catalog.data : [];
       ids = rows.map((row) => {
         const value = rec(row);
         const rowProvider = str(value.provider);
         const keyValue = str(value.key);
         const model = str(value.id) || (keyValue.includes('/') ? keyValue.slice(keyValue.indexOf('/') + 1) : keyValue);
-        return (!rowProvider || rowProvider === id || keyValue.startsWith(`${id}/`)) ? model : '';
+        return (rowProvider === id || (!rowProvider && keyValue.startsWith(`${id}/`))) ? (model.startsWith(`${id}/`) ? model.slice(id.length + 1) : model) : '';
       }).filter(Boolean);
     }
     ids = [...new Set(ids)];
     if (!ids.length) throw new Error('EMPTY_MODEL_CATALOG');
     const existing = Array.isArray(previous.models) ? previous.models.map(rec) : [];
     const models = ids.map((model) => existing.find((entry) => entry.id === model) || { id: model, name: model });
-    await this.patch(current, { models: { providers: { [id]: { ...previous, models } } } }, [`models.providers.${id}.models`]);
+    await this.patch(current, { models: { providers: { [id]: { models } } } }, [`models.providers.${id}.models`]);
+    if (enteredKey) this.credentials?.set(id, baseUrl, enteredKey);
   }
   async providers(): Promise<{ hash: string; providers: ProviderConfig[] }> {
-    const { hash, config } = await this.snapshot();
-    const configured = new Map<string, ProviderConfig>(Object.entries(rec(rec(config.models).providers)).map(([id, entry]) => {
+    const { hash, config, sourceConfig } = await this.snapshot();
+    const sourceProviders = rec(rec(sourceConfig.models).providers);
+    const configuredProviderIds = new Set(Object.keys(rec(rec(config.models).providers)));
+    const hasSourceConfig = Object.keys(sourceConfig).length > 0;
+    const configured = new Map<string, ProviderConfig>(Object.entries(rec(rec(config.models).providers)).filter(([id, entry]) => {
+      // OpenClaw adds built-in provider catalogs to the resolved runtime
+      // config. They are not saved accounts and must disappear from Pincer
+      // when their auth profile is logged out.
+      const provider = rec(entry);
+      return !hasSourceConfig || Object.hasOwn(sourceProviders, id) || Boolean(provider.apiKey);
+    }).map(([id, entry]) => {
       const provider = rec(entry);
       return [id, { id, baseUrl: str(provider.baseUrl), api: str(provider.api), hasKey: Boolean(provider.apiKey), models: (Array.isArray(provider.models) ? provider.models : []).map((model) => str(rec(model).id)).filter(Boolean) }] as [string, ProviderConfig];
     }));
-    const auth = await this.authStatusSnapshot(false);
+    const auth = await this.authStatusSnapshot(true);
     const authRows = Array.isArray(auth.providers) ? auth.providers.map(rec) : [];
     for (const row of authRows) {
       const id = str(row.provider) || str(row.authProvider);
@@ -163,19 +178,44 @@ export class ConfigurationService {
           ...(Object.keys(expiry).length ? { expiry: { ...(typeof expiry.at === 'number' ? { at: expiry.at } : {}), ...(typeof expiry.remainingMs === 'number' ? { remainingMs: expiry.remainingMs } : {}), ...(str(expiry.label) ? { label: str(expiry.label) } : {}) } } : {}),
         };
       }).filter((profile) => profile.profileId) : [];
+      const status = str(row.status);
+      // A missing/expired auth row is not an account. If the provider is only
+      // an OpenClaw runtime overlay (and has no saved config or profiles), do
+      // not recreate it in the client after logout.
+      if (!profiles.length && !row.apiKey && ['missing', 'expired'].includes(status) && !configured.has(id)) continue;
       const current = configured.get(id) || { id, baseUrl: '', api: '', hasKey: false, models: [] };
       configured.set(id, {
         ...current,
-        hasKey: current.hasKey || profiles.length > 0 || Boolean(str(row.status) && !['missing', 'expired'].includes(str(row.status))),
-        ...(str(row.status) ? { authStatus: str(row.status) } : {}),
+        hasKey: current.hasKey || Boolean(row.apiKey) || profiles.length > 0 || Boolean(str(row.status) && !['missing', 'expired'].includes(str(row.status))),
+        ...(status ? { authStatus: status } : {}),
         ...(profiles.length ? { authProfiles: profiles } : {}),
       });
     }
+    // OAuth and token providers are often absent from models.providers. Their
+    // catalog is exposed by models.list instead, so merge those model ids into
+    // the same provider rows that the client renders. This also makes a fresh
+    // OAuth login visible without restarting Pincer.
+    try {
+      const catalog = rec(await this.gateway.operatorRequest('models.list', {}));
+      const rows = Array.isArray(catalog.models) ? catalog.models : Array.isArray(catalog.data) ? catalog.data : [];
+      for (const row of rows) {
+        const value = rec(row);
+        const key = str(value.key);
+        const providerId = str(value.provider) || (key.includes('/') ? key.slice(0, key.indexOf('/')) : '');
+        const modelId = str(value.id) || (key.includes('/') ? key.slice(key.indexOf('/') + 1) : key);
+        if (!providerId || !modelId) continue;
+        const provider = configured.get(providerId);
+        // Configured providers already have an authoritative replacement list.
+        // Only auth-only providers need their ids supplied by models.list;
+        // mixing runtime rows back into config resurrects deleted models.
+        if (provider && !configuredProviderIds.has(providerId) && !provider.models.includes(modelId)) provider.models.push(modelId);
+      }
+    } catch { /* Auth/config rows remain usable when the catalog is unavailable. */ }
     return { hash, providers: [...configured.values()] };
   }
   private async patch(hash: string, value: unknown, replacePaths?: string[]): Promise<Record<string, unknown>> {
     try {
-      const result = rec(await this.gateway.operatorRequest('config.patch', { baseHash: hash, raw: JSON.stringify(value), ...(replacePaths ? { replacePaths } : {}) }));
+      const result = rec(await this.gateway.operatorRequest('config.patch', { baseHash: hash, raw: JSON.stringify(value), ...(replacePaths?.length ? { replacePaths } : {}) }));
       if (result.ok === false) throw new Error('CONFIG_UPDATE_FAILED');
       return result;
     } catch { throw new Error('CONFIG_UPDATE_FAILED'); } // A validation error may echo a newly entered key.
@@ -201,21 +241,126 @@ export class ConfigurationService {
       : undefined;
     const provider = { baseUrl, api, models, ...(headers && Object.keys(headers).length ? { headers } : {}), ...(input.apiKey ? { apiKey: bounded(input.apiKey, 8192) } : {}) };
     await this.patch(current, { models: { providers: { [id]: provider } } }, [`models.providers.${id}.models`]);
+    if (input.apiKey) this.credentials?.set(id, baseUrl, bounded(input.apiKey, 8192));
+  }
+  private modelReferenceCleanup(config: Record<string, unknown>, providerId: string, modelId?: string): { patch: Record<string, unknown>; replacePaths: string[] } {
+    const matches = (value: unknown) => {
+      if (typeof value !== 'string') return false;
+      const normalized = value.trim();
+      if (!normalized) return false;
+      if (modelId) return normalized === modelId || normalized === `${providerId}/${modelId}`;
+      return normalized === providerId || normalized.startsWith(`${providerId}/`);
+    };
+    const cleanSetting = (value: unknown): { changed: boolean; value: unknown } => {
+      if (typeof value === 'string') return matches(value) ? { changed: true, value: null } : { changed: false, value };
+      if (!isRecord(value)) return { changed: false, value };
+      let changed = false;
+      const next: Record<string, unknown> = { ...value };
+      if (matches(value.primary)) { next.primary = null; changed = true; }
+      if (Array.isArray(value.fallbacks)) {
+        const fallbacks = value.fallbacks.filter((entry) => !matches(entry));
+        if (fallbacks.length !== value.fallbacks.length) { next.fallbacks = fallbacks; changed = true; }
+      }
+      return { changed, value: next };
+    };
+    const agents = rec(config.agents);
+    const defaults = rec(agents.defaults);
+    const patchAgents: Record<string, unknown> = {};
+    const replacePaths: string[] = [];
+    const cleanModelMap = (value: unknown): { changed: boolean; patch: Record<string, unknown> } => {
+      const models = rec(value);
+      const patch: Record<string, unknown> = {};
+      for (const key of Object.keys(models)) if (matches(key)) patch[key] = null;
+      return { changed: Object.keys(patch).length > 0, patch };
+    };
+    const defaultsPatch: Record<string, unknown> = {};
+    const defaultsModel = cleanSetting(defaults.model);
+    if (defaultsModel.changed) {
+      defaultsPatch.model = defaultsModel.value;
+      if (JSON.stringify(rec(defaults.model).fallbacks) !== JSON.stringify(rec(defaultsModel.value).fallbacks)) replacePaths.push('agents.defaults.model.fallbacks');
+    }
+    const defaultsModels = cleanModelMap(defaults.models);
+    if (defaultsModels.changed) defaultsPatch.models = defaultsModels.patch;
+    if (Object.keys(defaultsPatch).length) patchAgents.defaults = defaultsPatch;
+    if (Array.isArray(agents.list)) {
+      let listChanged = false;
+      const list = agents.list.map((entry) => {
+        if (!isRecord(entry)) return entry;
+        const cleaned = cleanSetting(entry.model);
+        const cleanedModels = cleanModelMap(entry.models);
+        if (!cleaned.changed && !cleanedModels.changed) return entry;
+        listChanged = true;
+        const next = { ...entry };
+        // agents.list is replaced wholesale: null here is a literal invalid
+        // value, unlike a tombstone in the surrounding object merge patch.
+        if (cleaned.changed) {
+          if (cleaned.value === null) delete next.model;
+          else next.model = Object.fromEntries(Object.entries(rec(cleaned.value)).filter(([, value]) => value !== null));
+        }
+        if (cleanedModels.changed) next.models = Object.fromEntries(Object.entries(rec(entry.models)).filter(([key]) => !matches(key)));
+        return next;
+      });
+      if (listChanged) { patchAgents.list = list; replacePaths.push('agents.list'); }
+    }
+    const configuredEntries = rec(agents.entries);
+    const entriesPatch: Record<string, unknown> = {};
+    for (const [entryId, rawEntry] of Object.entries(configuredEntries)) {
+      if (!isRecord(rawEntry)) continue;
+      const cleaned = cleanSetting(rawEntry.model);
+      const cleanedModels = cleanModelMap(rawEntry.models);
+      if (!cleaned.changed && !cleanedModels.changed) continue;
+      entriesPatch[entryId] = {
+        ...(cleaned.changed ? { model: cleaned.value } : {}),
+        ...(cleanedModels.changed ? { models: { ...rec(rawEntry.models), ...cleanedModels.patch } } : {}),
+      };
+    }
+    if (Object.keys(entriesPatch).length) patchAgents.entries = entriesPatch;
+    return { patch: Object.keys(patchAgents).length ? { agents: patchAgents } : {}, replacePaths };
   }
   async deleteProvider(hash: unknown, providerId: unknown): Promise<void> {
     const id = bounded(providerId, 128);
+    const { hash: current, config, sourceConfig } = await this.snapshot();
+    if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
+    const providers = rec(rec(config.models).providers);
+    // config.patch follows RFC 7396 for objects: null removes the named key.
+    // Also remove references from defaults and per-agent model settings so a
+    // deleted provider cannot keep reappearing in the model picker.
+    const cleanup = this.modelReferenceCleanup(config, id);
+    // Deletion is intentionally idempotent. A previous OAuth logout or a
+    // concurrent Gateway refresh may already have removed the provider while
+    // the UI still has its old presentation snapshot.
+    const sourceProviders = rec(rec(sourceConfig.models).providers);
+    const runtimeOnly = Object.keys(sourceConfig).length > 0
+      && !Object.hasOwn(sourceProviders, id)
+      && !rec(providers[id]).apiKey;
+    if ((!Object.hasOwn(providers, id) || runtimeOnly) && !Object.keys(cleanup.patch).length) return;
+    const patchValue = runtimeOnly
+      ? cleanup.patch
+      : { models: { providers: { [id]: null } }, ...cleanup.patch };
+    // Gateway protects arrays even when their containing provider is deleted.
+    const arrays = (value: unknown, path: string): string[] => Array.isArray(value)
+      ? [path]
+      : Object.entries(rec(value)).flatMap(([key, child]) => arrays(child, `${path}.${key}`));
+    const result = await this.patch(current, patchValue, [...cleanup.replacePaths, ...(!runtimeOnly ? arrays(providers[id], `models.providers.${id}`) : [])]);
+    const returnedConfig = rec(result.config);
+    if (!runtimeOnly && Object.keys(returnedConfig).length && Object.hasOwn(rec(rec(returnedConfig.models).providers), id)) {
+      throw new Error('CONFIG_UPDATE_FAILED');
+    }
+    this.credentials?.set(id, str(rec(providers[id]).baseUrl), '');
+  }
+  async deleteProviderModel(hash: unknown, providerId: unknown, modelId: unknown): Promise<void> {
+    const id = bounded(providerId, 128);
+    const model = bounded(modelId, 256, true);
+    if (!model) throw new Error('INVALID_MODEL');
     const { hash: current, config } = await this.snapshot();
     if (current !== bounded(hash, 256)) throw new Error('CONFIG_CONFLICT');
     const providers = rec(rec(config.models).providers);
-    if (!Object.hasOwn(providers, id)) throw new Error('PROVIDER_NOT_FOUND');
-    // config.patch follows RFC 7396 for objects: null removes the named key.
-    // replacePaths only controls arrays, so sending a shorter providers object
-    // merely merges it and is reported by the Gateway as a successful noop.
-    const result = await this.patch(current, { models: { providers: { [id]: null } } });
-    const returnedConfig = rec(result.config);
-    if (Object.keys(returnedConfig).length && Object.hasOwn(rec(rec(returnedConfig.models).providers), id)) {
-      throw new Error('CONFIG_UPDATE_FAILED');
-    }
+    const previous = rec(providers[id]);
+    // A repeated click after a successful deletion is harmless.
+    if (!Object.hasOwn(providers, id)) return;
+    const models = Array.isArray(previous.models) ? previous.models.filter((entry) => str(rec(entry).id) !== model) : [];
+    const cleanup = this.modelReferenceCleanup(config, id, model);
+    await this.patch(current, { models: { providers: { [id]: { models } } }, ...cleanup.patch }, [`models.providers.${id}.models`, ...cleanup.replacePaths]);
   }
   private async memoryPath(): Promise<'memory.search' | 'agents.defaults.memorySearch'> {
     for (const path of ['memory.search', 'agents.defaults.memorySearch'] as const) {

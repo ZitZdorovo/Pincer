@@ -3,6 +3,26 @@ import { ConfigurationService } from '../../electron/workspace/configuration';
 import { quotasForModel } from '../../shared/quotas';
 
 afterEach(() => vi.unstubAllGlobals());
+it('never sends a redacted Gateway key to the provider or reports a stale catalog as refreshed', async () => {
+  const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+  const request = vi.fn(async (method: string) => method === 'config.get'
+    ? { hash: 'v1', config: { models: { providers: { custom: { baseUrl: 'https://example.test/v1', api: 'openai-completions', apiKey: '__OPENCLAW_REDACTED__', models: [{ id: 'old' }] } } } } }
+    : { models: [{ provider: 'custom', id: 'old' }], providerOutcomes: [] });
+  const service = new ConfigurationService({ operatorRequest: request });
+  await expect(service.refreshProviderModels('v1', 'custom')).rejects.toThrow('MODEL_DISCOVERY_KEY_REQUIRED');
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(request.mock.calls.some(([method]) => method === 'config.patch')).toBe(false);
+});
+it('refreshes a masked-key provider using an explicitly supplied key without writing it back', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ id: 'fresh-high' }, { id: 'fresh-high' }, { id: 'fresh-ultra' }] }))));
+  const request = vi.fn(async (method: string, _params: unknown) => method === 'config.get'
+    ? { hash: 'v1', config: { models: { providers: { custom: { baseUrl: 'https://example.test/v1', api: 'openai-completions', apiKey: '__OPENCLAW_REDACTED__' } } } } }
+    : { ok: true });
+  await new ConfigurationService({ operatorRequest: request }).refreshProviderModels('v1', 'custom', 'EXPLICIT_KEY');
+  const write = request.mock.calls.find(([method]) => method === 'config.patch')![1] as { raw: string };
+  expect(JSON.parse(write.raw).models.providers.custom.models.map((m: {id: string}) => m.id)).toEqual(['fresh-high', 'fresh-ultra']);
+  expect(write.raw).not.toContain('EXPLICIT_KEY');
+});
 it('loads and saves a 512-model catalog without truncation and accepts a full models URL', async () => {
   const data = Array.from({ length: 512 }, (_, index) => ({ id: `model-${index}` }));
   const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data })));

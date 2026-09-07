@@ -1058,7 +1058,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
               <Label htmlFor="message" className="text-sm text-foreground/80 font-bold">
                 {t('dialog.message')}
               </Label>
-              <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-1 focus-within:ring-primary/50 focus-within:border-primary">
+              <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary">
                 {/* Text Row */}
                 <div className="relative">
                   {skillTokenRanges.length > 0 && (
@@ -1101,7 +1101,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       onClick={() => setSkillPickerOpen((isOpen) => !isOpen)}
                       title={t('dialog.pickSkill')}
                       className={cn(
-                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
+                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                         skillPickerOpen && 'text-foreground',
                       )}
                     >
@@ -1817,7 +1817,7 @@ function CronView() {
           )}
 
           {/* Statistics */}
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="pincer-stat-grid mb-6 gap-3">
             <div className="settings-card group relative flex min-h-[108px] flex-col justify-between overflow-hidden p-4 transition-colors hover:bg-black/5 dark:hover:bg-white/5">
               <div className="flex items-center justify-between">
                 <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -1886,7 +1886,7 @@ function CronView() {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="pincer-grid-2 gap-x-6 gap-y-4">
               {safeJobs.map((job) => {
                 const channelGroup = configuredChannels.find((group) => group.channelType === job.delivery?.channel);
                 const account = channelGroup?.accounts.find((item) => item.accountId === job.delivery?.accountId);

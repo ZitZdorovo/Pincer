@@ -18,6 +18,7 @@ export class ApprovalsService {
   private fetching = new Map<string, number>();
   private sequence = 0;
   private resolving = new Set<string>();
+  private refreshing: Promise<void> | null = null;
   constructor(private gateway: Gateway) {
     gateway.onOperatorEvent((event) => this.event(event));
     gateway.subscribe((state) => {
@@ -38,6 +39,14 @@ export class ApprovalsService {
   snapshot(): ApprovalState { return structuredClone(this.state); }
   subscribe(listener: (state: ApprovalState) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   private emit() { ++this.state.revision; for (const listener of this.listeners) listener(this.snapshot()); }
+  private request(method: string, params: unknown): Promise<unknown> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('APPROVAL_TIMEOUT')), 10000);
+      timer.unref?.();
+    });
+    return Promise.race([this.gateway.operatorRequest(method, params), timeout]).finally(() => clearTimeout(timer));
+  }
   private token(approval: ApprovalSnapshot): string { return createHash('sha256').update(JSON.stringify([this.endpoint, this.epoch, approval])).digest('hex'); }
   private remember(approval: ApprovalSnapshot): void {
     const item: ApprovalItem = { approval, reviewToken: this.token(approval) };
@@ -50,7 +59,7 @@ export class ApprovalsService {
   }
   private async get(id: string): Promise<ApprovalSnapshot> {
     if (!validateApprovalGetParams({ id }) || id.length > 1024) throw new Error('INVALID_APPROVAL');
-    const value = await this.gateway.operatorRequest('approval.get', { id });
+    const value = await this.request('approval.get', { id });
     if (!validateApprovalGetResult(value) || value.approval.id !== id) throw new Error('INVALID_APPROVAL_RESPONSE');
     return value.approval;
   }
@@ -76,24 +85,36 @@ export class ApprovalsService {
   private async pending(): Promise<void> {
     const epoch = this.epoch; const methods = this.gateway.operatorMethods();
     if (!methods.includes('approval.get')) return;
-    for (const method of ['exec.approval.list', 'plugin.approval.list']) {
-      if (!methods.includes(method)) continue;
-      const values = await this.gateway.operatorRequest(method, {});
+    const lists = await Promise.all(['exec.approval.list', 'plugin.approval.list'].filter((method) => methods.includes(method)).map(async (method) => {
+      const values = await this.request(method, {});
       if (epoch !== this.epoch) throw new Error('CONNECTION_CHANGED');
       if (!Array.isArray(values)) throw new Error('INVALID_APPROVAL_RESPONSE');
-      // Legacy lists can contain runtime request details. Keep only IDs; never forward those payloads.
-      for (const value of values.slice(0, 100)) if (isRecord(value) && typeof value.id === 'string' && value.id.length <= 1024) this.lookup(value.id);
-    }
+      return values;
+    }));
+    // Legacy lists can contain runtime request details. Keep only IDs; never forward those payloads.
+    const ids = [...new Set(lists.flat().slice(0, 200).flatMap((value) => isRecord(value) && typeof value.id === 'string' && value.id.length <= 1024 ? [value.id] : []))];
+    const approvals = await Promise.all(ids.map((id) => this.get(id)));
+    if (epoch !== this.epoch) throw new Error('CONNECTION_CHANGED');
+    for (const approval of approvals) this.remember(approval);
   }
-  async refresh(): Promise<void> {
+  refresh(): Promise<void> {
+    if (this.refreshing) return this.refreshing;
+    const operation = this.performRefresh().finally(() => { if (this.refreshing === operation) this.refreshing = null; });
+    this.refreshing = operation;
+    return operation;
+  }
+  private async performRefresh(): Promise<void> {
     const epoch = this.epoch; this.state.error = null;
     await this.pending();
     // approval.history contains terminal records only, never a list of all pending requests.
     const known = this.state.items.filter((item) => item.approval.status === 'pending').map((item) => item.approval.id);
-    for (const id of known) { const approval = await this.get(id); if (epoch !== this.epoch) throw new Error('CONNECTION_CHANGED'); this.remember(approval); }
-    const history = await this.gateway.operatorRequest('approval.history', { limit: 30 });
+    const [fresh, history] = await Promise.all([
+      Promise.all(known.map((id) => this.get(id))),
+      this.request('approval.history', { limit: 30 }),
+    ]);
     if (epoch !== this.epoch) throw new Error('CONNECTION_CHANGED');
     if (!validateApprovalHistoryResult(history)) throw new Error('INVALID_APPROVAL_RESPONSE');
+    for (const approval of fresh) this.remember(approval);
     for (const approval of history.items) this.remember(approval);
     this.emit();
   }
@@ -114,7 +135,7 @@ export class ApprovalsService {
       const params = { id, kind: approval.presentation.kind, decision };
       if (!validateApprovalResolveParams(params) || !approval.presentation.allowedDecisions.some((option) => option === decision)) throw new Error('INVALID_DECISION');
       if (approval.presentation.kind === 'plugin' && approval.presentation.externalResolution?.decisions.some((option) => option === decision)) throw new Error('EXTERNAL_APPROVAL_REQUIRED');
-      const result = await this.gateway.operatorRequest('approval.resolve', params);
+      const result = await this.request('approval.resolve', params);
       if (epoch !== this.epoch) throw new Error('CONNECTION_CHANGED');
       if (!validateApprovalResolveResult(result) || result.approval.id !== id) throw new Error('INVALID_APPROVAL_RESPONSE');
       this.remember(result.approval);

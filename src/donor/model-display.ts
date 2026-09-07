@@ -19,6 +19,7 @@ export interface ParsedModelVariant {
   baseKey: string;
   baseId: string;
   level: ThinkingLevel;
+  explicitLevel: boolean;
 }
 
 export interface ConfiguredModelGroup {
@@ -26,6 +27,7 @@ export interface ConfiguredModelGroup {
   baseId: string;
   variants: Partial<Record<ThinkingLevel, ConfiguredModelOption>>;
   original: ConfiguredModelOption;
+  explicitThinking: boolean;
 }
 
 const MODEL_ABBREVIATIONS = new Map([
@@ -47,25 +49,33 @@ const EXPLICIT_MODEL_NAMES: Readonly<Record<string, string>> = {
 
 export function parseModelVariant(raw: string | null | undefined): ParsedModelVariant {
   const source = typeof raw === 'string' ? raw.trim() : '';
-  if (!source) return { baseKey: 'unknown', baseId: 'unknown', level: 'off' };
+  if (!source) return { baseKey: 'unknown', baseId: 'unknown', level: 'off', explicitLevel: false };
 
-  const lower = source.toLowerCase();
-  if (lower.includes('gemini-pro-agent')) {
-    return { baseKey: 'gemini-pro-agent', baseId: 'gemini-pro-agent', level: 'high' };
-  }
-  if (lower.includes('gemini-3.1-pro-low') || lower.includes('gemeni-3.1-pro-low')) {
-    return { baseKey: 'gemini-pro-agent', baseId: 'gemini-pro-agent', level: 'low' };
-  }
+  // The first segment is the provider; retain every remaining namespace
+  // segment in the grouping key so equally named models never collapse.
+  const modelPath = source.includes('/') ? source.slice(source.indexOf('/') + 1) : source;
+  const separator = modelPath.lastIndexOf('/');
+  const namespace = separator >= 0 ? modelPath.slice(0, separator + 1) : '';
+  const leaf = separator >= 0 ? modelPath.slice(separator + 1) : modelPath;
+  const qualifiedKey = (base: string) => `${namespace}${base}`.toLowerCase();
 
-  let baseId = source.replace(/^(?:[^/]+\/)+/, '');
+  let baseId = leaf;
   let level: ThinkingLevel = 'off';
-  const suffix = baseId.match(/-(none|off|low|medium|high|xhigh|max|ultra)$/i);
+  let explicitLevel = false;
+  const suffix = baseId.match(new RegExp(`-(${THINKING_LEVELS.join('|')})$`, 'i'));
   if (suffix) {
     level = suffix[1].toLowerCase() as ThinkingLevel;
     baseId = baseId.slice(0, -suffix[0].length);
+    explicitLevel = true;
   }
   baseId = baseId.replace(/[-_\s]thinking$/i, '');
-  return { baseKey: baseId.toLowerCase(), baseId, level };
+  return { baseKey: qualifiedKey(baseId), baseId, level, explicitLevel };
+}
+
+function normalizeDisplayVersion(value: string): string {
+  return value
+    .replace(/\b(Claude(?:\s+(?:Opus|Sonnet|Haiku))?)\s+(\d+)\s+(\d+)\b/gi, '$1 $2.$3')
+    .replace(/\bClaude\s+(\d+(?:\.\d+)?)\s+(Opus|Sonnet|Haiku)\b/gi, 'Claude $2 $1');
 }
 
 export function formatAutomaticModelName(raw: string | null | undefined): string {
@@ -76,8 +86,8 @@ export function formatAutomaticModelName(raw: string | null | undefined): string
   if (/claude-?3[.-]?5-?sonnet/i.test(baseId) || /claude.*sonnet.*3[.-]?5/i.test(baseId)) return 'Claude Sonnet 3.5';
   if (/claude-?3[.-]?5-?haiku/i.test(baseId) || /claude.*haiku.*3[.-]?5/i.test(baseId)) return 'Claude Haiku 3.5';
 
-  const normalizedBaseId = baseId.replace(/\b(gpt|gemini|claude)-(\d+)-(\d+)(?=-|$)/gi, '$1-$2.$3');
-  return normalizedBaseId
+  const normalizedBaseId = baseId.replace(/\b((?:gpt|gemini|claude)(?:-[a-z]+)*?)-(\d+)-(\d+)(?=-|$)/gi, '$1-$2.$3');
+  return normalizeDisplayVersion(normalizedBaseId
     .split(/[-_/\s]+/)
     .filter(Boolean)
     .map((part) => {
@@ -89,7 +99,7 @@ export function formatAutomaticModelName(raw: string | null | undefined): string
     .join(' ')
     .replace(/(Claude)\s+(\d+(?:\.\d+)?)\s+([A-Za-z]+)/gi, '$1 $3 $2')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim());
 }
 
 export function resolveModelDisplayName(
@@ -104,8 +114,14 @@ export function resolveModelDisplayName(
   // Catalogs often repeat the raw id in `name`; that is not a human-authored
   // mapping and should still receive the automatic formatter.
   const generatedProviderLabel = rawModelId ? explicit?.startsWith(`${rawModelId} (`) : false;
-  if (explicit && explicit !== raw && explicit !== rawModelId && !generatedProviderLabel) return explicit;
+  if (explicit && explicit !== raw && explicit !== rawModelId && !generatedProviderLabel) return normalizeDisplayVersion(explicit);
   return formatAutomaticModelName(raw) || raw?.trim() || 'Model';
+}
+
+export function modelRouteLabel(modelRef: string): string {
+  const first = modelRef.indexOf('/'); const last = modelRef.lastIndexOf('/');
+  const provider = first < 0 ? modelRef : modelRef.slice(0, first);
+  return last > first ? `${modelRef.slice(first + 1, last)} · ${provider}` : provider;
 }
 
 export function groupConfiguredModels(options: ConfiguredModelOption[]): ConfiguredModelGroup[] {
@@ -117,8 +133,11 @@ export function groupConfiguredModels(options: ConfiguredModelOption[]): Configu
       baseId: parsed.baseId,
       variants: {},
       original: option,
+      explicitThinking: false,
     };
-    group.variants[parsed.level] = option;
+    if (parsed.explicitLevel) group.variants[parsed.level] = option;
+    group.explicitThinking ||= parsed.explicitLevel;
+    if (!parsed.explicitLevel) group.original = option;
     groups.set(parsed.baseKey, group);
   }
   return [...groups.values()];
@@ -132,9 +151,6 @@ export function resolveGroupVariant(
     ? preferredLevel as ThinkingLevel
     : null;
   if (preferred && group.variants[preferred]) return group.variants[preferred]!;
-  for (const level of THINKING_LEVELS) {
-    if (group.variants[level]) return group.variants[level]!;
-  }
   return group.original;
 }
 

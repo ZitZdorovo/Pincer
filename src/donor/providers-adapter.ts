@@ -57,13 +57,25 @@ export function useProviderData(connected: boolean) {
     const result = await window.pincer.configuration.saveProvider(snapshot.hash, { id: account.id, baseUrl, api: account.apiProtocol || getDefaultProviderProtocol(account.vendorId), models, ...(account.headers ? { headers: account.headers } : {}), ...(apiKey ? { apiKey } : {}) });
     if (!result.ok) throw new Error(result.error.message);
     if (account.label.trim()) setProviderLabels((current) => { const next = { ...current, [account.id]: account.label.trim() }; localStorage.setItem('pincer.provider-labels', JSON.stringify(next)); return next; });
-    await refreshProviderSnapshot(); await window.pincer.chat.refresh();
+    await refreshProviderSnapshot();
   };
-  const refreshProviderModels = async (id: string) => {
+  const refreshProviderModels = async (id: string, apiKey?: string) => {
     if (!snapshot || !connected) throw new Error('Gateway configuration is unavailable.');
-    const result = await window.pincer.configuration.refreshProviderModels(snapshot.hash, id);
+    const current = await window.pincer.configuration.providers();
+    if (!current.ok) throw new Error(current.error.message);
+    const result = await window.pincer.configuration.refreshProviderModels(current.value.hash, id, apiKey);
     if (!result.ok) throw new Error(result.error.message);
-    await refreshProviderSnapshot(); await window.pincer.chat.refresh();
+    await refreshProviderSnapshot();
+  };
+  const deleteProviderModel = async (id: string, modelId: string) => {
+    if (!connected) throw new Error('Gateway configuration is unavailable.');
+    // A batch delete performs several writes. Read the latest revision for
+    // every item so the second deletion cannot reuse a stale hash.
+    const current = await window.pincer.configuration.providers();
+    if (!current.ok) throw new Error(current.error.message);
+    const result = await window.pincer.configuration.deleteProviderModel(current.value.hash, id, modelId);
+    if (!result.ok) throw new Error(result.error.message);
+    await refreshProviderSnapshot();
   };
   useEffect(() => {
     if (defaultAccountId && accounts.length && !accounts.some((account) => account.id === defaultAccountId)) {
@@ -71,7 +83,7 @@ export function useProviderData(connected: boolean) {
       try { localStorage.removeItem('pincer.default-provider'); } catch { /* storage unavailable */ }
     }
   }, [accounts, defaultAccountId]);
-  return { accounts, statuses, vendors, defaultAccountId, loading, error, refreshProviderSnapshot, refreshProviderModels,
+  return { accounts, statuses, vendors, defaultAccountId, loading, error, refreshProviderSnapshot, refreshProviderModels, deleteProviderModel,
     createAccount: save,
     updateAccount: async (id: string, updates: Partial<ProviderAccount>, apiKey?: string) => {
       const account = accounts.find((item) => item.id === id); if (!account) throw new Error('Provider unavailable');
@@ -84,20 +96,50 @@ export function useProviderData(connected: boolean) {
     removeAccount: async (id: string, agentId?: string) => {
       if (!snapshot || !connected) throw new Error('Gateway configuration is unavailable.');
       const remote = snapshot.providers.find((provider) => provider.id === id);
-      const removableProfiles = remote?.authProfiles?.filter((profile) => profile.logoutSupported === true && (profile.type === 'oauth' || profile.type === 'token')) || [];
-      if (removableProfiles.length) {
-        const result = await window.pincer.configuration.authLogout(id, removableProfiles.map((profile) => profile.profileId), agentId);
-        if (!result.ok) throw new Error(result.error.message);
-        if (!remote?.baseUrl && !remote?.api) {
-          await refreshProviderSnapshot(); await window.pincer.chat.refresh();
-          return;
+      const authProfiles = remote?.authProfiles || [];
+      if (authProfiles.length) {
+        // Omitting profileIds asks Gateway to remove every saved profile for
+        // this provider. This is required for API-key profiles: the Gateway
+        // intentionally rejects those ids when they are passed explicitly,
+        // even though an unscoped provider logout can remove them.
+        const removableProfiles = authProfiles.filter((profile) => profile.logoutSupported === true && (profile.type === 'oauth' || profile.type === 'token'));
+        const profileIds = removableProfiles.length === authProfiles.length
+          ? removableProfiles.map((profile) => profile.profileId)
+          : undefined;
+        // Logout is best-effort: some Gateways require an agent owner and
+        // reject a global request. Provider removal must still continue.
+        let result = await window.pincer.configuration.authLogout(id, profileIds, agentId || 'main');
+        if (!result.ok && profileIds) {
+          // A stale profile list or an ownership change can make the scoped
+          // request fail. Retry as an unscoped provider logout before falling
+          // back to the configuration deletion below.
+          result = await window.pincer.configuration.authLogout(id, undefined, agentId || 'main');
         }
       }
-      const result = await window.pincer.configuration.deleteProvider(snapshot.hash, id);
+      // Logout may mutate the Gateway revision. Read a fresh snapshot before
+      // deleting the provider so the second write is not rejected as stale.
+      let deleteSnapshot = snapshot;
+      const latest = await window.pincer.configuration.providers();
+      if (latest.ok) { deleteSnapshot = latest.value; setSnapshot(latest.value); }
+      const result = await window.pincer.configuration.deleteProvider(deleteSnapshot.hash, id);
       if (!result.ok) throw new Error(result.error.message);
+      // Auth status is cached by Gateway. Force it to re-read the auth store,
+      // then verify both config and auth state before showing success.
+      try { await window.pincer.configuration.authStatus(true, agentId || 'main'); } catch { /* config deletion can still be verified */ }
+      let removed = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const check = await window.pincer.configuration.providers();
+        if (check.ok) {
+          setSnapshot(check.value);
+          removed = !check.value.providers.some((provider) => provider.id === id);
+          if (removed) break;
+        }
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      if (!removed) throw new Error('PROVIDER_DELETE_INCOMPLETE');
       if (id === defaultAccountId) { setDefaultAccountId(null); try { localStorage.removeItem('pincer.default-provider'); } catch { /* storage unavailable */ } }
       setProviderLabels((current) => { const next = { ...current }; delete next[id]; localStorage.setItem('pincer.provider-labels', JSON.stringify(next)); return next; });
-      await refreshProviderSnapshot(); await window.pincer.chat.refresh();
+      await refreshProviderSnapshot();
     },
     setDefaultAccount: async (id: string) => {
       if (!accounts.some((account) => account.id === id)) throw new Error('Provider unavailable');

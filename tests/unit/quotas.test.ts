@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { gatewayQuotas, omniQuotas, QuotaService, quotaUrl } from '../../electron/workspace/quotas';
+import { quotasForModel } from '../../shared/quotas';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +16,16 @@ it('keeps OmniRoute account/model windows separate and never pretends a past res
   const data = omniQuotas({ caches: { account: { fetchedAt: 1788429210225, plan: 'Pro', quotas: { session: { remainingPercentage: 72, resetAt: 1 }, weekly: { used: 10, total: 20 }, unknown: {}, free: { unlimited: true } } }, deleted: { quotas: { quota: { remainingPercentage: 1 } } } } }, { connections: [{ id: 'account', provider: 'codex', name: 'Work', apiKey: 'NEVER_FORWARD' }] });
   expect(data).toHaveLength(1); expect(data[0].windows.map(w => w.usedPercent)).toEqual([28, 50, undefined, undefined]);
   expect(data[0].windows[3].unlimited).toBe(true); expect(JSON.stringify(data)).not.toContain('NEVER_FORWARD');
+});
+it('shows only the selected model and accounts explicitly associated with it', () => {
+  const providers = gatewayQuotas({ providers: [{ provider: 'google', windows: [
+    { label: 'Gemini Pro', model: 'gemini-pro-agent', accountId: 'pro', accountName: 'Pro account', usedPercent: 20 },
+    { label: 'Gemini Flash', model: 'gemini-flash', accountId: 'flash', accountName: 'Flash account', usedPercent: 30 },
+    { label: 'Unknown account', accountId: 'unknown', accountName: 'Unscoped', usedPercent: 40 },
+  ] }] }).providers;
+  const selected = quotasForModel(providers, 'google/gemini-pro-agent', 'google');
+  expect(selected).toHaveLength(1);
+  expect(selected[0].windows.map((window) => window.accountId)).toEqual(['pro']);
 });
 it('accepts HTTPS or loopback only, never credentials in URLs, fragments or query secrets', () => {
   expect(quotaUrl('http://127.0.0.1:20128/v1/')).toBe('http://127.0.0.1:20128');

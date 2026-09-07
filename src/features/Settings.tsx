@@ -1,8 +1,8 @@
 // OpenX Settings navigation + personal sections copied as presentation only.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Palette, MessageSquare, Network, Code2, RefreshCw, Info, Boxes, Bot, Radio, CircleHelp, Bell, Brain, Clock, ShieldCheck, Mic, Monitor, Cloud, FlaskConical, Server, KeyRound, Shield, Globe, SlidersHorizontal, ScrollText, UserRound, Keyboard, Puzzle, ChevronDown, Plus } from 'lucide-react';
+import { ArrowLeft, Search, Palette, MessageSquare, Network, Code2, RefreshCw, Info, Boxes, Bot, Radio, CircleHelp, Bell, Brain, Clock, ShieldCheck, Mic, Monitor, Cloud, FlaskConical, Server, KeyRound, Shield, Globe, SlidersHorizontal, ScrollText, UserRound, Keyboard, Puzzle, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -28,8 +28,10 @@ import { Modal } from '../components/ui/modal';
 import { DevicesSettings, LogsSettings, ProfileSettings } from './GatewayAdminSettings';
 import { Memory } from './Memory';
 import { Approvals } from './Approvals';
-type Section = 'profile' | 'appearance' | 'chat' | 'shortcuts' | 'gateway' | 'developer' | 'updates' | 'about' | 'providers' | 'agents' | 'channels' | 'skills' | 'memory' | 'automation' | 'security' | 'notifications' | 'communications' | 'talk' | 'devices' | 'cloud-workers' | 'labs' | 'mcp' | 'secrets' | 'approvals' | 'infrastructure' | 'advanced' | 'logs';
-const sections: Section[] = ['profile','appearance','chat','shortcuts','gateway','developer','updates','about','providers','agents','channels','skills','memory','automation','security','notifications','communications','talk','devices','cloud-workers','labs','mcp','secrets','approvals','infrastructure','advanced','logs'];
+import { Plugins } from './Plugins';
+import { SecretsSettings } from './SecretsSettings';
+type Section = 'profile' | 'appearance' | 'chat' | 'shortcuts' | 'gateway' | 'developer' | 'updates' | 'about' | 'providers' | 'agents' | 'channels' | 'skills' | 'plugins' | 'memory' | 'automation' | 'security' | 'notifications' | 'communications' | 'talk' | 'devices' | 'cloud-workers' | 'labs' | 'mcp' | 'secrets' | 'approvals' | 'infrastructure' | 'advanced' | 'logs';
+const sections: Section[] = ['profile','appearance','chat','shortcuts','gateway','developer','updates','about','providers','agents','channels','skills','plugins','memory','automation','security','notifications','communications','talk','devices','cloud-workers','labs','mcp','secrets','approvals','infrastructure','advanced','logs'];
 type SettingsSearchItem = { section: Section; target: string; label: string };
 const SUPPORTED_LANGUAGES = [{ code: 'en' as const, label: 'English' }, { code: 'ru' as const, label: 'Русский' }];
 const DEFAULT_WORKSPACE_CWD = '';
@@ -39,16 +41,18 @@ function SettingsPageHeader({ title, description, actions }: { title: string; de
     {actions && <div className="shrink-0">{actions}</div>}
   </div>;
 }
-function OpenClawSettingsPanel({ category, connected, scope, onDirty, expanded = false, ru }: { category: string; connected: boolean; scope: string; onDirty(value: boolean): void; expanded?: boolean; ru: boolean }) {
-  const [hasOpened, setHasOpened] = useState(expanded);
-  if (expanded) return <div className="settings-schema-standalone"><SettingsBrowser key={`${category}:${scope}`} category={category} connected={connected} scope={scope} title={false} onDirty={onDirty} /></div>;
-  return <details className="settings-openclaw-panel group" onToggle={(event) => { if (event.currentTarget.open) setHasOpened(true); }}>
-    <summary className="settings-openclaw-summary">
-      <div><p className="text-sm font-semibold">{ru ? 'Дополнительные параметры OpenClaw' : 'Additional OpenClaw settings'}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{ru ? 'Полная серверная схема этого раздела. Откройте только когда нужны расширенные параметры.' : 'The complete server schema for this section. Open it only when advanced fields are needed.'}</p></div>
-      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-    </summary>
-    {hasOpened && <div className="border-t border-border p-5"><SettingsBrowser key={`${category}:${scope}`} category={category} connected={connected} scope={scope} title={false} onDirty={onDirty} /></div>}
-  </details>;
+function OpenClawSettingsPanel({ category, connected, scope, onDirty, supplemental = false }: { category: string; connected: boolean; scope: string; onDirty(value: boolean): void; expanded?: boolean; ru: boolean; supplemental?: boolean }) {
+  return <SettingsBrowser key={`${category}:${scope}`} category={category} connected={connected} scope={scope} onDirty={onDirty} suppressEmpty={supplemental} />;
+}
+function handleTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  const tabs = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)')];
+  const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+  if (current < 0 || tabs.length === 0) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[next].focus();
+  tabs[next].click();
 }
 const gatewaySectionDescriptions: Record<string, [string, string]> = {
   communications: ['Сообщения, рассылки, вложения и синтез речи подключённого OpenClaw.', 'Messages, broadcasts, attachments, and speech for the connected OpenClaw.'],
@@ -113,7 +117,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
    void window.pincer.desktop.closeBehavior().then((value) => { if (alive && value !== preferences.closeBehavior) setPreferences({ closeBehavior: value }); });
    return () => { alive = false; off(); };
  }, []);
-  useEffect(() => { const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"], [role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) { event.preventDefault(); back(); } }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [back]);
+  useEffect(() => { const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"], [role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) { event.preventDefault(); (document.activeElement as HTMLElement | null)?.blur(); back(); } }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [back]);
   const settingsNavigation = useMemo(() => [
      { id: 'profile' as const, label: ru ? 'Профиль' : 'Profile', icon: UserRound },
      { id: 'appearance' as const, label: ru ? 'Внешний вид' : 'Appearance', icon: Palette },
@@ -127,6 +131,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
     { id: 'mcp' as const, label: 'MCP', icon: Server },
      { id: 'memory' as const, label: ru ? 'Память' : 'Memory', icon: Brain },
      { id: 'skills' as const, label: ru ? 'Навыки' : 'Skills', icon: Puzzle },
+    { id: 'plugins' as const, label: ru ? 'Плагины' : 'Plugins', icon: Puzzle },
     { id: 'automation' as const, label: ru ? 'Автоматизация' : 'Automation', icon: Clock },
     { id: 'channels' as const, label: t('navigation.channels'), icon: Radio },
     { id: 'security' as const, label: ru ? 'Доступ и безопасность' : 'Access and security', icon: ShieldCheck },
@@ -189,7 +194,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
       className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sidebar"
     >
       <div className="flex h-full min-h-0">
-        <aside style={{ width: preferences.sidebarWidth, maxWidth: '45vw' }} className="relative flex min-h-0 shrink-0 flex-col bg-surface-sidebar px-2 pb-3" data-testid="settings-navigation">
+        <aside style={{ width: preferences.sidebarWidth, maxWidth: '30vw' }} className="relative flex min-h-0 shrink-0 flex-col bg-surface-sidebar px-2 pb-3" data-testid="settings-navigation">
           <button
             type="button"
             onClick={() => navigate('/')}
@@ -204,8 +209,8 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
             <Input
               value={settingsSearch}
               onChange={(event) => setSettingsSearch(event.target.value)}
-              placeholder={t('navigation.search')}
-              aria-label={t('navigation.search')}
+              placeholder={ru ? 'Разделы и основные настройки' : 'Sections and common settings'}
+              aria-label={ru ? 'Поиск разделов и основных настроек' : 'Search sections and common settings'}
               className="h-9 rounded-xl bg-black/[0.025] pl-9 text-sm dark:bg-white/[0.035]"
             />
           </div>
@@ -213,7 +218,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
             {!settingsSearch.trim() && ([
               { label: t('navigation.personal'), items: settingsNavigation.filter(({ id }) => ['profile', 'appearance', 'chat', 'shortcuts', 'notifications'].includes(id)) },
               { label: t('navigation.connections'), items: settingsNavigation.filter(({ id }) => ['gateway', 'channels', 'communications', 'talk', 'devices', 'cloud-workers'].includes(id)) },
-              { label: ru ? 'Агенты и инструменты' : 'Agents and tools', items: settingsNavigation.filter(({ id }) => ['agents', 'labs', 'providers', 'mcp', 'skills', 'memory', 'automation'].includes(id)) },
+              { label: ru ? 'Агенты и инструменты' : 'Agents and tools', items: settingsNavigation.filter(({ id }) => ['agents', 'labs', 'providers', 'mcp', 'skills', 'plugins', 'memory', 'automation'].includes(id)) },
               { label: ru ? 'Конфиденциальность и безопасность' : 'Privacy and security', items: settingsNavigation.filter(({ id }) => ['security', 'secrets', 'approvals'].includes(id)) },
               { label: ru ? 'Система' : 'System', items: settingsNavigation.filter(({ id }) => ['infrastructure', 'advanced', 'developer', 'logs', 'updates', 'about'].includes(id)) },
             ]).map((group) => (
@@ -234,7 +239,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{label}</span>
+                      <span className="truncate" title={label}>{label}</span>
                     </button>
                   ))}
                 </div>
@@ -267,18 +272,18 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
             )}
           </nav>
           <div className="mt-3 flex h-8 shrink-0 items-center justify-between border-t border-border/50 px-3 pt-2 text-[11px] text-muted-foreground"><span>Pincer</span><span>{gateway.appVersion}</span></div>
-          <div role="separator" aria-label={ru ? 'Ширина боковой панели настроек' : 'Settings sidebar width'} aria-orientation="vertical" tabIndex={0} aria-valuenow={preferences.sidebarWidth} aria-valuemin={240} aria-valuemax={520} className="pincer-resize-handle group absolute inset-y-0 right-0 z-30 w-2" onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setPreferences({ sidebarWidth: Math.min(520, Math.max(240, preferences.sidebarWidth + (e.key === 'ArrowRight' ? 16 : -16))) }); } }} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) setPreferences({ sidebarWidth: Math.min(520, Math.max(240, e.clientX)) }); }}><span className="pincer-resize-line right-0" /></div>
+          <div role="separator" aria-label={ru ? 'Ширина боковой панели настроек' : 'Settings sidebar width'} aria-orientation="vertical" tabIndex={0} aria-valuenow={preferences.sidebarWidth} aria-valuemin={Math.min(240, window.innerWidth * 0.3)} aria-valuemax={Math.min(520, window.innerWidth * 0.3)} className="pincer-resize-handle group absolute inset-y-0 right-0 z-30 w-2" onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); const maxWidth = Math.min(520, window.innerWidth * 0.3); setPreferences({ sidebarWidth: Math.min(maxWidth, Math.max(Math.min(240, maxWidth), preferences.sidebarWidth + (e.key === 'ArrowRight' ? 16 : -16))) }); } }} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) { const maxWidth = Math.min(520, window.innerWidth * 0.3); setPreferences({ sidebarWidth: Math.min(maxWidth, Math.max(Math.min(240, maxWidth), e.clientX)) }); } }}><span className="pincer-resize-line right-0" /></div>
         </aside>
       <div className="settings-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tl-2xl border-t border-border/70 bg-surface-chat" data-testid="settings-content">
-        <div ref={settingsScrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-12" data-testid="settings-scroll">
-        <div className="mx-auto w-full max-w-[46rem] space-y-8 pb-8" data-testid="settings-content-inner">
+        <div ref={settingsScrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-10" data-testid="settings-scroll">
+        <div className="mx-auto w-full max-w-[56rem] space-y-8 pb-8" data-testid="settings-content-inner">
           {/* Appearance */}
           <div className={cn('settings-section-panel', activeSection !== 'appearance' && 'hidden')} data-testid="settings-section-appearance">
             <SettingsPageHeader title={ru ? 'Внешний вид' : 'Appearance'} description={ru ? 'Внешний вид, язык и поведение этого клиента. Эти параметры сохраняются в Pincer и не меняют другие клиенты OpenClaw.' : 'Appearance, language and behavior of this client. Saved in Pincer without changing other OpenClaw clients.'} />
             <div className="space-y-6">
               <div id="settings-theme" className="space-y-3">
                 <Label className="text-sm font-medium text-foreground/80">{t('appearance.theme')}</Label>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="settings-responsive-grid-3 gap-3">
                   {([
                     ['system', t('appearance.system')],
                     ['light', t('appearance.light')],
@@ -371,7 +376,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   <Label htmlFor="close-behavior" className="text-sm font-medium text-foreground/80">{ru ? 'При закрытии окна' : 'When closing the window'}</Label>
                   <p className="mt-1 text-meta text-muted-foreground">{ru ? 'Полностью завершить Pincer или оставить его работающим в системном трее.' : 'Quit Pincer completely or keep it running in the system tray.'}</p>
                 </div>
-                <Select id="close-behavior" aria-label={ru ? 'Действие при закрытии' : 'Close behavior'} value={closeBehavior} onChange={(event) => setCloseBehavior(event.target.value as typeof closeBehavior)}>
+                <Select id="close-behavior" aria-label={ru ? 'Действие при закрытии' : 'Close behavior'} className="h-9 w-[13.5rem] min-w-[13.5rem] whitespace-nowrap" value={closeBehavior} onChange={(event) => setCloseBehavior(event.target.value as typeof closeBehavior)}>
                   <option value="quit">{ru ? 'Закрыть полностью' : 'Quit completely'}</option>
                   <option value="tray">{ru ? 'Скрыть в трей' : 'Hide to tray'}</option>
                 </Select>
@@ -504,25 +509,27 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
               description={ru ? 'Модели, способы авторизации и лимиты подключённых учётных записей.' : 'Models, authentication methods, and connected account limits.'}
               actions={providerTab === 'api' ? <Button data-testid="providers-add-button" onClick={() => providersSettingsRef.current?.openAddProvider()} className="h-9 rounded-lg px-4 text-sm font-medium shadow-none"><Plus className="mr-2 h-4 w-4" />{t('aiProviders.add')}</Button> : undefined}
             />
-            <div className="settings-tabs" role="tablist">{[['api', ru ? 'API и модели' : 'APIs and models'], ['limits', ru ? 'Лимиты' : 'Limits']].map(([id, label]) => <button key={id} role="tab" aria-selected={providerTab === id} onClick={() => guardNavigation(() => { setProviderTab(id); route('/settings?section=providers&tab=' + id, { replace: true }); })} className={cn('settings-tab', providerTab === id && 'settings-tab-active')}>{label}</button>)}</div>
-            {providerTab === 'limits' ? <ProviderLimitsSettings key={workspace?.scope} scope={workspace?.scope || ''} connected={connected} /> : <><ProvidersSettings ref={providersSettingsRef} connected={connected} embedded /><OpenClawSettingsPanel category="providers" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></>}
+            <div className="settings-tabs" role="tablist" aria-label={ru ? 'Раздел поставщиков' : 'Provider section'} onKeyDown={handleTabListKeyDown}>{[['api', ru ? 'API и модели' : 'APIs and models'], ['limits', ru ? 'Лимиты' : 'Limits']].map(([id, label]) => <button key={id} type="button" role="tab" tabIndex={providerTab === id ? 0 : -1} aria-selected={providerTab === id} aria-controls={`providers-${id}-panel`} onClick={() => guardNavigation(() => { setProviderTab(id); route('/settings?section=providers&tab=' + id, { replace: true }); })} className={cn('settings-tab', providerTab === id && 'settings-tab-active')}>{label}</button>)}</div>
+            <div id={`providers-${providerTab}-panel`} role="tabpanel">{providerTab === 'limits' ? <ProviderLimitsSettings key={workspace?.scope} scope={workspace?.scope || ''} connected={connected} model={workspace?.model || undefined} provider={workspace?.models.find((item) => item.id === workspace.model)?.provider} modelLabel={workspace?.models.find((item) => item.id === workspace.model)?.name} /> : <ProvidersSettings ref={providersSettingsRef} connected={connected} embedded />}</div>
           </div>}
-          {activeSection === 'notifications' && <div data-testid="settings-section-notifications" className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'Уведомления' : 'Notifications'} description={ru ? 'Когда Pincer должен сообщать о завершении работы и событиях Gateway.' : 'When Pincer should report completed work and Gateway events.'} /><NotificationSettings /><OpenClawSettingsPanel category="notifications" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'agents' && <div className="settings-section-panel space-y-6"><Agents workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="agents" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'channels' && <div className="settings-section-panel space-y-6"><Channels workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="channels" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'skills' && <div className="settings-section-panel space-y-6"><Skills workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="skills" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'automation' && <div className="settings-section-panel space-y-6"><Cron workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="automation" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'memory' && <div className="settings-section-panel space-y-6"><Memory state={workspace} language={language} connected={connected} embedded onDirty={setMemoryDirty} /><OpenClawSettingsPanel category="memory" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'security' && <div className="space-y-6"><SettingsPageHeader title={ru ? 'Доступ и безопасность' : 'Access and security'} description={ru ? 'Права Pincer и защитные ограничения подключённого Gateway.' : 'Pincer permissions and connected Gateway safeguards.'} /><div className="settings-card space-y-4 text-sm"><h3 className="font-semibold">{ru ? 'Доступ Pincer' : 'Pincer access'}</h3><p className="text-muted-foreground">{ru ? 'Режим доступа выбирается щитом в поле ввода чата. Ограничения Gateway и операционной системы продолжают действовать.' : 'Choose access mode using the shield in the composer. Gateway and OS restrictions remain in effect.'}</p><div className="settings-technical-row"><span>{ru ? 'Права управления' : 'Operator scopes'}</span><code>{gateway.operator.grantedScopes?.join(', ') || '—'}</code></div><div className="settings-technical-row"><span>{ru ? 'Команды ноды' : 'Node commands'}</span><code>{gateway.nodeCommands.join(', ') || '—'}</code></div><p className="text-muted-foreground">{ru ? 'Токены, ключи устройства и черновики шифруются средствами ОС.' : 'Tokens, device keys, and drafts are encrypted by the operating system.'}</p></div><OpenClawSettingsPanel category="security" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'gateway' && <div data-testid="settings-section-gateway" className="space-y-6"><SettingsPageHeader title={ru ? 'Подключение' : 'Connection'} description={ru ? 'Соединение Pincer с существующим OpenClaw Gateway и его серверные параметры.' : 'Connect Pincer to an existing OpenClaw Gateway and manage its server settings.'} /><div className="settings-tabs" role="tablist"><button role="tab" aria-selected={gatewayTab === 'connection'} onClick={() => guardNavigation(() => { setGatewayTab('connection'); route('/settings?section=gateway', { replace: true }); })} className={cn('settings-tab', gatewayTab === 'connection' && 'settings-tab-active')}>{ru ? 'Подключение' : 'Connection'}</button><button role="tab" aria-selected={gatewayTab === 'configuration'} onClick={() => guardNavigation(() => { setGatewayTab('configuration'); route('/settings?section=gateway&tab=configuration', { replace: true }); })} className={cn('settings-tab', gatewayTab === 'configuration' && 'settings-tab-active')}>{ru ? 'Параметры Gateway' : 'Gateway configuration'}</button></div>{gatewayTab === 'connection' ? <ConnectionPage state={gateway} language={language} preview={back} embedded /> : <div className="settings-schema-standalone"><SettingsBrowser key={`gateway:${workspace?.scope || ''}`} category="gateway" connected={connected} scope={workspace?.scope || ''} title={false} onDirty={setGatewaySettingsDirty} /></div>}</div>}
-          {activeSection === 'updates' && <div data-testid="settings-section-updates" className="space-y-6"><UpdatesPage embedded state={updates} language={language} dirty={dirty} nodeVersion={gateway.nodeVersion} /><OpenClawSettingsPanel category="updates" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'about' && <div data-testid="settings-section-about" className="space-y-6"><SettingsPageHeader title={ru ? 'О Pincer' : 'About Pincer'} description={ru ? 'Версия приложения и совместимость с подключённым OpenClaw.' : 'Application version and connected OpenClaw compatibility.'} /><div className="settings-card"><p className="text-lg font-semibold">Pincer {gateway.appVersion}</p><p className="mt-2 text-sm text-muted-foreground">Electron · OpenClaw Gateway SDK {gateway.nodeVersion}</p></div></div>}
-          {activeSection === 'developer' && <div data-testid="settings-section-developer" className="space-y-6"><SettingsPageHeader title={ru ? 'Отладка' : 'Debug'} description={ru ? 'Сведения о прямом соединении и доступных командах ноды.' : 'Direct connection details and available node commands.'} /><div className="settings-card text-sm"><p>{t('pincer.directConnection')}</p><p className="mt-4 break-all font-mono text-xs text-muted-foreground">{gateway.profile?.url || '—'}</p><p className="mt-2 break-all font-mono text-xs text-muted-foreground">{gateway.nodeCommands.join(', ') || '—'}</p></div><OpenClawSettingsPanel category="developer" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {(['communications','talk','cloud-workers','labs','mcp','secrets','infrastructure','advanced'] as Section[]).includes(activeSection) && <div className="space-y-6"><SettingsPageHeader title={settingsNavigation.find(s => s.id === activeSection)?.label || activeSection} description={gatewaySectionDescriptions[activeSection]?.[ru ? 0 : 1] || ''} /><OpenClawSettingsPanel category={activeSection} connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} expanded ru={ru} /></div>}
-          {activeSection === 'profile' && <ProfileSettings connected={connected} />}
-          {activeSection === 'devices' && <div className="space-y-6"><DevicesSettings connected={connected} /><OpenClawSettingsPanel category="devices" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'logs' && <div className="space-y-6"><LogsSettings connected={connected} /><OpenClawSettingsPanel category="logs" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
-          {activeSection === 'approvals' && <div className="space-y-6"><Approvals updateBusy={updates?.phase === 'downloading' || updates?.phase === 'installing'} inline /><OpenClawSettingsPanel category="approvals" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} /></div>}
+          {activeSection === 'notifications' && <div data-testid="settings-section-notifications" className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'Уведомления' : 'Notifications'} description={ru ? 'Когда Pincer должен сообщать о завершении работы и событиях Gateway.' : 'When Pincer should report completed work and Gateway events.'} /><NotificationSettings /></div>}
+          {activeSection === 'agents' && <div className="settings-section-panel space-y-6"><Agents workspace={workspace} connected={connected} /></div>}
+          {activeSection === 'channels' && <div className="settings-section-panel space-y-6"><Channels workspace={workspace} connected={connected} /></div>}
+          {activeSection === 'skills' && <div className="settings-section-panel space-y-6"><Skills workspace={workspace} connected={connected} /></div>}
+          {activeSection === 'plugins' && <div className="settings-section-panel space-y-6"><Plugins connected={connected} /></div>}
+          {activeSection === 'automation' && <div className="settings-section-panel space-y-6"><Cron workspace={workspace} connected={connected} /><OpenClawSettingsPanel category="automation" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} supplemental /></div>}
+          {activeSection === 'memory' && <div className="settings-section-panel space-y-6"><Memory state={workspace} language={language} connected={connected} embedded onDirty={setMemoryDirty} /></div>}
+          {activeSection === 'security' && <div className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'Доступ и безопасность' : 'Access and security'} description={ru ? 'Права Pincer и защитные ограничения подключённого Gateway.' : 'Pincer permissions and connected Gateway safeguards.'} /><div className="settings-card space-y-4 text-sm"><h3 className="font-semibold">{ru ? 'Доступ Pincer' : 'Pincer access'}</h3><p className="text-muted-foreground">{ru ? 'Режим доступа выбирается щитом в поле ввода чата. Ограничения Gateway и операционной системы продолжают действовать.' : 'Choose access mode using the shield in the composer. Gateway and OS restrictions remain in effect.'}</p><div className="settings-technical-row"><span>{ru ? 'Права управления' : 'Operator scopes'}</span><code>{gateway.operator.grantedScopes?.join(', ') || '—'}</code></div><div className="settings-technical-row"><span>{ru ? 'Команды ноды' : 'Node commands'}</span><code>{gateway.nodeCommands.join(', ') || '—'}</code></div><p className="text-muted-foreground">{ru ? 'Токены, ключи устройства и черновики шифруются средствами ОС.' : 'Tokens, device keys, and drafts are encrypted by the operating system.'}</p></div><OpenClawSettingsPanel category="security" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} supplemental /></div>}
+          {activeSection === 'gateway' && <div data-testid="settings-section-gateway" className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'Подключение' : 'Connection'} description={ru ? 'Соединение Pincer с существующим OpenClaw Gateway и его серверные параметры.' : 'Connect Pincer to an existing OpenClaw Gateway and manage its server settings.'} /><div className="settings-tabs" role="tablist" aria-label={ru ? 'Раздел подключения' : 'Connection section'} onKeyDown={handleTabListKeyDown}><button type="button" role="tab" tabIndex={gatewayTab === 'connection' ? 0 : -1} aria-selected={gatewayTab === 'connection'} aria-controls="gateway-connection-panel" onClick={() => guardNavigation(() => { setGatewayTab('connection'); route('/settings?section=gateway', { replace: true }); })} className={cn('settings-tab', gatewayTab === 'connection' && 'settings-tab-active')}>{ru ? 'Подключение' : 'Connection'}</button><button type="button" role="tab" tabIndex={gatewayTab === 'configuration' ? 0 : -1} aria-selected={gatewayTab === 'configuration'} aria-controls="gateway-configuration-panel" onClick={() => guardNavigation(() => { setGatewayTab('configuration'); route('/settings?section=gateway&tab=configuration', { replace: true }); })} className={cn('settings-tab', gatewayTab === 'configuration' && 'settings-tab-active')}>{ru ? 'Параметры Gateway' : 'Gateway configuration'}</button></div><div id={`gateway-${gatewayTab}-panel`} role="tabpanel">{gatewayTab === 'connection' ? <ConnectionPage state={gateway} language={language} preview={back} embedded /> : <div className="settings-schema-standalone"><SettingsBrowser key={`gateway:${workspace?.scope || ''}`} category="gateway" connected={connected} scope={workspace?.scope || ''} title={false} onDirty={setGatewaySettingsDirty} /></div>}</div></div>}
+          {activeSection === 'updates' && <div data-testid="settings-section-updates" className="settings-section-panel space-y-6"><UpdatesPage embedded state={updates} language={language} dirty={dirty} nodeVersion={gateway.nodeVersion} /><OpenClawSettingsPanel category="updates" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} supplemental /></div>}
+          {activeSection === 'about' && <div data-testid="settings-section-about" className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'О Pincer' : 'About Pincer'} description={ru ? 'Версия приложения и совместимость с подключённым OpenClaw.' : 'Application version and connected OpenClaw compatibility.'} /><div className="settings-card"><p className="text-lg font-semibold">Pincer {gateway.appVersion}</p><p className="mt-2 text-sm text-muted-foreground">Electron · OpenClaw Gateway SDK {gateway.nodeVersion}</p></div></div>}
+          {activeSection === 'developer' && <div data-testid="settings-section-developer" className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'Отладка' : 'Debug'} description={ru ? 'Сведения о прямом соединении и доступных командах ноды.' : 'Direct connection details and available node commands.'} /><div className="settings-card text-sm"><p>{t('pincer.directConnection')}</p><p className="mt-4 break-all font-mono text-xs text-muted-foreground">{gateway.profile?.url || '—'}</p><p className="mt-2 break-all font-mono text-xs text-muted-foreground">{gateway.nodeCommands.join(', ') || '—'}</p></div><OpenClawSettingsPanel category="developer" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} supplemental /></div>}
+          {(['communications','talk','cloud-workers','labs','mcp','infrastructure','advanced'] as Section[]).includes(activeSection) && <div className="settings-section-panel space-y-6"><SettingsPageHeader title={settingsNavigation.find(s => s.id === activeSection)?.label || activeSection} description={gatewaySectionDescriptions[activeSection]?.[ru ? 0 : 1] || ''} /><OpenClawSettingsPanel category={activeSection} connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} expanded ru={ru} /></div>}
+          {activeSection === 'secrets' && <div className="settings-section-panel space-y-6"><SettingsPageHeader title={ru ? 'Секреты' : 'Secrets'} description={gatewaySectionDescriptions.secrets[ru ? 0 : 1]} /><SecretsSettings connected={connected} /></div>}
+          {activeSection === 'profile' && <div className="settings-section-panel space-y-6"><ProfileSettings connected={connected} /></div>}
+          {activeSection === 'devices' && <div className="settings-section-panel space-y-6"><DevicesSettings connected={connected} /></div>}
+          {activeSection === 'logs' && <div className="settings-section-panel space-y-6"><LogsSettings connected={connected} /></div>}
+          {activeSection === 'approvals' && <div className="settings-section-panel space-y-6"><Approvals updateBusy={updates?.phase === 'downloading' || updates?.phase === 'installing'} inline /></div>}
           {activeSection === 'appearance' && <OpenClawSettingsPanel category="appearance" connected={connected} scope={workspace?.scope || ''} onDirty={setGatewaySettingsDirty} ru={ru} />}
         </div>
         </div>

@@ -99,7 +99,9 @@
     "generateQRCode": "Сгенерировать QR-код",
     "updateAndReconnect": "Обновить и переподключить",
     "saveAndConnect": "Сохранить и подключить",
-    "envVar": "Переменная окружения: {{var}}"
+    "envVar": "Переменная окружения: {{var}}",
+    "qrUnavailable": "Gateway не вернул QR-код для входа",
+    "qrExpired": "QR-код истёк или вход не был подтверждён"
   },
   "health": {
     "state": {
@@ -128,7 +130,7 @@
   "meta": {
     "telegram": {
       "description": "Подключите Telegram через токен бота от @BotFather",
-      "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/TjiGwxsMWi7hpDkDAQBc0ydMnEf#MEkKdqXP1orZU2x4SrFcdUHgnl1",
+      "docsUrl": "https://docs.openclaw.ai/channels/telegram",
       "fields": {
         "botToken": {
           "label": "Токен бота",
@@ -150,11 +152,16 @@
     },
     "discord": {
       "description": "Подключите Discord через токен бота с портала разработчика",
-      "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#QS6LdxnA2oNtfcxtFc8cgabnnNd",
+      "docsUrl": "https://docs.openclaw.ai/channels/discord",
       "fields": {
         "token": {
           "label": "Токен бота",
           "placeholder": "Токен вашего Discord-бота"
+        },
+        "applicationId": {
+          "label": "Идентификатор приложения (необязательно)",
+          "placeholder": "например, 123456789012345678",
+          "description": "Позволяет Gateway запуститься без дополнительного запроса к Discord API."
         },
         "guildId": {
           "label": "ID сервера",
@@ -178,7 +185,7 @@
     },
     "whatsapp": {
       "description": "Подключите WhatsApp сканированием QR-кода (номер телефона не требуется)",
-      "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
+      "docsUrl": "https://docs.openclaw.ai/channels/whatsapp",
       "instructions": [
         "Откройте WhatsApp на телефоне",
         "Перейдите в Настройки > Связанные устройства > Подключить устройство",
@@ -399,6 +406,31 @@
         "Получите идентификатор приложения и секрет клиента",
         "Заполните ваши учётные данные ниже"
       ]
+    }
+  },
+  "integrations": {
+    "title": "Интеграции",
+    "subtitle": "Расширения, которые реально доступны на подключённом OpenClaw Gateway.",
+    "refresh": "Обновить интеграции",
+    "searchPlaceholder": "Поиск интеграций...",
+    "install": "Установить",
+    "enable": "Включить",
+    "disable": "Отключить",
+    "installUnavailable": "Gateway не предоставляет способ установки этой интеграции",
+    "installedToast": "Интеграция {{name}} установлена",
+    "enabledToast": "Интеграция {{name}} включена",
+    "disabledToast": "Интеграция {{name}} отключена",
+    "restartRequired": "Для применения изменений перезапустите Gateway",
+    "loadError": "Не удалось загрузить интеграции: {{error}}",
+    "readOnly": "Этот Gateway разрешает только просмотр интеграций.",
+    "empty": "Gateway не сообщил о доступных интеграциях.",
+    "noResults": "По вашему запросу интеграций не найдено.",
+    "liveHint": "Список формируется самим Gateway: вымышленные или неподдерживаемые подключения здесь не показываются.",
+    "state": {
+      "enabled": "Включена",
+      "disabled": "Отключена",
+      "not-installed": "Не установлена",
+      "error": "Ошибка"
     }
   },
   "viewDocs": "Просмотреть документацию"

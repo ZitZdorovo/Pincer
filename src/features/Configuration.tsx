@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { KeyRound, Pencil, Plus, Settings2 } from 'lucide-react';
+import { KeyRound, Plus, Settings2 } from 'lucide-react';
 import type { MemoryConfig, ProviderConfig } from '../../shared/configuration';
 import { usePreferences } from '../preferences';
 import { Button } from '../components/ui/button';
@@ -14,7 +14,7 @@ export function Providers({ connected }: { connected: boolean }) {
   return <section className="mb-10"><div className="mb-4 flex items-center justify-between gap-2"><h2 className="text-lg font-semibold">{ru ? 'Провайдеры' : 'Providers'}</h2><Button variant="outline" className="h-9 rounded-full" disabled={!connected || !snapshot} onClick={() => setEditor({ id: '', baseUrl: '', api: 'openai-completions', models: [], hasKey: false })}><Plus size={14} className="mr-2" />{ru ? 'Добавить провайдера' : 'Add provider'}</Button></div>
     {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}<div className="space-y-2">{snapshot?.providers.map((provider) => <div key={provider.id} className="flex items-center gap-4 rounded-2xl bg-black/[0.035] p-4 dark:bg-white/[0.045]"><div className="rounded-xl bg-primary/10 p-2.5 text-primary"><KeyRound size={20} /></div><div className="min-w-0 flex-1"><h3 className="font-medium">{provider.id}</h3><p className="truncate text-xs text-muted-foreground">{provider.baseUrl} · {provider.models.length} {ru ? 'моделей' : 'models'}</p></div><Button size="icon" variant="ghost" aria-label={`${ru ? 'Настроить провайдера' : 'Configure provider'}: ${provider.id}`} disabled={!connected} onClick={() => setEditor(provider)}><Settings2 size={16} /></Button></div>)}</div>
     {snapshot && !snapshot.providers.length && <p className="text-sm text-muted-foreground">{ru ? 'Дополнительные провайдеры не настроены. Встроенные модели показаны ниже.' : 'No custom providers are configured. Built-in models are listed below.'}</p>}
-    {editor && snapshot && <ProviderEditor value={editor} hash={snapshot.hash} close={() => setEditor(null)} saved={() => { setEditor(null); void load(); void window.pincer.chat.refresh(); }} />}
+    {editor && snapshot && <ProviderEditor value={editor} hash={snapshot.hash} close={() => setEditor(null)} saved={() => { setEditor(null); void load(); }} />}
   </section>;
 }
 function ProviderEditor({ value, hash, close, saved }: { value: ProviderConfig; hash: string; close(): void; saved(): void }) {
@@ -31,7 +31,7 @@ function ProviderEditor({ value, hash, close, saved }: { value: ProviderConfig; 
 }
 export function MemoryConfiguration({ connected, saved }: { connected: boolean; saved(): void }) {
   const ru = usePreferences().language === 'ru'; const [open, setOpen] = useState(false);
-  return <><Button variant="outline" disabled={!connected} onClick={() => setOpen(true)}><Pencil size={14} className="mr-2" />{ru ? 'Настроить векторный поиск' : 'Configure vector search'}</Button>{open && <MemoryEditor close={() => setOpen(false)} saved={() => { setOpen(false); saved(); }} />}</>;
+  return <><Button variant="outline" disabled={!connected} onClick={() => setOpen(true)}><Settings2 size={14} className="mr-2" />{ru ? 'Настроить векторный поиск' : 'Configure vector search'}</Button>{open && <MemoryEditor close={() => setOpen(false)} saved={() => { setOpen(false); saved(); }} />}</>;
 }
 function MemoryEditor({ close, saved }: { close(): void; saved(): void }) {
   const ru = usePreferences().language === 'ru'; const [snapshot, setSnapshot] = useState<MemoryConfig | null>(null); const [provider, setProvider] = useState(''); const [model, setModel] = useState(''); const [url, setUrl] = useState(''); const [key, setKey] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState('');

@@ -12,7 +12,6 @@ import { Input } from '../components/ui/input';
 import { DonorComposer } from '../donor/Composer';
 import { ChatHeader } from '../donor/ChatHeader';
 import { usePreferences } from '../preferences';
-import { cn } from '../lib/utils';
 import { ChatScrollNavigator, type ChatScrollNavigatorItem } from '../donor/ChatScrollNavigator';
 
 function navigatorPreview(text: string, fallback: string): string {
@@ -39,7 +38,10 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
   const [draftModel, setDraftModel] = useState<string | undefined>(); const [draftThinking, setDraftThinking] = useState<string | undefined>();
   const draftSelection = useRef<{ model?: string; thinking?: string }>({});
   const [find, setFind] = useState(false); const [query, setQuery] = useState(''); const [match, setMatch] = useState(0);
+  const [matchCount, setMatchCount] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
+  const [compactControls, setCompactControls] = useState(false);
+  const chatPage = useRef<HTMLDivElement | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null); const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null); const input = useRef<HTMLTextAreaElement>(null);
   const articles = useRef(new Map<number, HTMLElement>());
   const end = useRef<HTMLDivElement>(null);
@@ -61,6 +63,22 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     if (!overlay) return;
     const measure = () => setComposerHeight(Math.ceil(overlay.getBoundingClientRect().height));
     measure(); const observer = new ResizeObserver(measure); observer.observe(overlay);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const page = chatPage.current;
+    const workspace = page?.closest<HTMLElement>('[data-testid="chat-workspace-surface"]');
+    if (!page || !workspace) return;
+    const measure = () => {
+      const pageWidth = page.getBoundingClientRect().width;
+      const workspaceWidth = workspace.getBoundingClientRect().width;
+      const next = workspaceWidth > 0 && (pageWidth / workspaceWidth <= 0.55 || pageWidth <= 560);
+      setCompactControls((current) => current === next ? current : next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(page);
+    observer.observe(workspace);
     return () => observer.disconnect();
   }, []);
   const key = state?.selected ?? 'new'; const session = state?.sessions.find((item) => item.key === key);
@@ -94,7 +112,6 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     setWorkspacePath(state?.draftLocation?.cwd || preferences.chatWorkspacePath);
     draftSelection.current = {}; setDraftModel(undefined); setDraftThinking(undefined);
   }, [preferences.chatWorkspacePath, state?.draftLocation?.cwd, state?.scope]);
-  const matches = state?.messages.flatMap((message, index) => query && message.text.toLowerCase().includes(query.toLowerCase()) ? [index] : []) ?? [];
   useEffect(() => {
     let current = true; setDraftScope(''); if (!state?.scope) return;
     const scope = state.scope;
@@ -117,7 +134,41 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     const listener = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); setFind(true); } if (event.key === 'Escape') setFind(false); };
     window.addEventListener('keydown', listener); return () => window.removeEventListener('keydown', listener);
   }, [active]);
-  useEffect(() => { if (matches.length) articles.current.get(matches[match % matches.length])?.scrollIntoView({ block: 'center' }); }, [query, match]);
+  useEffect(() => {
+    const registry = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const HighlightClass = (globalThis as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+    const clear = () => { registry?.delete('openx-chat-search'); registry?.delete('openx-chat-search-active'); };
+    const needle = query.toLocaleLowerCase();
+    if (!find || !needle || !registry || !HighlightClass) {
+      clear(); setMatchCount(0); return clear;
+    }
+    const found: Array<{ range: Range; articleIndex: number }> = [];
+    for (const [articleIndex, article] of [...articles.current.entries()].sort(([left], [right]) => left - right)) {
+      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node) {
+        const parent = node.parentElement;
+        if (parent && !parent.closest('button, [aria-hidden="true"]')) {
+          const source = node.textContent || ''; const haystack = source.toLocaleLowerCase(); let offset = 0;
+          while (offset <= haystack.length - needle.length) {
+            const start = haystack.indexOf(needle, offset); if (start < 0) break;
+            const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + needle.length);
+            found.push({ range, articleIndex }); offset = start + Math.max(needle.length, 1);
+          }
+        }
+        node = walker.nextNode();
+      }
+    }
+    setMatchCount((current) => current === found.length ? current : found.length);
+    if (!found.length) { clear(); return clear; }
+    const selected = ((match % found.length) + found.length) % found.length;
+    const active = found[selected];
+    registry.set('openx-chat-search', new HighlightClass(...found.map((item) => item.range)));
+    registry.set('openx-chat-search-active', new HighlightClass(active.range));
+    const bounds = active.range.getBoundingClientRect(); const viewport = scroller.current?.getBoundingClientRect();
+    if (viewport && scroller.current) scroller.current.scrollTo({ top: scroller.current.scrollTop + bounds.top - viewport.top - viewport.height / 2, behavior: 'smooth' });
+    return clear;
+  }, [find, match, query, state?.messages]);
   const act = async () => {
     if ((!draft.trim() && !files?.length) || busy || !connected || state?.activeRun || draftScope !== state?.scope) return;
     setBusy(true); setError('');
@@ -158,14 +209,14 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
       if (!result.ok) setError(result.error.message); else setError('');
     } finally { setBusy(false); }
   };
-  return <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-tl-2xl border-t border-border/70 bg-surface-chat transition-colors duration-500" data-testid="chat-page">
+  return <div ref={chatPage} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface-chat transition-colors duration-500" data-testid="chat-page" data-chat-compact={compactControls ? 'true' : 'false'}>
     <ChatHeader session={session} agents={state?.agents || []} agentId={agentId} targetAgentId={targetAgent} onAgent={(id) => setTargetAgent(id || undefined)} connected={connected} filesOpen={filesOpen} openFiles={openFiles}>
-    {find && <div className="absolute right-4 top-12 z-30 flex w-[min(400px,90%)] items-center gap-1 rounded-xl border border-border bg-surface-modal p-2 shadow-lg"><Input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setMatch(0); }} placeholder={c('find.placeholder')} className="h-8" /><span className="whitespace-nowrap px-1 text-xs text-muted-foreground">{matches.length ? (match % matches.length) + 1 : 0}/{matches.length}</span><button aria-label={c('find.previous')} onClick={() => setMatch((value) => Math.max(0, value + matches.length - 1))}><ChevronUp size={16} /></button><button aria-label={c('find.next')} onClick={() => setMatch((value) => value + 1)}><ChevronDown size={16} /></button><button aria-label={c('find.close')} onClick={() => setFind(false)}><X size={16} /></button></div>}
+    {find && <div className="absolute right-4 top-12 z-30 flex w-[min(400px,90%)] items-center gap-1 rounded-xl border border-border bg-surface-modal p-2 shadow-lg"><Input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setMatch(0); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); setMatch((value) => value + (event.shiftKey ? -1 : 1)); } }} placeholder={c('find.placeholder')} className="h-8" /><span className="whitespace-nowrap px-1 text-xs text-muted-foreground">{matchCount ? ((match % matchCount) + matchCount) % matchCount + 1 : 0}/{matchCount}</span><button type="button" className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10" aria-label={c('find.previous')} disabled={!matchCount} onClick={() => setMatch((value) => value - 1)}><ChevronUp size={16} /></button><button type="button" className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10" aria-label={c('find.next')} disabled={!matchCount} onClick={() => setMatch((value) => value + 1)}><ChevronDown size={16} /></button><button type="button" className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10" aria-label={c('find.close')} onClick={() => setFind(false)}><X size={16} /></button></div>}
     </ChatHeader>
     <div className="relative min-h-0 flex-1 overflow-hidden"><div ref={attachScroller} onScroll={() => { const el = scroller.current; if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 100); }} className="openx-copy-surface h-full min-h-0 overflow-y-scroll px-4 py-4" data-testid="chat-scroll-container"><div className="mx-auto w-full space-y-7 pl-[4px]" style={{ maxWidth: 'var(--pincer-chat-width, 736px)', paddingBottom: composerHeight + 16 }}>
       {state?.hasMore && <Button variant="ghost" disabled={state.loading} onClick={() => void window.pincer.chat.more()}>{t('more')}</Button>}
       {!state?.messages.length && !state?.activeRun && <div data-testid="acp-chat-empty-state" className="flex h-[60vh] flex-col items-center justify-center text-center"><h1 className="text-4xl font-sans font-semibold tracking-tight text-foreground/80 md:text-5xl">{c('welcome.subtitle')}</h1></div>}
-      {state?.messages.map((message, index) => <article id={message.role === 'user' ? `pincer-chat-turn-${index}` : undefined} ref={(element) => { if (element) articles.current.set(index, element); else articles.current.delete(index); }} key={`${state.selected}-${index}`} className={cn('relative scroll-mt-20 text-[14px] leading-[1.55]', find && matches[match % matches.length] === index && 'rounded-lg ring-1 ring-primary/40')}><DonorMessage message={message} /></article>)}
+      {state?.messages.map((message, index) => <article id={message.role === 'user' ? `pincer-chat-turn-${index}` : undefined} ref={(element) => { if (element) articles.current.set(index, element); else articles.current.delete(index); }} key={`${state.selected}-${index}`} className="relative scroll-mt-20 text-[14px] leading-[1.55]"><DonorMessage message={message} /></article>)}
       {state?.activeRun && <article className="chat-markdown text-sm leading-7" aria-live="polite"><RunStatus startedAt={state.runStartedAt} phase={state.runPhase} />{state.liveActivity?.length ? <ActivityStream blocks={state.liveActivity} tools={state.liveTools} live /> : <>{!!state.liveTools?.length && <ToolActivity tools={state.liveTools} live />}{state.stream && <DonorMarkdown text={state.stream} isAnimating />}</>}</article>}
       {(error || state?.error) && <p role="alert" className="whitespace-pre-wrap break-words rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{error || state?.error?.message}</p>}<div ref={end} />
     </div></div><ChatScrollNavigator items={navigatorItems} scrollElement={scrollElement} label={ru ? 'Навигация по вопросам и ответам' : 'Question and answer navigation'} concealed={filesOpen} /></div>

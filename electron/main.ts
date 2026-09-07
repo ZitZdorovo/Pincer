@@ -15,7 +15,9 @@ import { WorkspaceFilesService } from './workspace/files';
 import { DraftStore } from './workspace/drafts';
 import { ProjectStore } from './workspace/projects';
 import { ConfigurationService } from './workspace/configuration';
+import { ProviderCredentials } from './workspace/provider-credentials';
 import { GatewaySettingsService } from './workspace/settings';
+import { GatewaySecretsService } from './workspace/secrets';
 import { GatewayAdminService } from './workspace/gateway-admin';
 import { ApprovalsService } from './workspace/approvals';
 import updater from 'electron-updater';
@@ -34,6 +36,7 @@ let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let gateway: GatewayService | null = null;
 let quitting = false;
+let uiLanguage: 'ru' | 'en' = 'ru';
 const desktopPreferencesPath = join(app.getPath('userData'), 'desktop-preferences.json');
 function loadCloseBehavior(): CloseBehavior {
   try { return JSON.parse(readFileSync(desktopPreferencesPath, 'utf8')).closeBehavior === 'tray' ? 'tray' : 'quit'; }
@@ -74,8 +77,9 @@ async function start(): Promise<void> {
   const management = new ManagementService(service);
   const quotas = new QuotaService(() => service.operatorRequest('usage.status', {}), () => JSON.stringify(service.snapshot().profile), { path: join(app.getPath('userData'), 'quota-sources.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
   const files = new WorkspaceFilesService(service);
-  const configuration = new ConfigurationService(service);
+  const configuration = new ConfigurationService(service, new ProviderCredentials(join(app.getPath('userData'), 'provider-credentials.vault'), { encrypt: text => safeStorage.encryptString(text), decrypt: data => safeStorage.decryptString(data) }, () => JSON.stringify([service.snapshot().profile, vault.identity.deviceId, 'operator'])));
   const gatewaySettings = new GatewaySettingsService(service);
+  const gatewaySecrets = new GatewaySecretsService(service);
   const gatewayAdmin = new GatewayAdminService(service, (value) => vault.redact(value));
   const approvals = new ApprovalsService(service);
   const drafts = new DraftStore(join(app.getPath('userData'), 'drafts.vault'), { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) });
@@ -141,6 +145,7 @@ async function start(): Promise<void> {
   operation('approvals:refresh', () => approvals.refresh());
   operation('approvals:resolve', (id, token, decision) => approvals.resolve(id, token, decision), true);
   operation('chat:refresh', () => workspace.refresh());
+  operation('chat:models-refresh', () => workspace.refreshModels());
   operation('chat:select', (key) => workspace.select(key));
   operation('chat:prepare', (location) => workspace.prepare(location));
   operation('chat:create', (agent, location) => workspace.create(agent, location), true);
@@ -181,8 +186,18 @@ async function start(): Promise<void> {
   operation('management:skill-search', (query) => management.searchSkills(query));
   operation('management:skill-install', (slug, agent) => management.installSkill(slug, agent), true);
   operation('management:channel-action', (channel, account, action) => management.channelAction(channel, account, action), true);
+  operation('management:channel-agent-bind', (channel, account, agent) => management.bindChannelAgent(channel, account, agent), true);
+  operation('management:channel-qr-start', (account) => management.channelQrStart(account), true);
+  operation('management:channel-qr-wait', (account, qr) => management.channelQrWait(account, qr), true);
   operation('management:channel-save', (channel, account, values) => management.saveChannel(channel, account, values), true);
   operation('management:channel-delete', (channel, account) => management.deleteChannel(channel, account), true);
+  operation('management:integrations', () => management.integrations());
+  operation('management:plugin-search', (query) => management.searchPlugins(query));
+  operation('management:plugin-inspect', (pluginId) => management.inspectPlugin(pluginId));
+  operation('management:plugin-refresh', () => management.refreshPlugins(), true);
+  operation('management:integration-install', (input) => management.installIntegration(input), true);
+  operation('management:integration-enable', (pluginId, enabled, reviewToken) => management.setIntegrationEnabled(pluginId, enabled, reviewToken), true);
+  operation('management:plugin-uninstall', (pluginId) => management.uninstallPlugin(pluginId), true);
   operation('management:job-save', (id, input) => management.saveJob(id, input), true);
   operation('management:job-toggle', (id, enabled) => management.toggleJob(id, enabled), true);
   operation('management:job-delete', (id) => management.deleteJob(id), true);
@@ -199,21 +214,35 @@ async function start(): Promise<void> {
   operation('configuration:auth-start', (input) => configuration.authStart(input), true);
   operation('configuration:auth-next', (input) => configuration.authNext(input), true);
   operation('configuration:auth-cancel', (sessionId) => configuration.authCancel(sessionId), true);
-  operation('configuration:auth-logout', (provider, profileIds, agentId) => configuration.authLogout(provider, profileIds, agentId), true);
+  const refreshModelsAfter = async <T>(action: () => Promise<T>): Promise<T> => {
+    const value = await action();
+    // A configuration write may restart the Gateway. Do not turn a committed
+    // write into a reported failure when that brief reconnect wins this race;
+    // the connection subscription will refresh the same catalog afterwards.
+    try { await workspace.refreshModels(); } catch { /* refreshed on reconnect */ }
+    return value;
+  };
+  operation('configuration:auth-logout', (provider, profileIds, agentId) => refreshModelsAfter(() => configuration.authLogout(provider, profileIds, agentId)), true);
   operation('configuration:auth-status', (refresh, agentId) => configuration.authStatus(Boolean(refresh), typeof agentId === 'string' ? agentId : undefined));
   operation('configuration:models-list', (agentId) => configuration.modelsList(typeof agentId === 'string' ? agentId : undefined));
-  operation('configuration:provider-models-refresh', (hash, id) => configuration.refreshProviderModels(hash, id), true);
+  operation('configuration:provider-models-refresh', (hash, id, apiKey) => refreshModelsAfter(() => configuration.refreshProviderModels(hash, id, apiKey)), true);
   operation('configuration:models-discover', (input) => configuration.discoverModels(input));
   operation('settings:catalog', () => gatewaySettings.catalog());
   operation('settings:section', (root) => gatewaySettings.section(root));
-  operation('settings:save', (lease, value) => gatewaySettings.save(lease, value), true);
+  operation('settings:save', (lease, value) => refreshModelsAfter(() => gatewaySettings.save(lease, value)), true);
+  operation('settings:saveMany', (entries) => refreshModelsAfter(() => gatewaySettings.saveMany(entries)), true);
+  operation('secrets:list', () => gatewaySecrets.list());
+  operation('secrets:set', (input) => gatewaySecrets.set(input), true);
+  operation('secrets:setMany', (input) => gatewaySecrets.setMany(input), true);
+  operation('secrets:delete', (name) => gatewaySecrets.delete(name), true);
   operation('gateway-admin:profile', () => gatewayAdmin.profile());
   operation('gateway-admin:profile-name', (id, name) => gatewayAdmin.setDisplayName(id, name), true);
   operation('gateway-admin:devices', () => gatewayAdmin.devices());
   operation('gateway-admin:device-action', (action, id, label) => gatewayAdmin.deviceAction(action, id, label), true);
   operation('gateway-admin:logs', (cursor) => gatewayAdmin.logs(cursor));
-  operation('configuration:provider-save', (hash, input) => configuration.saveProvider(hash, input), true);
-  operation('configuration:provider-delete', (hash, id) => configuration.deleteProvider(hash, id), true);
+  operation('configuration:provider-save', (hash, input) => refreshModelsAfter(() => configuration.saveProvider(hash, input)), true);
+  operation('configuration:provider-delete', (hash, id) => refreshModelsAfter(() => configuration.deleteProvider(hash, id)), true);
+  operation('configuration:provider-model-delete', (hash, id, modelId) => refreshModelsAfter(() => configuration.deleteProviderModel(hash, id, modelId)), true);
   operation('configuration:memory', () => configuration.memory());
   operation('configuration:memory-save', (hash, input) => configuration.saveMemory(hash, input), true);
   ipcMain.handle('pincer:desktop:startup', (event) => {
@@ -246,6 +275,11 @@ async function start(): Promise<void> {
     return serial(() => result(async () => { await service.disconnect(); return service.connectSaved(); }));
   });
   ipcMain.handle('pincer:window:maximized', (event) => { trusted(event); return window?.isMaximized() ?? false; });
+  ipcMain.handle('pincer:window:language', (event, language: unknown) => {
+    trusted(event);
+    if (language !== 'ru' && language !== 'en') throw new Error('INVALID_LANGUAGE');
+    uiLanguage = language;
+  });
   ipcMain.handle('pincer:window:action', (event, action: unknown) => {
     trusted(event);
     if (action === 'minimize') window?.minimize();
@@ -256,9 +290,12 @@ async function start(): Promise<void> {
   });
   ipcMain.handle('pincer:window:menu', (event, id: unknown) => {
     trusted(event);
+    const edit = uiLanguage === 'ru'
+      ? { undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать', copy: 'Копировать', paste: 'Вставить', selectAll: 'Выбрать всё' }
+      : { undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select All' };
     const menus: Record<string, MenuItemConstructorOptions[]> = {
       file: [{ label: 'Выход', click: () => app.quit() }],
-      edit: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }],
+      edit: [{ role: 'undo', label: edit.undo }, { role: 'redo', label: edit.redo }, { type: 'separator' }, { role: 'cut', label: edit.cut }, { role: 'copy', label: edit.copy }, { role: 'paste', label: edit.paste }, { role: 'selectAll', label: edit.selectAll }],
       view: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }],
       help: [{ label: 'Pincer · OpenClaw Gateway', enabled: false }, { label: `Версия ${app.getVersion()}`, enabled: false }],
     };
@@ -281,14 +318,17 @@ async function start(): Promise<void> {
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
     window.webContents.on('context-menu', (_event, params) => {
+      const edit = uiLanguage === 'ru'
+        ? { undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать', copy: 'Копировать', paste: 'Вставить', selectAll: 'Выбрать всё' }
+        : { undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select All' };
       const template: MenuItemConstructorOptions[] = params.isEditable
         ? [
-            { role: 'undo', enabled: params.editFlags.canUndo }, { role: 'redo', enabled: params.editFlags.canRedo },
+            { role: 'undo', label: edit.undo, enabled: params.editFlags.canUndo }, { role: 'redo', label: edit.redo, enabled: params.editFlags.canRedo },
             { type: 'separator' },
-            { role: 'cut', enabled: params.editFlags.canCut }, { role: 'copy', enabled: params.editFlags.canCopy },
-            { role: 'paste', enabled: params.editFlags.canPaste }, { role: 'selectAll', enabled: params.editFlags.canSelectAll },
+            { role: 'cut', label: edit.cut, enabled: params.editFlags.canCut }, { role: 'copy', label: edit.copy, enabled: params.editFlags.canCopy },
+            { role: 'paste', label: edit.paste, enabled: params.editFlags.canPaste }, { role: 'selectAll', label: edit.selectAll, enabled: params.editFlags.canSelectAll },
           ]
-        : params.selectionText ? [{ role: 'copy', enabled: params.editFlags.canCopy }, { role: 'selectAll' }] : [];
+        : params.selectionText ? [{ role: 'copy', label: edit.copy, enabled: params.editFlags.canCopy }, { role: 'selectAll', label: edit.selectAll }] : [];
       if (template.length) Menu.buildFromTemplate(template).popup({ window: window ?? undefined });
     });
     window.on('maximize', () => window?.webContents.send('pincer:window:maximized', true));

@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input';
 
 const snapshots = new Map<string, QuotaSnapshot>();
 export function useProviderQuotas(scope: string, enabled = true) {
-  const [data, setData] = useState<QuotaSnapshot | undefined>(); const [loading, setLoading] = useState(false); const [failed, setFailed] = useState(false);
+  const [data, setData] = useState<QuotaSnapshot | undefined>(); const [loading, setLoading] = useState(false); const [failed, setFailed] = useState(false); const [refreshTimedOut, setRefreshTimedOut] = useState(false);
   const generation = useRef(0); const running = useRef(false); const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined); const attempts = useRef(0);
   const refresh = async (force = false) => {
     if (!scope || !enabled || running.current) return;
@@ -30,24 +30,31 @@ export function useProviderQuotas(scope: string, enabled = true) {
       snapshots.set(scope, value); if (snapshots.size > 10) snapshots.delete(snapshots.keys().next().value!);
       setData(value); setFailed(false);
       clearTimeout(timer.current);
-      if (value.refreshing && attempts.current++ < 8) timer.current = setTimeout(() => void refresh(), Math.min(15000, 1500 * 2 ** Math.min(attempts.current, 3)));
+      if (value.refreshing && attempts.current < 8) {
+        attempts.current++;
+        setRefreshTimedOut(false);
+        timer.current = setTimeout(() => void refresh(), Math.min(15000, 1500 * 2 ** Math.min(attempts.current, 3)));
+      } else if (value.refreshing) setRefreshTimedOut(true);
+      else { attempts.current = 0; setRefreshTimedOut(false); }
     } catch { if (generation.current === epoch) setFailed(true); }
     finally { if (generation.current === epoch) { running.current = false; setLoading(false); } }
   };
   useEffect(() => {
-    generation.current++; running.current = false; attempts.current = 0; setFailed(false); setLoading(false); setData(snapshots.get(scope));
+    generation.current++; running.current = false; attempts.current = 0; setFailed(false); setRefreshTimedOut(false); setLoading(false); setData(snapshots.get(scope));
     if (enabled) void refresh();
     const interval = enabled ? setInterval(() => { if (!document.hidden) { attempts.current = 0; void refresh(); } }, 60000) : undefined;
     return () => { generation.current++; clearInterval(interval); clearTimeout(timer.current); };
   }, [scope, enabled]);
-  return { data, loading, failed, refresh: (force = false) => { attempts.current = 0; return refresh(force); } };
+  return { data, loading, failed, refreshTimedOut, refresh: (force = false) => { attempts.current = 0; setRefreshTimedOut(false); return refresh(force); } };
 }
-export function QuotaList({ scope, enabled = true, compact = false, model, provider }: { scope: string; enabled?: boolean; compact?: boolean; model?: string; provider?: string }) {
-  const ru = usePreferences().language === 'ru'; const { data, loading, failed, refresh } = useProviderQuotas(scope, enabled); const navigate = useNavigate();
+export function QuotaList({ scope, enabled = true, compact = false, model, provider, modelLabel }: { scope: string; enabled?: boolean; compact?: boolean; model?: string; provider?: string; modelLabel?: string }) {
+  const ru = usePreferences().language === 'ru'; const { data, loading, failed, refreshTimedOut, refresh } = useProviderQuotas(scope, enabled); const navigate = useNavigate();
   const date = (n: number) => new Intl.DateTimeFormat(ru ? 'ru' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(n);
-  const providers = compact ? quotasForModel(data?.providers || [], model || '', provider) : data?.providers || [];
+  // The dedicated settings page must remain useful before a chat/model exists:
+  // show every reported account there, while the compact chat popover stays model-scoped.
+  const providers = model ? quotasForModel(data?.providers || [], model, provider) : compact ? [] : data?.providers || [];
   return <section data-testid="provider-quotas" className={compact ? 'text-xs' : 'settings-card text-sm'}>
-    <div className="flex items-center justify-between gap-3"><h3 className="font-medium">{ru ? 'Лимиты провайдеров' : 'Provider limits'}</h3><button type="button" disabled={loading || !enabled} onClick={() => void refresh(true)} aria-label={ru ? 'Обновить лимиты' : 'Refresh limits'} className="rounded-lg p-1.5 hover:bg-foreground/5"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button></div>
+    <div className="flex items-center justify-between gap-3"><div className="min-w-0"><h3 className="font-medium">{ru ? 'Лимиты выбранной модели' : 'Selected model limits'}</h3>{model && <p className="mt-1 truncate text-[11px] text-muted-foreground" title={model}>{modelLabel || model}</p>}</div><button type="button" disabled={loading || !enabled} onClick={() => void refresh(true)} aria-label={ru ? 'Обновить лимиты' : 'Refresh limits'} className="rounded-lg p-1.5 hover:bg-foreground/5"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button></div>
     {loading && !data && <p className="mt-3 text-muted-foreground">{ru ? 'Загружаем лимиты…' : 'Loading limits…'}</p>}
     {providers.map((p, i) => <div key={`${p.source}:${p.provider}:${i}`} className="mt-4 border-t border-border pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><strong>{p.displayName}</strong><span className="text-[10px] text-muted-foreground">{p.source === 'gateway' ? 'Gateway' : 'OmniRoute'}{p.plan ? ` · ${p.plan}` : ''}</span></div>
@@ -59,9 +66,11 @@ export function QuotaList({ scope, enabled = true, compact = false, model, provi
       </div>)}
       {p.updatedAt !== undefined && <p className="mt-2 text-[10px] text-muted-foreground">{ru ? 'Данные от' : 'As of'} {date(p.updatedAt)}</p>}
     </div>)}
-    {data?.refreshing && <p role="status" className="mt-3 text-muted-foreground">{ru ? 'Gateway запрашивает свежие лимиты…' : 'Gateway is refreshing provider limits…'}</p>}
+    {data?.refreshing && !refreshTimedOut && <p role="status" className="mt-3 text-muted-foreground">{ru ? 'Gateway запрашивает свежие лимиты…' : 'Gateway is refreshing provider limits…'}</p>}
+    {refreshTimedOut && <p role="status" className="mt-3 text-amber-700 dark:text-amber-400">{ru ? 'Gateway ещё не подготовил лимиты. Нажмите обновление, чтобы проверить снова.' : 'Gateway has not prepared the limits yet. Refresh to check again.'}</p>}
     {(failed || !!data?.errors.length) && <p role="alert" className="mt-3 text-amber-700 dark:text-amber-400">{ru ? 'Не удалось обновить часть лимитов. Проверь подключение и токен источника.' : 'Some limits could not be refreshed. Check the connection and source token.'}</p>}
-    {!loading && !data?.refreshing && !providers.length && <p className="mt-3 leading-relaxed text-muted-foreground">{compact ? (ru ? 'Лимиты выбранной модели пока не получены.' : 'Limits for the selected model are not available yet.') : (ru ? 'Лимиты провайдеров пока не получены.' : 'Provider limits are not available yet.')}</p>}
+    {!model && compact && <p className="mt-3 leading-relaxed text-muted-foreground">{ru ? 'Сначала выберите модель в текущем чате.' : 'Select a model in the current chat first.'}</p>}
+    {model && !loading && !data?.refreshing && !providers.length && <p className="mt-3 leading-relaxed text-muted-foreground">{ru ? 'Для выбранной модели и её аккаунтов лимиты пока не получены.' : 'Limits for the selected model and its accounts are not available yet.'}</p>}
     {compact && <button
       type="button"
       data-testid="configure-quota-sources"
@@ -73,7 +82,7 @@ export function QuotaList({ scope, enabled = true, compact = false, model, provi
     </button>}
   </section>;
 }
-export function ProviderLimitsSettings({ scope, connected }: { scope: string; connected: boolean }) {
+export function ProviderLimitsSettings({ scope, connected, model, provider, modelLabel }: { scope: string; connected: boolean; model?: string; provider?: string; modelLabel?: string }) {
   const ru = usePreferences().language === 'ru'; const [source, setSource] = useState<QuotaSource>(); const [url, setUrl] = useState(''); const [token, setToken] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [revision, setRevision] = useState(0);
   useEffect(() => { let live = true; void window.pincer.management.quotaSource().then(r => { if (!live) return; if (r.ok) { setSource(r.value); setUrl(r.value.baseUrl); } else setError(r.error.message); }); return () => { live = false; }; }, [scope]);
   const save = async (clear = false) => {
@@ -89,6 +98,6 @@ export function ProviderLimitsSettings({ scope, connected }: { scope: string; co
       <div className="flex flex-wrap gap-2"><Button disabled={busy || !url || !source}>{busy ? ru ? 'Проверяем…' : 'Checking…' : ru ? 'Проверить и сохранить' : 'Test and save'}</Button>{source?.configured && <Button type="button" variant="outline" disabled={busy} onClick={() => void save(true)}>{ru ? 'Отключить источник' : 'Disconnect source'}</Button>}</div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     </form>
-    <QuotaList key={scope + revision} scope={scope} enabled={connected} />
+    <QuotaList key={scope + revision} scope={scope} enabled={connected} model={model} provider={provider} modelLabel={modelLabel} />
   </div>;
 }

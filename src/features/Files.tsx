@@ -11,6 +11,13 @@ import { MaterialFileIcon } from '../donor/MaterialFileIcon';
 import { DonorMarkdown } from '../donor/Message';
 import { cn } from '../lib/utils';
 import { motion, useReducedMotion } from 'framer-motion';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
+
+const PANEL_MIN_WIDTH = 28;
+const PANEL_SPLIT_LIMIT = 65;
+const PANEL_EXPAND_THRESHOLD = 85;
+const PANEL_FULL_WIDTH = 100;
+const PANEL_CLOSE_THRESHOLD_PX = 24;
 
 export function Files({ sessionKey, close, onDirty }: { sessionKey: string; close(): void; onDirty(value: boolean): void }) {
  const { t } = useTranslation('chat'); const preferences = usePreferences(); const ru = preferences.language === 'ru';
@@ -24,6 +31,7 @@ export function Files({ sessionKey, close, onDirty }: { sessionKey: string; clos
  const [resizing, setResizing] = useState(false); const [resizeCollapsed, setResizeCollapsed] = useState(false); const [thresholdAnimating, setThresholdAnimating] = useState(false); const thresholdTimer = useRef<number | null>(null); const systemReduceMotion = useReducedMotion();
  const reduceMotion = preferences.reducedMotion === 'on' || (preferences.reducedMotion === 'system' && systemReduceMotion);
  const generation = useRef(0);
+ const pendingDiscard = useRef<(() => void) | null>(null); const [confirmDiscard, setConfirmDiscard] = useState(false);
  const dirty = file !== null && file.content !== content;
  useEffect(() => { onDirty(dirty); return () => onDirty(false); }, [dirty, onDirty]);
  useEffect(() => () => { delete document.body.dataset.columnResizing; if (thresholdTimer.current !== null) window.clearTimeout(thresholdTimer.current); }, []);
@@ -32,12 +40,13 @@ export function Files({ sessionKey, close, onDirty }: { sessionKey: string; clos
    void window.pincer.files.list(sessionKey, '').then((result) => { if (epoch !== generation.current) return; if (result.ok) { setListing(result.value); setBranches({}); setExpanded({}); } else setError(result.error.message); }).catch((failure) => { if (epoch === generation.current) setError(String(failure)); }).finally(() => { if (epoch === generation.current) setBusy(false); });
    return () => { ++generation.current; };
  }, [sessionKey, refresh]);
- const discard = () => !dirty || window.confirm(ru ? 'Отменить несохранённые изменения файла?' : 'Discard unsaved file changes?');
- const read = async (path: string) => {
-   if (busy || !discard()) return; const epoch = ++generation.current; setBusy(true); setError('');
+ const requestDiscard = (action: () => void) => { if (!dirty) { action(); return; } pendingDiscard.current = action; setConfirmDiscard(true); };
+ const readNow = async (path: string) => {
+   if (busy) return; const epoch = ++generation.current; setBusy(true); setError('');
    try { const result = await window.pincer.files.read(sessionKey, path); if (epoch !== generation.current) return; if (result.ok) { setFile(result.value); setContent(result.value.content); setEditing(false); } else setError(result.error.message); }
    catch (failure) { if (epoch === generation.current) setError(String(failure)); } finally { if (epoch === generation.current) setBusy(false); }
  };
+ const read = (path: string) => requestDiscard(() => { void readNow(path); });
  const toggleDirectory = async (path: string) => {
    if (busy) return;
    if (branches[path]) { setExpanded((all) => ({ ...all, [path]: !all[path] })); return; }
@@ -57,7 +66,7 @@ export function Files({ sessionKey, close, onDirty }: { sessionKey: string; clos
    event.preventDefault();
    const handle = event.currentTarget; const pointerId = event.pointerId;
    const startX = event.clientX; const startWidth = width; const parentWidth = panel.current?.parentElement?.clientWidth || 1;
-   let currentWidth = width; let hiddenDuringResize = false;
+   let currentWidth = width; let hiddenDuringResize = false; let expandedDuringResize = width === PANEL_FULL_WIDTH;
    const previousUserSelect = document.body.style.userSelect;
    setResizing(true); document.body.dataset.columnResizing = 'true'; document.body.style.userSelect = 'none';
    handle.setPointerCapture(pointerId);
@@ -68,12 +77,26 @@ export function Files({ sessionKey, close, onDirty }: { sessionKey: string; clos
    };
    const move = (pointerEvent: PointerEvent) => {
      const next = startWidth + (startX - pointerEvent.clientX) / parentWidth * 100;
-     if (next * parentWidth / 100 <= 24) {
+     if (next * parentWidth / 100 <= PANEL_CLOSE_THRESHOLD_PX) {
        if (!hiddenDuringResize) { hiddenDuringResize = true; animateThreshold(true); }
        return;
      }
      if (hiddenDuringResize) { hiddenDuringResize = false; animateThreshold(false); }
-     currentWidth = Math.max(28, Math.min(75, next)); setWidth(currentWidth);
+     if (next > PANEL_SPLIT_LIMIT) {
+       if (!expandedDuringResize && next >= PANEL_EXPAND_THRESHOLD) {
+         expandedDuringResize = true;
+         currentWidth = PANEL_FULL_WIDTH;
+         animateThreshold(false);
+         setWidth(PANEL_FULL_WIDTH);
+       }
+       if (!expandedDuringResize && currentWidth !== PANEL_SPLIT_LIMIT) {
+         currentWidth = PANEL_SPLIT_LIMIT;
+         setWidth(PANEL_SPLIT_LIMIT);
+       }
+       return;
+     }
+     if (expandedDuringResize) { expandedDuringResize = false; animateThreshold(false); }
+     currentWidth = Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_SPLIT_LIMIT, next)); setWidth(currentWidth);
    };
    const finish = (pointerEvent: PointerEvent) => {
      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', finish); window.removeEventListener('pointercancel', finish);
@@ -82,6 +105,7 @@ export function Files({ sessionKey, close, onDirty }: { sessionKey: string; clos
      setResizing(false);
      if (pointerEvent.type === 'pointercancel') { setWidth(startWidth); animateThreshold(false); return; }
      if (hiddenDuringResize) { requestAnimationFrame(close); return; }
+     if (expandedDuringResize) { setResizeCollapsed(false); setWidth(PANEL_FULL_WIDTH); setPreferences({ workspacePanelWidth: PANEL_FULL_WIDTH }); return; }
      setResizeCollapsed(false); setPreferences({ workspacePanelWidth: currentWidth });
    };
    window.addEventListener('pointermove', move); window.addEventListener('pointerup', finish, { once: true }); window.addEventListener('pointercancel', finish, { once: true });
@@ -90,24 +114,24 @@ export function Files({ sessionKey, close, onDirty }: { sessionKey: string; clos
    : file.missing ? <p className="p-4 text-sm text-muted-foreground">{ru ? 'Файл отсутствует.' : 'File is missing.'}</p>
    : file.previewKind === 'text' ? editing ? <textarea aria-label={file.name} className="h-full min-h-0 w-full resize-none bg-transparent p-4 font-mono text-xs leading-6 outline-none" value={content} maxLength={1_000_000} disabled={busy} onChange={(event) => setContent(event.target.value)} spellCheck={false} /> : /\.md$/i.test(file.name) ? <div className="h-full overflow-auto p-4"><DonorMarkdown text={content} /></div> : <pre className="h-full overflow-auto p-4 font-mono text-xs leading-6">{content}</pre>
    : file.previewKind === 'image' && file.contentEncoding === 'base64' && /^image\/(png|jpeg|webp|gif|bmp)$/.test(file.mimeType || '') ? <div className="h-full overflow-auto p-4"><img alt={file.name} src={`data:${file.mimeType};base64,${file.content}`} className="max-w-full" /></div> : <p className="p-4 text-sm text-muted-foreground">{ru ? 'Предпросмотр этого формата пока не поддерживается.' : 'Preview for this format is not supported yet.'}</p>;
- return <motion.aside ref={panel} data-testid="workspace-files" data-resize-collapsed={resizeCollapsed ? 'true' : 'false'} className="relative h-full min-h-0 shrink-0 overflow-visible bg-background" initial={reduceMotion ? false : { width: '0%', x: '100%' }} animate={resizeCollapsed ? { width: '0%', x: '100%' } : { width: width + '%', x: 0 }} exit={reduceMotion ? { width: '0%' } : { width: '0%', x: '100%' }} transition={{ duration: reduceMotion ? 0 : thresholdAnimating || !resizing ? 0.2 : 0, ease: [0, 0, 0.2, 1] }}>
-   <div role="separator" aria-label={ru ? 'Ширина панели файлов' : 'File panel width'} aria-orientation="vertical" tabIndex={0} className="pincer-resize-handle group absolute inset-y-0 -left-1 z-40 w-2" onPointerDown={startResize} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = Math.max(28, Math.min(75, width + (event.key === 'ArrowLeft' ? 1 : -1))); setWidth(next); setPreferences({ workspacePanelWidth: next }); } }}><span className="pincer-resize-line left-1" /></div>
-  <div data-testid="artifact-panel" className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-   <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-black/5 bg-background px-3 py-2 dark:border-white/10">
+ return <><motion.aside ref={panel} data-testid="workspace-files" data-resize-collapsed={resizeCollapsed ? 'true' : 'false'} className="relative h-full min-h-0 shrink-0 border-l border-border/55 bg-surface-chat" initial={reduceMotion ? false : { width: '0%', x: '100%' }} animate={resizeCollapsed ? { width: '0%', x: '100%' } : { width: width + '%', x: 0 }} exit={reduceMotion ? { width: '0%' } : { width: '0%', x: '100%' }} transition={{ duration: reduceMotion ? 0 : thresholdAnimating || !resizing ? 0.2 : 0, ease: [0, 0, 0.2, 1] }}>
+   <div role="separator" aria-label={ru ? 'Ширина панели файлов' : 'File panel width'} aria-orientation="vertical" tabIndex={0} aria-valuenow={Math.round(width)} aria-valuemin={PANEL_MIN_WIDTH} aria-valuemax={PANEL_FULL_WIDTH} className="pincer-resize-handle group absolute inset-y-0 -left-1 z-40 w-2" onPointerDown={startResize} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = event.key === 'ArrowLeft' ? (width >= PANEL_SPLIT_LIMIT ? PANEL_FULL_WIDTH : Math.min(PANEL_SPLIT_LIMIT, width + 1)) : (width === PANEL_FULL_WIDTH ? PANEL_SPLIT_LIMIT : Math.max(PANEL_MIN_WIDTH, width - 1)); setWidth(next); setPreferences({ workspacePanelWidth: next }); } }}><span className="pincer-resize-line left-1" /></div>
+  <div data-testid="artifact-panel" className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-chat">
+   <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-black/5 bg-surface-chat px-3 py-2 dark:border-white/10">
     <div data-testid="artifact-panel-tabs" className="flex min-w-0 items-center gap-1 overflow-x-auto">
       <PanelTabButton testId="artifact-panel-tab-browser" icon={<FolderTree className="h-3.5 w-3.5" />} label={t('artifactPanel.tabs.browser')} active={tab === 'browser'} onClick={() => setTab('browser')} />
       <PanelTabButton testId="artifact-panel-tab-preview" icon={<Eye className="h-3.5 w-3.5" />} label={t('artifactPanel.tabs.preview')} active={tab === 'preview'} onClick={() => setTab('preview')} />
       <PanelTabButton testId="artifact-panel-tab-changes" icon={<FileEdit className="h-3.5 w-3.5" />} label={t('artifactPanel.tabs.changes')} active={tab === 'changes'} onClick={() => setTab('changes')} />
-    </div><Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => { if (!busy && discard()) close(); }} aria-label={ru ? 'Закрыть файлы' : 'Close files'}><X className="h-4 w-4 pointer-events-none" /></Button>
+    </div><Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => { if (!busy) requestDiscard(close); }} aria-label={ru ? 'Закрыть файлы' : 'Close files'}><X className="h-4 w-4 pointer-events-none" /></Button>
    </div>
    {error && <p role="alert" className="m-3 break-words text-sm text-destructive">{error}</p>}
    {tab === 'changes' ? <p className="p-6 text-sm text-muted-foreground">{ru ? 'Gateway пока не предоставляет историю изменений файлов для этой панели.' : 'The Gateway does not expose file change history for this panel yet.'}</p> : <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden">
-    <header className="flex items-center justify-between gap-3 border-b border-black/5 px-3 py-1.5 dark:border-white/10"><h2 data-testid="workspace-header-title" title={listing?.root} className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden text-sm font-medium"><span className="min-w-0 truncate">{listing?.root?.split(/[\\/]/).filter(Boolean).at(-1) || t('artifactPanel.tabs.browser')}</span></h2><div className="flex shrink-0 items-center gap-1"><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => { if (discard()) setRefresh((value) => value + 1); }} aria-label={t('workspace.actions.refresh')}><RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => toast.info(t('skills:pincer.remoteFolders'))} aria-label={t('workspace.actions.openRootInFinder')}><FolderOpen className="h-3.5 w-3.5 pointer-events-none" /></Button></div></header>
+     <header className="flex items-center justify-between gap-3 border-b border-black/5 px-3 py-1.5 dark:border-white/10"><h2 data-testid="workspace-header-title" title={listing?.root} className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden text-sm font-medium"><span className="min-w-0 truncate">{listing?.root?.split(/[\\/]/).filter(Boolean).at(-1) || t('artifactPanel.tabs.browser')}</span></h2><div className="flex shrink-0 items-center gap-1"><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => requestDiscard(() => setRefresh((value) => value + 1))} aria-label={t('workspace.actions.refresh')}><RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => toast.info(t('skills:pincer.remoteFolders'))} aria-label={t('workspace.actions.openRootInFinder')}><FolderOpen className="h-3.5 w-3.5 pointer-events-none" /></Button></div></header>
     <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: tab === 'browser' ? 'minmax(100px, 220px) minmax(0, 1fr)' : 'minmax(0, 1fr)' }}>
      {tab === 'browser' && <aside className="min-h-0 overflow-hidden border-r border-black/5 dark:border-white/10"><div className="h-full overflow-y-auto py-2 text-sm">{listing && rows(listing.entries)}{listing?.truncated && <p className="p-2 text-xs text-muted-foreground">{ru ? 'Список сокращён сервером.' : 'The server truncated this list.'}</p>}</div></aside>}
      <section className="flex min-h-0 flex-col overflow-hidden">{file && <div className="flex items-center justify-between gap-2 border-b border-black/5 px-4 py-1.5 text-xs text-muted-foreground dark:border-white/10"><div className="flex min-w-0 items-center gap-2"><MaterialFileIcon filename={file.name} className="h-4 w-4" /><span className="truncate font-mono" title={file.path}>{file.path}</span></div>{file.previewKind === 'text' && (editing ? <Button size="sm" className="h-7" disabled={busy || !dirty || !file.hash} onClick={() => void save()}><Save className="mr-1 h-3.5 w-3.5" />{ru ? 'Сохранить' : 'Save'}</Button> : <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(true)}>{ru ? 'Редактировать' : 'Edit'}</Button>)}</div>}<div data-testid="file-preview-content" className="min-h-0 flex-1 overflow-hidden">{preview}</div></section>
     </div>
    </div>}
   </div>
- </motion.aside>;
+  </motion.aside><ConfirmDialog open={confirmDiscard} title={ru ? 'Отбросить изменения?' : 'Discard changes?'} message={ru ? 'Несохранённые изменения файла будут потеряны.' : 'Unsaved file changes will be lost.'} confirmLabel={ru ? 'Отбросить' : 'Discard'} cancelLabel={ru ? 'Продолжить редактирование' : 'Keep editing'} variant="destructive" onCancel={() => { pendingDiscard.current = null; setConfirmDiscard(false); }} onConfirm={() => { const action = pendingDiscard.current; pendingDiscard.current = null; setConfirmDiscard(false); action?.(); }} /></>;
 }

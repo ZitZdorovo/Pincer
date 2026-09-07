@@ -7,6 +7,7 @@ export type GatewaySettingsApi = {
   catalog(): Promise<import('./contract').Result<SettingsCatalog>>;
   section(root: string): Promise<import('./contract').Result<SettingsDocument>>;
   save(lease: string, value: JsonValue): Promise<import('./contract').Result<void>>;
+  saveMany(entries: { lease: string; value: JsonValue }[]): Promise<import('./contract').Result<void>>;
 };
 export const isProtectedSetting = (value: unknown): value is string => typeof value === 'string' && /^__PINCER_PROTECTED_[a-f0-9-]+__$/.test(value);
 export function settingHint(hints: Record<string, SettingHint>, path: string[]): SettingHint {
@@ -17,6 +18,16 @@ export function resolveSchema(schema: JsonSchema, value: unknown): JsonSchema {
   const variants = schema.anyOf || schema.oneOf;
   const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
   const branch = variants?.find(v => v.const !== undefined && v.const === value) || variants?.find(v => v.type === type) || variants?.[0];
-  const all = (schema.allOf || []).reduce((out, part) => ({ ...out, ...part, properties: { ...out.properties, ...part.properties } }), {} as JsonSchema);
-  return { ...schema, ...all, ...branch, properties: { ...schema.properties, ...all.properties, ...branch?.properties } };
+  const all = (schema.allOf || []).reduce((out, part) => {
+    const merged: JsonSchema = { ...out, ...part };
+    if (out.properties || part.properties) merged.properties = { ...out.properties, ...part.properties };
+    return merged;
+  }, {} as JsonSchema);
+  const resolved: JsonSchema = { ...schema, ...all, ...branch };
+  if (schema.properties || all.properties || branch?.properties) {
+    resolved.properties = { ...schema.properties, ...all.properties, ...branch?.properties };
+  } else {
+    delete resolved.properties;
+  }
+  return resolved;
 }

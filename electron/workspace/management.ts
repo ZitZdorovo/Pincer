@@ -22,7 +22,7 @@ export class ManagementService {
       case 'models': return this.rpc('models.list', { ...agent, view: 'configured', includeProviderCapabilities: true });
       case 'agents': return this.rpc('agents.list');
       case 'subagents': return this.rpc('tasks.list', { limit: 200 });
-      case 'channels': return this.rpc('channels.status', { probe: true, timeoutMs: 10000 });
+      case 'channels': return this.channels();
       case 'skills': return this.rpc('skills.status', agent);
       case 'cron': return this.rpc('cron.list', { includeDisabled: true, limit: 200, sortBy: 'nextRunAtMs', sortDir: 'asc' });
       default: throw new Error('INVALID_PAGE');
@@ -87,6 +87,116 @@ export class ManagementService {
   async channelAction(channel: unknown, accountId: unknown, action: unknown): Promise<void> {
     if (action !== 'start' && action !== 'stop' && action !== 'logout') throw new Error('INVALID_ACTION');
     await this.rpc(`channels.${action}`, { channel: bounded(channel, 128), accountId: bounded(accountId, 256, true) });
+  }
+  private async channels(): Promise<JsonRecord> {
+    const [status, current] = await Promise.all([
+      this.rpc('channels.status', { probe: true, timeoutMs: 10000 }),
+      this.rpc('config.get', {}),
+    ]);
+    const config = isRecord(current.config) ? current.config : current;
+    const bindings = Array.isArray(config.bindings) ? config.bindings.map(record) : [];
+    const channelAccounts = isRecord(status.channelAccounts) ? status.channelAccounts : {};
+    const withBindings = Object.fromEntries(Object.entries(channelAccounts).map(([channelId, value]) => [channelId,
+      (Array.isArray(value) ? value : []).map((entry) => {
+        const account = record(entry); const accountId = String(account.accountId || 'default');
+        const binding = bindings.find((candidate) => {
+          const match = record(candidate.match);
+          return match.channel === channelId && String(match.accountId || 'default') === accountId
+            && Object.keys(match).every((key) => key === 'channel' || key === 'accountId');
+        });
+        return { ...account, ...(typeof binding?.agentId === 'string' ? { agentId: binding.agentId } : {}) };
+      }),
+    ]));
+    return { ...status, channelAccounts: withBindings };
+  }
+  async bindChannelAgent(channel: unknown, accountId: unknown, agentId: unknown): Promise<void> {
+    const channelId = bounded(channel, 128); const account = bounded(accountId || 'default', 256, true);
+    const agent = typeof agentId === 'string' && agentId.trim() ? bounded(agentId, 256) : '';
+    const current = await this.rpc('config.get', {}); const config = isRecord(current.config) ? current.config : current;
+    const bindings = Array.isArray(config.bindings) ? config.bindings.filter(isRecord) : [];
+    const next = bindings.filter((candidate) => {
+      const match = record(candidate.match);
+      return !(match.channel === channelId && String(match.accountId || 'default') === account
+        && Object.keys(match).every((key) => key === 'channel' || key === 'accountId'));
+    });
+    if (agent) next.push({ agentId: agent, match: { channel: channelId, accountId: account } });
+    await this.rpc('config.patch', {
+      baseHash: bounded(current.hash, 128), raw: JSON.stringify({ bindings: next }),
+      replacePaths: ['bindings'], note: 'Pincer channel agent binding',
+    });
+  }
+  channelQrStart(accountId: unknown): Promise<JsonRecord> {
+    return this.rpc('web.login.start', { accountId: bounded(accountId || 'default', 256, true), force: true, timeoutMs: 60000 });
+  }
+  async channelQrWait(accountId: unknown, currentQrDataUrl: unknown): Promise<JsonRecord> {
+    const qr = bounded(currentQrDataUrl, 16384);
+    if (!qr.startsWith('data:image/png;base64,')) throw new Error('INVALID_QR_CODE');
+    return this.rpc('web.login.wait', { accountId: bounded(accountId || 'default', 256, true), currentQrDataUrl: qr, timeoutMs: 120000 });
+  }
+  async saveChannel(channel: unknown, accountId: unknown, values: unknown): Promise<void> {
+    const channelId = bounded(channel, 128); const account = bounded(accountId || 'default', 256, true);
+    if (!isRecord(values) || Object.keys(values).length > 64 || JSON.stringify(values).length > 32000) throw new Error('INVALID_INPUT');
+    const clean: JsonRecord = Object.fromEntries(Object.entries(values).filter(([key, value]) => /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key) && typeof value === 'string' && value.trim()).map(([key, value]) => [key, String(value).trim()]));
+    // The UI presents Telegram's allow-list as a comma-separated field, while
+    // OpenClaw validates the canonical config key as an array of sender IDs.
+    if (typeof clean.allowedUsers === 'string') {
+      clean.allowFrom = [...new Set(clean.allowedUsers.split(/[\s,;]+/).map((entry) => entry.trim()).filter(Boolean))];
+      delete clean.allowedUsers;
+      clean.dmPolicy = 'allowlist';
+    }
+    // QR-managed channels legitimately have no credential fields; the config
+    // entry itself is enough to let Gateway start the pairing flow.
+    const current = await this.rpc('config.get', {});
+    const patch = account === 'default'
+      ? { channels: { [channelId]: { ...clean, enabled: true } } }
+      : { channels: { [channelId]: { accounts: { [account]: { ...clean, enabled: true } } } } };
+    await this.rpc('config.patch', { baseHash: bounded(current.hash, 128), raw: JSON.stringify(patch), note: 'Pincer channel configuration' });
+  }
+  async deleteChannel(channel: unknown, accountId?: unknown): Promise<void> {
+    const channelId = bounded(channel, 128); const account = accountId ? bounded(accountId, 256, true) : undefined;
+    const current = await this.rpc('config.get', {}); const config = isRecord(current.config) ? current.config : current; const channels = isRecord(config.channels) ? config.channels : {};
+    if (!(channelId in channels)) return;
+    const patch = !account || account === 'default'
+      ? { channels: { [channelId]: null } }
+      : { channels: { [channelId]: { accounts: { [account]: null } } } };
+    await this.rpc('config.patch', { baseHash: bounded(current.hash, 128), raw: JSON.stringify(patch), note: 'Pincer channel removal' });
+  }
+  integrations(): Promise<JsonRecord> { return this.rpc('plugins.list', {}); }
+  searchPlugins(query: unknown): Promise<JsonRecord> {
+    return this.rpc('plugins.search', { query: bounded(query, 256), limit: 100 });
+  }
+  inspectPlugin(pluginId: unknown): Promise<JsonRecord> {
+    return this.rpc('plugins.inspect', { pluginId: bounded(pluginId, 256) });
+  }
+  refreshPlugins(): Promise<JsonRecord> { return this.rpc('plugins.refresh', {}); }
+  async installIntegration(input: unknown): Promise<JsonRecord> {
+    if (!isRecord(input)) throw new Error('INVALID_INPUT');
+    const source = input.source;
+    const base = source === 'official'
+      ? { source, pluginId: bounded(input.pluginId, 256) }
+      : source === 'clawhub'
+        ? { source, packageName: bounded(input.packageName, 512), ...(typeof input.version === 'string' && input.version.trim() ? { version: bounded(input.version, 128) } : {}) }
+        : null;
+    if (!base) throw new Error('INVALID_INPUT');
+    const acknowledgement = isRecord(input.acknowledgeCapabilities) && typeof input.acknowledgeCapabilities.reviewToken === 'string'
+      ? { acknowledgeCapabilities: { reviewToken: bounded(input.acknowledgeCapabilities.reviewToken, 512) } }
+      : {};
+    const params = {
+      ...base,
+      ...(input.acknowledgeInstallPolicyWarning === true ? { acknowledgeInstallPolicyWarning: true as const } : {}),
+      ...acknowledgement,
+    };
+    return this.rpc('plugins.install', params);
+  }
+  async setIntegrationEnabled(pluginId: unknown, enabled: unknown, reviewToken?: unknown): Promise<JsonRecord> {
+    if (typeof enabled !== 'boolean') throw new Error('INVALID_INPUT');
+    const acknowledgement = typeof reviewToken === 'string' && reviewToken.trim()
+      ? { acknowledgeCapabilities: { reviewToken: bounded(reviewToken, 512) } }
+      : {};
+    return this.rpc('plugins.setEnabled', { pluginId: bounded(pluginId, 256), enabled, ...acknowledgement });
+  }
+  uninstallPlugin(pluginId: unknown): Promise<JsonRecord> {
+    return this.rpc('plugins.uninstall', { pluginId: bounded(pluginId, 256) });
   }
   async saveJob(id: unknown, input: unknown): Promise<void> {
     if (!isRecord(input) || Object.keys(input).some((key) => !['name', 'agentId', 'enabled', 'schedule', 'message'].includes(key))) throw new Error('INVALID_INPUT');

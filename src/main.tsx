@@ -12,5 +12,5 @@ import 'streamdown/styles.css';
 import './styles/chrome.css';
 import './styles/chat.css';
 
-function DonorToaster() { const { theme } = usePreferences(); return <Toaster position="bottom-right" richColors closeButton theme={theme} style={{ zIndex: 99999 }} />; }
+function DonorToaster() { const { theme } = usePreferences(); return <Toaster position="bottom-right" richColors closeButton theme={theme} visibleToasts={3} gap={8} offset={16} style={{ zIndex: 99999 }} />; }
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><HashRouter><TooltipProvider delayDuration={300}><App /><DonorToaster /></TooltipProvider></HashRouter></React.StrictMode>);

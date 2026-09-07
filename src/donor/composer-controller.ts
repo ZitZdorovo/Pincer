@@ -22,6 +22,9 @@ function readAliases(): Record<string, string> {
 function readPresets(): Preset[] {
   try { const value: unknown = JSON.parse(localStorage.getItem('pincer.model-presets') || '[]'); return Array.isArray(value) ? value.filter((p): p is Preset => p && ['id', 'name', 'modelRef', 'thinkingLevel'].every((key) => typeof p[key] === 'string')).slice(0,100) : []; } catch { return []; }
 }
+function readPinnedModels(): string[] {
+  try { const value: unknown = JSON.parse(localStorage.getItem('pincer.pinned-models') || '[]'); return Array.isArray(value) ? [...new Set(value.filter((key): key is string => typeof key === 'string' && key.length > 0))].slice(0, 100) : []; } catch { return []; }
+}
 export function useComposer(props: ComposerProps) {
   const { t } = useTranslation('chat'); const prefs = usePreferences();
   const textareaRef = useRef<HTMLTextAreaElement>(null); const fileRef = useRef<HTMLInputElement>(null);
@@ -33,9 +36,11 @@ export function useComposer(props: ComposerProps) {
   const [skillQuery, setSkillQuery] = useState(''); const [skills, setSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false); const [skillsError, setSkillsError] = useState('');
   const [switchingModelRef, setSwitchingModelRef] = useState('');
+  const [modelCatalogRefreshing, setModelCatalogRefreshing] = useState(false);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [editingModelKey, setEditingModelKey] = useState<string | null>(null); const [editingModelName, setEditingModelName] = useState('');
   const [modelAliases, setAliases] = useState(readAliases); const [modelPresets, setPresets] = useState(readPresets);
+  const [pinnedModelKeys, setPinnedModelKeys] = useState(readPinnedModels);
   const currentAgent = props.state?.agents.find((agent) => agent.id === props.agentId);
   const currentAgentName = currentAgent?.name || props.agentId || 'main';
   const modelOptions = (props.state?.models || []).map((model) => ({ modelRef: model.id, label: model.name }));
@@ -46,13 +51,22 @@ export function useComposer(props: ComposerProps) {
   const effectiveModelVariant = { ...parsedVariant, baseKey: `${providerKey(effectiveModelRef)}::${parsedVariant.baseKey}` };
   const currentModelGroup = modelGroups.find((group) => group.baseKey === effectiveModelVariant.baseKey);
   const variantLevels = availableThinkingLevels(currentModelGroup ?? null);
-  const selectedModelSupportsThinking = props.state?.models.find((model) => model.id === effectiveModelRef)?.reasoning === true;
-  const thinkingLevels = variantLevels.length > 1
-    ? variantLevels
-    : selectedModelSupportsThinking
-      ? (props.state?.thinkingOptions?.length ? props.state.thinkingOptions : currentAgent?.thinkingOptions?.length ? currentAgent.thinkingOptions : ['off', 'minimal', 'low', 'medium', 'high'])
+  const idThinkingLevels = currentModelGroup?.explicitThinking ? variantLevels : [];
+  const selectedModel = props.state?.models.find((model) => model.id === effectiveModelRef);
+  const catalogThinkingLevels = selectedModel?.thinkingLevels;
+  const thinkingLevels = idThinkingLevels.length
+    ? idThinkingLevels
+    : catalogThinkingLevels?.some(level => !['off', 'none'].includes(level.id))
+      ? [...new Set(catalogThinkingLevels.map((level) => level.id))]
       : [];
-  const currentThinkingLevel = variantLevels.length > 1 ? effectiveModelVariant.level : props.state?.thinking || effectiveModelVariant.level;
+  const reportedThinkingLevel = idThinkingLevels.length ? effectiveModelVariant.level : props.state?.thinking || effectiveModelVariant.level;
+  const currentThinkingLevel = idThinkingLevels.length && !effectiveModelVariant.explicitLevel
+    ? 'default'
+    : thinkingLevels.includes(reportedThinkingLevel)
+    ? reportedThinkingLevel
+    : selectedModel?.thinkingDefault && thinkingLevels.includes(selectedModel.thinkingDefault)
+      ? selectedModel.thinkingDefault
+      : thinkingLevels[0] || reportedThinkingLevel;
   const currentModelLabel = effectiveModelRef ? resolveModelDisplayName(effectiveModelRef, modelAliases[effectiveModelVariant.baseKey] || modelAliases[effectiveModelRef], modelOptions.find((option) => option.modelRef === effectiveModelRef)?.label) : t('composer.pickModel');
   const close = () => { setPickerOpen(false); setSkillPickerOpen(false); setModelPickerOpen(false); setThinkingPickerOpen(false); setWorkspaceMenuOpen(false); };
   useEffect(() => {
@@ -68,6 +82,7 @@ export function useComposer(props: ComposerProps) {
   useEffect(() => { const el = textareaRef.current; if (el) { el.style.height = '48px'; el.style.height = Math.min(240, el.scrollHeight) + 'px'; } }, [props.input]);
   useEffect(() => { localStorage.setItem('pincer.model-aliases', JSON.stringify(modelAliases)); }, [modelAliases]);
   useEffect(() => { localStorage.setItem('pincer.model-presets', JSON.stringify(modelPresets)); }, [modelPresets]);
+  useEffect(() => { localStorage.setItem('pincer.pinned-models', JSON.stringify(pinnedModelKeys)); }, [pinnedModelKeys]);
   useEffect(() => {
     if (!skillPickerOpen || !props.agentId || props.disabled) return;
     let current = true; setSkillsLoading(true); setSkillsError('');
@@ -83,7 +98,16 @@ export function useComposer(props: ComposerProps) {
     setSwitchingModelRef(modelRef);
     try { await props.onModel(modelRef, thinking); setModelPickerOpen(false); setThinkingPickerOpen(false); } finally { setSwitchingModelRef(''); }
   };
-  const displayThinkingLevel = (level: string) => thinkingLevelLabel(level as Parameters<typeof thinkingLevelLabel>[0]);
+  const handleModelPickerButtonClick = () => {
+    setPickerOpen(false); setSkillPickerOpen(false); setThinkingPickerOpen(false); setWorkspaceMenuOpen(false);
+    if (modelPickerOpen) { setModelPickerOpen(false); return; }
+    setModelPickerOpen(true);
+    setModelCatalogRefreshing(true);
+    void window.pincer.chat.refreshModels().then((result) => {
+      if (!result.ok) toast.error(result.error.message);
+    }).catch((error) => toast.error(String(error))).finally(() => setModelCatalogRefreshing(false));
+  };
+  const displayThinkingLevel = (level: string) => level === 'default' ? (prefs.language === 'ru' ? 'По умолчанию' : 'Default') : (!idThinkingLevels.length && catalogThinkingLevels?.find((entry) => entry.id === level)?.label) || thinkingLevelLabel(level);
   const handleSelectWorkspace = (path: string) => { props.onWorkspace(path); setWorkspaceMenuOpen(false); };
   return {
     t, input: props.input, setInput: props.setInput, sending: props.sending, inputDisabled: props.disabled,
@@ -93,9 +117,11 @@ export function useComposer(props: ComposerProps) {
     currentAgent, currentAgentName, targetAgentId: props.targetAgentId, selectedTarget: props.state?.agents.find((agent) => agent.id === props.targetAgentId) || null,
     setTargetAgentId: props.onAgent, mentionableAgents: (props.state?.agents || []).filter((agent) => agent.id !== props.agentId), showAgentPicker: (props.state?.agents.length || 0) > 1,
     selectedSkill: null, setSelectedSkill: (_value: null) => {},
-    modelOptions, modelGroups, effectiveModelRef, effectiveModelVariant, currentModelGroup, currentModelLabel, switchingModelRef,
+    modelOptions, modelGroups, effectiveModelRef, effectiveModelVariant, currentModelGroup, currentModelLabel, switchingModelRef, modelCatalogRefreshing, handleModelPickerButtonClick,
     currentThinkingLevel, thinkingLevels, displayThinkingLevel, showModelPicker: modelGroups.length > 0, showThinkingPicker: thinkingLevels.length > 0,
-    modelPresets, modelAliases, editingPresetId, setEditingPresetId, editingModelKey, setEditingModelKey, editingModelName,
+    modelPresets, modelAliases, pinnedModelGroups: pinnedModelKeys.flatMap((key) => { const group = modelGroups.find((entry) => entry.baseKey === key); return group ? [group] : []; }), editingPresetId, setEditingPresetId, editingModelKey, setEditingModelKey, editingModelName,
+    isModelPinned: (key: string) => pinnedModelKeys.includes(key),
+    togglePinnedModel: (key: string) => setPinnedModelKeys((current) => current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]),
     renameModelPreset: (id: string, name: string) => setPresets((all) => all.map((p) => p.id === id ? { ...p, name } : p)),
     deleteModelPreset: (id: string) => setPresets((all) => all.filter((p) => p.id !== id)),
     handleCreatePreset: () => { if (!effectiveModelRef) return; setPresets((all) => [...all, { id: crypto.randomUUID(), name: currentModelLabel, modelRef: effectiveModelRef, thinkingLevel: currentThinkingLevel }]); },
@@ -104,7 +130,7 @@ export function useComposer(props: ComposerProps) {
     finishEditingModelName: (name: string) => { if (editingModelKey) setAliases((all) => ({ ...all, [editingModelKey]: name })); setEditingModelKey(null); },
     resetModelAlias: (id: string) => setAliases((all) => { const next = { ...all }; delete next[id]; return next; }),
     handleSelectModelGroup: (group: ModelGroup) => void chooseModel(resolveGroupVariant(group, currentThinkingLevel).modelRef),
-    handleSelectThinkingLevel: async (level: string) => { if (variantLevels.length > 1 && currentModelGroup) { await chooseModel(resolveGroupVariant(currentModelGroup, level).modelRef); return; } if (effectiveModelRef) { await chooseModel(effectiveModelRef, level); return; } const result = await window.pincer.chat.setThinking(level); if (!result.ok) toast.error(result.error.message); else setThinkingPickerOpen(false); },
+    handleSelectThinkingLevel: async (level: string) => { if (idThinkingLevels.length && currentModelGroup) { await chooseModel(resolveGroupVariant(currentModelGroup, level).modelRef); return; } if (effectiveModelRef) { await chooseModel(effectiveModelRef, level); return; } const result = await window.pincer.chat.setThinking(level); if (!result.ok) toast.error(result.error.message); else setThinkingPickerOpen(false); },
     attachments: props.files.map((file, index): FileAttachment => ({ id: String(index), fileName: file.fileName, mimeType: file.mimeType, fileSize: Math.floor(file.content.length * 0.75), preview: file.mimeType.startsWith('image/') ? `data:${file.mimeType};base64,${file.content}` : null, status: 'ready' })),
     removeAttachment: (id: string) => props.removeFile(Number(id)), pickFiles: () => fileRef.current?.click(),
     handleInputChange: props.setInput,

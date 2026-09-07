@@ -271,7 +271,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         setTriggerArmed(true);
         setCollapsed(false);
       }
-      const nextWidth = Math.min(520, Math.max(240, pointerWidth));
+      const nextWidth = Math.min(520, Math.max(Math.min(240, window.innerWidth * 0.3), Math.min(pointerWidth, window.innerWidth * 0.3)));
       resizingWidthRef.current = nextWidth;
       setResizingWidth(nextWidth);
     };
@@ -702,10 +702,12 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         )}
         <button
           className={cn(
-            'no-drag absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 opacity-0 transition-opacity hover:bg-black/5 hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 dark:hover:bg-white/10',
+            'no-drag absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded opacity-0 transition-opacity hover:bg-black/5 hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10',
             pinned && 'opacity-70 text-primary',
           )}
           title={pinned ? t('unpin') : t('pin')}
+          aria-label={pinned ? t('unpin') : t('pin')}
+          type="button"
           onClick={(event) => { event.stopPropagation(); void toggleChatPinned(session.key, !pinned); }}
         >
           <Pin className="h-3 w-3" />
@@ -760,7 +762,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           <button
             type="button"
             draggable={false}
-            className={cn('no-drag rounded p-0.5 opacity-0 hover:bg-black/5 hover:text-foreground group-hover:opacity-80 group-focus-within:opacity-100 focus-visible:opacity-100 dark:hover:bg-white/10', isPinned && 'text-primary')}
+            className={cn('no-drag flex h-6 w-6 items-center justify-center rounded opacity-0 hover:bg-black/5 hover:text-foreground group-hover:opacity-80 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10', isPinned && 'text-primary')}
             title={t('actions')}
             aria-label={t('actions')}
             onClick={(event) => {
@@ -818,7 +820,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           <OverflowMarqueeText>{project.name}</OverflowMarqueeText>
           <button
             type="button"
-            className={cn('rounded p-0.5 opacity-0 hover:bg-black/5 hover:text-foreground group-hover:opacity-80 group-focus-within:opacity-100 focus-visible:opacity-100 dark:hover:bg-white/10', isPinned && 'text-primary')}
+            className={cn('flex h-6 w-6 items-center justify-center rounded opacity-0 hover:bg-black/5 hover:text-foreground group-hover:opacity-80 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10', isPinned && 'text-primary')}
             title={t('actions')}
             aria-label={t('actions')}
             onClick={(event) => {
@@ -858,7 +860,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           'relative min-h-0 self-stretch shrink-0 transition-[width,min-width,max-width] duration-180 ease-out',
           collapsed
             ? 'w-0 min-w-0 max-w-0'
-            : 'w-[min(var(--sidebar-width),38vw)] min-w-[240px] max-w-[520px] max-[900px]:!w-[240px] max-[900px]:!min-w-[240px] max-[900px]:!max-w-[240px]',
+            : 'w-[min(var(--sidebar-width),30vw)] min-w-[min(240px,30vw)] max-w-[min(520px,30vw)]',
         )}
         style={{
           '--sidebar-width': `${resizingWidth ?? width}px`,
@@ -872,7 +874,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
       >
         <aside
           className={cn(
-            'absolute inset-y-0 left-0 flex w-[min(var(--sidebar-width),38vw)] min-w-[240px] max-w-[520px] flex-col overflow-hidden bg-surface-sidebar transition-[transform,box-shadow] duration-200 ease-out max-[900px]:!w-[240px] max-[900px]:!min-w-[240px] max-[900px]:!max-w-[240px]',
+            'absolute inset-y-0 left-0 flex w-[min(var(--sidebar-width),30vw)] min-w-[min(240px,30vw)] max-w-[min(520px,30vw)] flex-col overflow-hidden bg-surface-sidebar transition-[transform,box-shadow] duration-200 ease-out',
             collapsed ? 'z-50 shadow-2xl' : 'z-10',
             collapsed && !hoverExpanded && 'pointer-events-none',
           )}

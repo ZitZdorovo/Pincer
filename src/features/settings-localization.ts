@@ -22,6 +22,24 @@ const exactLabels: Record<string, string> = {
   'memory.search': 'Поиск в памяти',
   'models.providers': 'Поставщики моделей',
   'agents.defaults': 'Настройки агентов по умолчанию',
+  'gateway.cliAgents': 'CLI-агенты',
+  'talk.activeProvider': 'Активный поставщик разговорного режима',
+  'talk.providers': 'Поставщики разговорного режима',
+  'talk.realtime': 'Разговор в реальном времени',
+  'talk.realtime.brain': 'Стратегия ответа',
+  'talk.realtime.mode': 'Режим реального времени',
+  'talk.realtime.model': 'Модель реального времени',
+  'talk.realtime.provider': 'Поставщик реального времени',
+  'talk.realtime.providers': 'Настройки поставщиков реального времени',
+  'talk.realtime.speakerVoice': 'Голос собеседника',
+  'talk.speechLocale': 'Язык речи',
+  'tts.auto': 'Автоматическое озвучивание',
+  'tts.persona': 'Голосовой профиль TTS',
+  'tts.personas': 'Голосовые профили TTS',
+  'tts.providers': 'Настройки поставщиков TTS',
+  'tools.toolSearch': 'Поиск инструментов',
+  'tools.loopDetection': 'Обнаружение циклов инструментов',
+  'tools.lightweightLocalModels': 'Инструменты для небольших локальных моделей',
 };
 
 const exactHelp: Record<string, string> = {
@@ -35,6 +53,8 @@ const enumValues: Record<string, string> = {
   local: 'Локальный', remote: 'Удалённый', auto: 'Автоматически', automatic: 'Автоматически', none: 'Нет', default: 'По умолчанию',
   enabled: 'Включено', disabled: 'Выключено', allow: 'Разрешить', deny: 'Запретить', required: 'Обязательно', optional: 'Необязательно',
   public: 'Публичный', private: 'Закрытый', system: 'Как в системе', light: 'Светлая', dark: 'Тёмная', true: 'Да', false: 'Нет',
+  off: 'Выкл.', on: 'Вкл.', always: 'Всегда', inbound: 'Входящие', tagged: 'С тегом', direct: 'Напрямую', all: 'Все',
+  realtime: 'Реальное время', 'stt-tts': 'Распознавание и синтез', transcription: 'Транскрипция', 'agent-consult': 'Консультация агента', 'direct-tools': 'Прямые инструменты',
 };
 
 const words: Record<string, string> = {

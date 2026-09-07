@@ -59,6 +59,39 @@ export class GatewaySettingsService {
   async save(id: unknown, incoming: unknown): Promise<void> {
     const lease = this.leases.get(bounded(id, 128)); if (!lease) throw new Error('SETTINGS_RELOAD_REQUIRED');
     this.check(lease.scope);
+    const value = this.restoreValue(lease, incoming);
+    const current = rec(await this.gateway.operatorRequest('config.get', {})); this.check(lease.scope);
+    if (current.hash !== lease.hash) throw new Error('CONFIG_CONFLICT');
+    try {
+      const result = rec(await this.gateway.operatorRequest('config.patch', { baseHash: lease.hash, raw: JSON.stringify({ [lease.root]: value }), replacePaths: [lease.root], note: 'Pincer settings' }));
+      if (result.ok === false) throw new Error('SETTINGS_SAVE_FAILED');
+    } catch { throw new Error('SETTINGS_SAVE_FAILED'); }
+    this.leases.delete(id as string);
+  }
+  async saveMany(input: unknown): Promise<void> {
+    if (!Array.isArray(input) || input.length === 0 || input.length > 41) throw new Error('INVALID_SETTINGS');
+    const prepared = input.map((entry) => {
+      if (!isRecord(entry)) throw new Error('INVALID_SETTINGS');
+      const id = bounded(entry.lease, 128);
+      const lease = this.leases.get(id); if (!lease) throw new Error('SETTINGS_RELOAD_REQUIRED');
+      this.check(lease.scope);
+      return { id, lease, value: this.restoreValue(lease, entry.value) };
+    });
+    const scope = prepared[0].lease.scope;
+    const hash = prepared[0].lease.hash;
+    if (prepared.some(({ lease }) => lease.scope !== scope || lease.hash !== hash)) throw new Error('CONFIG_CONFLICT');
+    const roots = prepared.map(({ lease }) => lease.root);
+    if (new Set(roots).size !== roots.length) throw new Error('INVALID_SETTINGS');
+    const current = rec(await this.gateway.operatorRequest('config.get', {})); this.check(scope);
+    if (current.hash !== hash) throw new Error('CONFIG_CONFLICT');
+    const patch = Object.fromEntries(prepared.map(({ lease, value }) => [lease.root, value]));
+    try {
+      const result = rec(await this.gateway.operatorRequest('config.patch', { baseHash: hash, raw: JSON.stringify(patch), replacePaths: roots, note: 'Pincer settings' }));
+      if (result.ok === false) throw new Error('SETTINGS_SAVE_FAILED');
+    } catch { throw new Error('SETTINGS_SAVE_FAILED'); }
+    prepared.forEach(({ id }) => this.leases.delete(id));
+  }
+  private restoreValue(lease: Lease, incoming: unknown): JsonValue {
     if (JSON.stringify(incoming)?.length > 4_000_000) throw new Error('SETTINGS_TOO_LARGE');
     let nodes = 0;
     const restore = (value: unknown, path: string[]): JsonValue => {
@@ -86,12 +119,6 @@ export class GatewaySettingsService {
       }
     };
     guardDestination(lease.original, value, incoming);
-    const current = rec(await this.gateway.operatorRequest('config.get', {})); this.check(lease.scope);
-    if (current.hash !== lease.hash) throw new Error('CONFIG_CONFLICT');
-    try {
-      const result = rec(await this.gateway.operatorRequest('config.patch', { baseHash: lease.hash, raw: JSON.stringify({ [lease.root]: value }), replacePaths: [lease.root], note: 'Pincer settings' }));
-      if (result.ok === false) throw new Error('SETTINGS_SAVE_FAILED');
-    } catch { throw new Error('SETTINGS_SAVE_FAILED'); } // Remote validation can echo newly entered secrets.
-    this.leases.delete(id as string);
+    return value;
   }
 }

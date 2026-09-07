@@ -8,6 +8,7 @@ import { useGatewayStore } from './adapter';
 
 
 import { ChannelConfigModal } from './ChannelConfigModal';
+import { Integrations } from './Integrations';
 const isGatewayStopped = (status: { state: string }) => status.state !== 'running';
 import { cn } from '@/lib/utils';
 import { CHANNEL_ICONS, CHANNEL_NAMES, CHANNEL_META, getPrimaryChannels, type ChannelType } from './channel-types';
@@ -39,6 +40,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
  const [existingAccountIdsForModal, setExistingAccountIdsForModal] = useState<string[]>([]);
  const [initialConfigValuesForModal, setInitialConfigValuesForModal] = useState<Record<string, string> | undefined>();
  const [deleteTarget, setDeleteTarget] = useState<{ channelType: string; accountId?: string } | null>(null);
+ const [bindingBusy, setBindingBusy] = useState<string | null>(null);
  const visibleAgents = workspace?.agents || [];
  const configuredTypes = configuredGroups.map((group) => group.channelType);
  const unsupportedGroups = getPrimaryChannels().filter((type) => !configuredTypes.includes(type));
@@ -61,8 +63,24 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
  const handleRestartGateway = () => { toast.info(t('pincer.channelConfigUnavailable')); };
  const handleCopyDiagnostics = () => navigator.clipboard.writeText(diagnosticsText).then(() => toast.success(t('pincer.linkCopied')));
  const handleToggleDiagnostics = () => setDiagnostics((value) => !value);
- const handleBindAgent = (_channel: string, _account: string, _agent: string) => { toast.info(t('pincer.channelConfigUnavailable')); };
- const handleDelete = async () => { throw new Error(t('pincer.channelConfigUnavailable')); };
+ const handleBindAgent = async (channel: string, account: string, agent: string) => {
+   const key = `${channel}:${account}`; setBindingBusy(key);
+   try {
+     const result = await window.pincer.management.bindChannelAgent(channel, account, agent);
+     if (!result.ok) throw new Error(result.error.message);
+     toast.success(t('toast.bindingUpdated'));
+     await fetchPageData({ probe: true });
+   } catch (failure) {
+     toast.error(t('toast.configFailed', { error: failure instanceof Error ? failure.message : String(failure) }));
+   } finally { setBindingBusy(null); }
+ };
+ const handleDelete = async () => {
+   if (!deleteTarget) return;
+   const target = deleteTarget; setDeleteTarget(null);
+   const result = await window.pincer.management.deleteChannel(target.channelType, target.accountId);
+   if (!result.ok) throw new Error(result.error.message);
+   await fetchPageData({ probe: true });
+ };
  const createNewAccountId = (_channel: string, ids: string[]) => { let index = 1; while (ids.includes('account-' + index)) index++; return 'account-' + index; };
   return (
     <div
@@ -279,28 +297,25 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                         return (
                           <div
                             key={`${group.channelType}-${account.accountId}`}
-                            className="rounded-xl bg-black/5 dark:bg-white/5 px-3 py-2"
+                            className="grid gap-3 rounded-xl border border-border/70 bg-background/45 p-3 md:grid-cols-[minmax(180px,1fr)_220px_auto] md:items-center"
                           >
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-meta font-medium text-foreground truncate">{displayName}</p>
-                                </div>
+                              <div className="min-w-0 self-start md:self-center">
+                                <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
                                 {account.lastError && (
-                                  <div className="text-xs text-destructive mt-1">{account.lastError}</div>
+                                  <p className="mt-1 line-clamp-2 max-w-xl text-xs leading-4 text-destructive" title={account.lastError}>{account.lastError}</p>
                                 )}
                                 {!account.lastError && account.statusReason && account.status === 'degraded' && (
-                                  <div className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                                  <div className="mt-1 text-xs text-yellow-700 dark:text-yellow-300">
                                     {t(`health.reasons.${account.statusReason}`)}
                                   </div>
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">{t('account.bindAgentLabel')}</span>
+                              <label className="grid min-w-0 gap-1">
+                                <span className="text-xs font-medium text-muted-foreground">{t('account.bindAgentLabel')}</span>
                                 <Select
-                                  className="h-8 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
-                                  disabled title={t('pincer.channelConfigUnavailable')}
+                                  className="h-9 w-full rounded-lg border border-border bg-background px-2 text-sm"
+                                  disabled={!connected || bindingBusy !== null || visibleAgents.length === 0}
                                   value={account.agentId || ''}
                                   onChange={(event) => {
                                     void handleBindAgent(group.channelType, account.accountId, event.target.value);
@@ -313,10 +328,12 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                                     </option>
                                   ))}
                                 </Select>
+                              </label>
+                              <div className="flex items-center justify-end gap-1">
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 rounded-lg text-xs"
+                                  className="h-9 rounded-lg px-3 text-xs"
                                   onClick={() => {
                                     void (async () => {
                                       setInitialConfigValuesForModal(undefined);
@@ -334,16 +351,16 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  className="h-9 w-9 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                   onClick={() =>
                                     setDeleteTarget({ channelType: group.channelType, accountId: account.accountId })
                                   }
-                                  title={t('account.delete')}
+                                   title={t('account.delete')}
+                                   aria-label={`${t('account.delete')}: ${account.name}`}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </div>
-                            </div>
                           </div>
                         );
                       })}
@@ -359,7 +376,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
               {t('supportedChannels')}
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="pincer-grid-2 gap-x-6 gap-y-4">
               {unsupportedGroups.map((type) => {
                 const meta = CHANNEL_META[type];
                 return (
@@ -393,7 +410,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]">
+                      <p className="text-sm text-muted-foreground line-clamp-2 leading-[1.5]" title={t(meta.description.replace('channels:', ''))}>
                         {t(meta.description.replace('channels:', ''))}
                       </p>
                     </div>
@@ -402,6 +419,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
               })}
             </div>
           </div>
+          <Integrations connected={connected} />
         </div>
       </div>
 
@@ -425,6 +443,14 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
             setInitialConfigValuesForModal(undefined);
           }}
           onChannelSaved={async () => {
+            setShowConfigModal(false);
+            setSelectedChannelType(null);
+            setSelectedAccountId(undefined);
+            await fetchPageData({ probe: true });
+          }}
+          onChannelConfigured={async (channelType, accountId, values) => {
+            const result = await window.pincer.management.saveChannel(channelType, accountId, values);
+            if (!result.ok) throw new Error(result.error.message);
             await fetchPageData({ probe: true });
             scheduleConvergenceRefresh();
             setShowConfigModal(false);

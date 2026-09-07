@@ -262,20 +262,12 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
         envVar: 'DISCORD_BOT_TOKEN',
       },
       {
-        key: 'guildId',
-        label: 'channels:meta.discord.fields.guildId.label',
+        key: 'applicationId',
+        label: 'channels:meta.discord.fields.applicationId.label',
         type: 'text',
-        placeholder: 'channels:meta.discord.fields.guildId.placeholder',
-        required: true,
-        description: 'channels:meta.discord.fields.guildId.description',
-      },
-      {
-        key: 'channelId',
-        label: 'channels:meta.discord.fields.channelId.label',
-        type: 'text',
-        placeholder: 'channels:meta.discord.fields.channelId.placeholder',
+        placeholder: 'channels:meta.discord.fields.applicationId.placeholder',
         required: false,
-        description: 'channels:meta.discord.fields.channelId.description',
+        description: 'channels:meta.discord.fields.applicationId.description',
       },
     ],
     instructions: [
@@ -557,7 +549,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['telegram', 'discord', 'whatsapp', 'wechat', 'dingtalk', 'feishu', 'wecom', 'qqbot'];
+  return ['telegram', 'discord', 'whatsapp'];
 }
 
 /**

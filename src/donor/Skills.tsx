@@ -535,7 +535,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
                         <h3 className="text-sm font-semibold text-foreground truncate">{skill.name}</h3>
                         {skill.isCore ? <Lock className="h-3 w-3 text-muted-foreground" /> : null}
                       </div>
-                      <p className="line-clamp-2 pr-2 text-sm leading-relaxed text-muted-foreground">
+                      <p className="line-clamp-2 pr-2 text-sm leading-relaxed text-muted-foreground" title={skill.description}>
                         {skill.description}
                       </p>
                       <div className="mt-1 flex items-center gap-2 text-tiny text-foreground/55 min-w-0">
@@ -580,7 +580,7 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
             </h2>
             <p className="mt-1 text-meta text-foreground/70">{t('marketplace.installDialogSubtitle')}</p>
             <div className="mt-4 flex flex-col md:flex-row gap-2">
-              <div className="relative flex items-center bg-black/5 dark:bg-white/5 rounded-xl px-3 py-2 border border-black/10 dark:border-white/10 flex-1">
+              <div className="relative flex items-center bg-black/5 dark:bg-white/5 rounded-xl px-3 py-2 border border-black/10 dark:border-white/10 flex-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40">
                 <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <Input
                   placeholder={t('searchMarketplace')}
@@ -592,7 +592,8 @@ export function Skills({ workspace, connected }: { workspace: WorkspaceState | n
                   <button
                     type="button"
                     onClick={() => setInstallQuery('')}
-                    className="text-foreground/50 hover:text-foreground shrink-0 ml-1"
+                    className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-foreground/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={t('common:actions.clear', 'Очистить поиск')}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

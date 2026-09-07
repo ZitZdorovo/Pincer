@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { GatewayState, UpdateState } from '../shared/contract';
 import { TitleBar } from './components/TitleBar';
 import { ConnectionPage } from './components/ConnectionPage';
 import { Shell } from './components/Shell';
 import { translator } from './i18n';
-import { UpdateModal } from './features/Updates';
-import { Settings } from './features/Settings';
 import { usePreferences } from './preferences';
 import { useLocation, useNavigate } from 'react-router-dom';
 import i18n from './donor/i18n';
+
+const Settings = lazy(() => import('./features/Settings').then(module => ({ default: module.Settings })));
+const UpdateModal = lazy(() => import('./features/Updates').then(module => ({ default: module.UpdateModal })));
 
 export default function App() {
   const [state, setState] = useState<GatewayState | null>(null);
@@ -56,6 +57,7 @@ export default function App() {
     document.documentElement.classList.toggle('dark', dark);
     document.documentElement.lang = language;
     void i18n.changeLanguage(language);
+    void window.pincer.window.setLanguage(language);
     localStorage.setItem('pincer.theme', dark ? 'dark' : 'light');
     localStorage.setItem('pincer.language', language);
   }, [dark, language]);
@@ -75,7 +77,7 @@ export default function App() {
     <TitleBar />
     {!state ? <main className="grid flex-1 place-items-center text-sm text-muted-foreground" role={error ? 'alert' : 'status'}>{t(error ? 'startupError' : 'loading')}</main>
       : <><div className={shell && !settings ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><Shell key={JSON.stringify(state.profile)} state={state} language={language} configure={() => setShell(false)} openSettings={() => setSettings(true)} updates={updates} onDirty={setDirty} active={shell && !settings} /></div>
-        {settings ? <Settings initialSection={new URLSearchParams(location.search).get('section') === 'gateway' ? 'gateway' : new URLSearchParams(location.search).get('section') === 'updates' ? 'updates' : 'appearance'} gateway={state} updates={updates} back={() => { setShell(true); setSettings(false); }} dirty={dirty} /> : !shell && <ConnectionPage state={state} language={language} preview={() => setShell(true)} />}</>}
-    <UpdateModal state={updates} language={language} />
+        {settings ? <Suspense fallback={<main className="grid min-h-0 flex-1 place-items-center text-sm text-muted-foreground" role="status">{language === 'ru' ? 'Загрузка настроек…' : 'Loading settings…'}</main>}><Settings initialSection={new URLSearchParams(location.search).get('section') === 'gateway' ? 'gateway' : new URLSearchParams(location.search).get('section') === 'updates' ? 'updates' : 'appearance'} gateway={state} updates={updates} back={() => { setShell(true); setSettings(false); }} dirty={dirty} /></Suspense> : !shell && <ConnectionPage state={state} language={language} preview={() => setShell(true)} />}</>}
+    {(updates?.phase === 'downloading' || updates?.phase === 'installing') && <Suspense fallback={null}><UpdateModal state={updates} language={language} /></Suspense>}
   </div>;
 }

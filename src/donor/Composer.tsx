@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Search, ChevronDown, Check, Pencil, Plus, Trash2 } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Search, ChevronDown, Check, Pencil, Pin, Plus, Trash2, Puzzle, Cpu, Brain } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../components/ui/dialog';
@@ -11,7 +11,7 @@ import { InlineNameEditor } from '../components/ui/InlineNameEditor';
 import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/utils';
-import { resolveModelDisplayName, thinkingLevelLabel } from './model-display';
+import { resolveModelDisplayName, thinkingLevelLabel, modelRouteLabel } from './model-display';
 import { AccessPicker, RequestStats } from './RequestControls';
 import { Approvals } from '../features/Approvals';
 import { useComposer, type ComposerProps, type FileAttachment, type QuickAccessSkill } from './composer-controller';
@@ -37,9 +37,9 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
   const {
     t, input, setInput, sending, inputDisabled, textareaRef, fileRef, skillPickerRef, modelPickerRef, thinkingPickerRef, workspaceMenuRef, isComposingRef,
     setPickerOpen, skillPickerOpen, setSkillPickerOpen, modelPickerOpen, setModelPickerOpen, thinkingPickerOpen, setThinkingPickerOpen, workspaceMenuOpen, setWorkspaceMenuOpen,
-    skillQuery, setSkillQuery, skillsLoading, skillsError, filteredQuickSkills, currentAgent, currentAgentName, selectedSkill, setSelectedSkill,
-    modelOptions, modelGroups, effectiveModelRef, effectiveModelVariant, currentModelGroup, currentModelLabel, switchingModelRef, currentThinkingLevel, thinkingLevels, displayThinkingLevel, showModelPicker, showThinkingPicker,
-    modelPresets, modelAliases, editingPresetId, setEditingPresetId, editingModelKey, setEditingModelKey, editingModelName, renameModelPreset, deleteModelPreset, handleCreatePreset, handleSelectPreset, startEditingModelName, finishEditingModelName, resetModelAlias, handleSelectModelGroup, handleSelectThinkingLevel,
+    skillQuery, setSkillQuery, skillsLoading, skillsError, filteredQuickSkills, currentAgentName, selectedSkill, setSelectedSkill,
+    modelOptions, modelGroups, effectiveModelRef, effectiveModelVariant, currentModelGroup, currentModelLabel, switchingModelRef, modelCatalogRefreshing, handleModelPickerButtonClick, currentThinkingLevel, thinkingLevels, displayThinkingLevel, showModelPicker, showThinkingPicker,
+    modelPresets, modelAliases, pinnedModelGroups, isModelPinned, togglePinnedModel, editingPresetId, setEditingPresetId, editingModelKey, setEditingModelKey, editingModelName, renameModelPreset, deleteModelPreset, handleCreatePreset, handleSelectPreset, startEditingModelName, finishEditingModelName, resetModelAlias, handleSelectModelGroup, handleSelectThinkingLevel,
     attachments, removeAttachment, pickFiles, handleInputChange, handleKeyDown, handlePaste, canSubmit, canStop, handleSend, handleStop, workspaceLabel, workspacePath, workspaceSelectorDisabled, workspaceOptions, handleWorkspaceKeyDown, handleWorkspaceButtonClick, handleSelectDefaultWorkspace, handleSelectWorkspace
   } = useComposer(props);
   const [dragOver, setDragOver] = useState(false);
@@ -114,7 +114,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
         {/* Input Container */}
         <div
           data-testid="chat-composer-surface"
-          className={`relative z-10 bg-surface-input rounded-2xl shadow-sm border px-3 pt-2.5 pb-[10px] transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}
+          className={`relative z-10 bg-surface-input rounded-2xl shadow-sm border px-3 pt-2.5 pb-[10px] transition-all focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}
         >
           {scrollToLatestAction && (
             <div
@@ -143,7 +143,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
               disabled={inputDisabled}
               data-testid="chat-composer-input"
               className={cn(
-                'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
+                'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:normal] placeholder:text-muted-foreground/60',
               )}
               rows={1}
             />
@@ -169,7 +169,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                 type="button"
                 data-testid="chat-composer-skill"
                 className={cn(
-                  'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
+                  'chat-compact-control inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
                   (skillPickerOpen || selectedSkill) && 'text-foreground',
                 )}
                 onClick={() => {
@@ -182,8 +182,9 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                 disabled={inputDisabled || sending}
                 title={t('composer.pickSkill')}
               >
-                <span>{t('composer.skillButton')}</span>
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
+                <Puzzle className="chat-compact-icon hidden h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="chat-compact-label">{t('composer.skillButton')}</span>
+                <ChevronDown className={cn('chat-compact-chevron h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
               </button>
               {skillPickerOpen && (
                 <div className="absolute left-0 bottom-full z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
@@ -254,24 +255,19 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                   type="button"
                   data-testid="chat-model-picker-button"
                   className={cn(
-                    'inline-flex h-8 max-w-[220px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
+                    'chat-compact-control inline-flex h-8 max-w-[220px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
                     (modelPickerOpen || switchingModelRef) && 'text-foreground',
                   )}
-                  onClick={() => {
-                    setPickerOpen(false);
-                    setSkillPickerOpen(false);
-                    setThinkingPickerOpen(false);
-                    setWorkspaceMenuOpen(false);
-                    setModelPickerOpen((open) => !open);
-                  }}
-                  disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
+                  onClick={handleModelPickerButtonClick}
+                  disabled={inputDisabled || sending || !!switchingModelRef}
                   title={t('composer.pickModel')}
                 >
-                  {switchingModelRef ? (
-                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                  {switchingModelRef || modelCatalogRefreshing ? (
+                    <Loader2 data-testid={modelCatalogRefreshing ? 'chat-model-picker-refreshing' : undefined} className="h-3.5 w-3.5 shrink-0 animate-spin" />
                   ) : null}
-                  <span className="truncate">{currentModelLabel}</span>
-                  <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
+                  <Cpu className="chat-compact-icon hidden h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="chat-compact-label truncate">{currentModelLabel}</span>
+                  <ChevronDown className={cn('chat-compact-chevron h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
                 </button>
                 {modelPickerOpen && (
                   <div
@@ -291,6 +287,19 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                       </button>
                     </div>
                     <div className="max-h-64 overflow-y-auto">
+                      {pinnedModelGroups.length > 0 && (
+                        <div className="mb-1 border-b border-black/10 pb-1 dark:border-white/10" data-testid="chat-pinned-models">
+                          <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">{t('composer.pinnedModels')}</div>
+                          {pinnedModelGroups.map((group) => {
+                            const active = group.baseKey === effectiveModelVariant.baseKey;
+                            const displayName = resolveModelDisplayName(group.original.modelRef, modelAliases[group.baseKey], group.original.label);
+                            return <div key={group.baseKey} className={cn('group/pinned flex min-h-9 items-center rounded-xl', active && 'bg-primary/10')}>
+                              <button type="button" title={group.original.modelRef} className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium" onClick={() => handleSelectModelGroup(group)}><span className="truncate">{displayName}</span>{active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}</button>
+                              <button type="button" className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title={t('composer.unpinModel')} aria-label={t('composer.unpinModelFor', { model: displayName })} onClick={() => togglePinnedModel(group.baseKey)}><Pin className="h-3.5 w-3.5 fill-current" /></button>
+                            </div>;
+                          })}
+                        </div>
+                      )}
                       {modelPresets.length > 0 && (
                         <div className="mb-1 border-b border-black/10 pb-1 dark:border-white/10" data-testid="chat-model-presets">
                           <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
@@ -325,8 +334,8 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                                       </span>
                                       {active && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
                                     </button>
-                                    <button type="button" className="p-1 text-muted-foreground opacity-0 hover:text-foreground group-hover/preset:opacity-100" title={t('composer.editPresetName')} onClick={() => setEditingPresetId(preset.id)}><Pencil className="h-3.5 w-3.5" /></button>
-                                    <button type="button" className="mr-2 p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover/preset:opacity-100" title={t('composer.deletePreset')} onClick={() => deleteModelPreset(preset.id)}><Trash2 className="h-3.5 w-3.5" /></button>
+                                    <button type="button" className="flex h-6 w-6 items-center justify-center text-muted-foreground opacity-0 hover:text-foreground group-hover/preset:opacity-100 group-focus-within/preset:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={t('composer.editPresetName')} title={t('composer.editPresetName')} onClick={() => setEditingPresetId(preset.id)}><Pencil className="h-3.5 w-3.5" /></button>
+                                    <button type="button" className="mr-2 flex h-6 w-6 items-center justify-center text-muted-foreground opacity-0 hover:text-destructive group-hover/preset:opacity-100 group-focus-within/preset:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={t('composer.deletePreset')} title={t('composer.deletePreset')} onClick={() => deleteModelPreset(preset.id)}><Trash2 className="h-3.5 w-3.5" /></button>
                                   </>
                                 )}
                               </div>
@@ -364,14 +373,26 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                                   onClick={() => handleSelectModelGroup(group)}
                                   className="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-2 text-left text-sm font-medium"
                                   data-testid={`chat-model-picker-option-${group.baseKey}`}
+                                  aria-label={displayName}
+                                  aria-description={modelRouteLabel(group.original.modelRef)}
                                   title={group.original.modelRef}
                                 >
-                                  <span className="truncate">{displayName}</span>
+                                  <span className="min-w-0"><span className="block truncate">{displayName}</span><span className="block truncate text-[10px] font-normal text-muted-foreground">{modelRouteLabel(group.original.modelRef)}</span></span>
                                   {isActive && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
                                 </button>
                                 <button
                                   type="button"
-                                  className="mr-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-black/5 hover:text-foreground group-hover/model:opacity-100 dark:hover:bg-white/10"
+                                  data-testid={`chat-model-pin-${group.baseKey}`}
+                                  className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded transition-opacity hover:bg-black/5 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10', isModelPinned(group.baseKey) ? 'text-primary' : 'text-muted-foreground opacity-0 group-hover/model:opacity-100 group-focus-within/model:opacity-100')}
+                                  title={isModelPinned(group.baseKey) ? t('composer.unpinModel') : t('composer.pinModel')}
+                                  aria-label={isModelPinned(group.baseKey) ? t('composer.unpinModelFor', { model: displayName }) : t('composer.pinModelFor', { model: displayName })}
+                                  onClick={() => togglePinnedModel(group.baseKey)}
+                                >
+                                  <Pin className={cn('h-3.5 w-3.5', isModelPinned(group.baseKey) && 'fill-current')} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="mr-2 flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-black/5 hover:text-foreground group-hover/model:opacity-100 group-focus-within/model:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
                                   title={t('composer.editModelName')}
                                   aria-label={t('composer.editModelNameFor', { model: displayName })}
                                   onClick={() => startEditingModelName(group)}
@@ -395,7 +416,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                   type="button"
                   data-testid="chat-thinking-picker-button"
                   className={cn(
-                    'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
+                    'chat-compact-control inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
                     thinkingPickerOpen && 'text-foreground',
                   )}
                   disabled={inputDisabled || sending || !!switchingModelRef}
@@ -408,8 +429,9 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                   }}
                   title={t('composer.thinkingEffort')}
                 >
-                  <span>{displayThinkingLevel(currentThinkingLevel)}</span>
-                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', thinkingPickerOpen && 'rotate-180')} />
+                  <Brain className="chat-compact-icon hidden h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="chat-compact-label">{displayThinkingLevel(currentThinkingLevel)}</span>
+                  <ChevronDown className={cn('chat-compact-chevron h-3.5 w-3.5 transition-transform', thinkingPickerOpen && 'rotate-180')} />
                 </button>
                 {thinkingPickerOpen && (
                   <div className="absolute bottom-full left-0 z-20 mb-2 w-44 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10" data-testid="chat-thinking-picker-menu">
@@ -474,7 +496,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                   tabIndex={workspaceSelectorDisabled ? -1 : undefined}
                   onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
                   className={cn(
-                    'inline-flex h-6 min-w-0 max-w-[260px] items-center gap-1 rounded-full border px-2',
+                    'chat-compact-control inline-flex h-6 min-w-0 max-w-[260px] items-center gap-1 rounded-full border px-2',
                     'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:bg-white/[0.04]',
                     workspaceSelectorDisabled
                       ? 'cursor-default border-transparent opacity-80'
@@ -482,11 +504,11 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                   )}
                 >
                   <FolderOpen className="h-3 w-3 shrink-0" />
-                  <span className="min-w-0 truncate">
+                  <span className="chat-compact-label min-w-0 truncate">
                     {t('composer.workspacePrefix', { workspace: workspaceLabel })}
                   </span>
                   {!workspaceSelectorDisabled && (
-                    <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
+                    <ChevronDown className={cn('chat-compact-chevron h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
                   )}
                 </button>
                 <AnimatePresence initial={false}>
@@ -623,7 +645,7 @@ function AttachmentPreview({
       {/* Remove button */}
       <button
         onClick={onRemove}
-        className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`${t('common:actions.delete')}: ${attachment.fileName}`}
       >
         <X className="h-3 w-3" />

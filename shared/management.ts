@@ -2,6 +2,14 @@ export type ManagementPage = 'models' | 'agents' | 'channels' | 'skills' | 'cron
 export type AgentEdit = { name: string; workspace?: string; model?: string; emoji?: string };
 export type JobEdit = { name: string; agentId: string; enabled: boolean; schedule: { kind: 'cron'; expr: string; tz?: string } | { kind: 'every'; everyMs: number } | { kind: 'at'; at: string }; message: string };
 export type JsonRecord = Record<string, unknown>;
+export type PluginAcknowledgement = {
+  acknowledgeInstallPolicyWarning?: true;
+  acknowledgeCapabilities?: { reviewToken: string };
+};
+export type PluginInstallInput = (
+  { source: 'official'; pluginId: string }
+  | { source: 'clawhub'; packageName: string; version?: string }
+) & PluginAcknowledgement;
 export type ManagementApi = {
   cancelSubagent(id: string): Promise<import('./contract').Result<void>>;
   usage(range: '7d' | '30d' | 'all'): Promise<import('./contract').Result<JsonRecord>>;
@@ -17,6 +25,18 @@ export type ManagementApi = {
   searchSkills(query: string): Promise<import('./contract').Result<JsonRecord>>;
   installSkill(slug: string, agentId: string): Promise<import('./contract').Result<void>>;
   channelAction(channel: string, accountId: string, action: 'start' | 'stop' | 'logout'): Promise<import('./contract').Result<void>>;
+  bindChannelAgent(channel: string, accountId: string, agentId: string): Promise<import('./contract').Result<void>>;
+  channelQrStart(accountId: string): Promise<import('./contract').Result<JsonRecord>>;
+  channelQrWait(accountId: string, currentQrDataUrl: string): Promise<import('./contract').Result<JsonRecord>>;
+  saveChannel(channel: string, accountId: string, values: Record<string, string>): Promise<import('./contract').Result<void>>;
+  deleteChannel(channel: string, accountId?: string): Promise<import('./contract').Result<void>>;
+  integrations(): Promise<import('./contract').Result<JsonRecord>>;
+  searchPlugins(query: string): Promise<import('./contract').Result<JsonRecord>>;
+  inspectPlugin(pluginId: string): Promise<import('./contract').Result<JsonRecord>>;
+  refreshPlugins(): Promise<import('./contract').Result<JsonRecord>>;
+  installIntegration(input: PluginInstallInput): Promise<import('./contract').Result<JsonRecord>>;
+  setIntegrationEnabled(pluginId: string, enabled: boolean, reviewToken?: string): Promise<import('./contract').Result<JsonRecord>>;
+  uninstallPlugin(pluginId: string): Promise<import('./contract').Result<JsonRecord>>;
   saveJob(id: string | null, input: JobEdit): Promise<import('./contract').Result<void>>;
   toggleJob(id: string, enabled: boolean): Promise<import('./contract').Result<void>>;
   deleteJob(id: string): Promise<import('./contract').Result<void>>;

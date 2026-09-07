@@ -27,7 +27,11 @@ export type GatewayState = {
 export type ChatSession = { key: string; title: string; agentId?: string; pinned?: boolean; updatedAt?: number; model?: string; cwd?: string; activeRunId?: string; runStartedAt?: number; runPhase?: RunPhase };
 export type Project = { id: string; name: string; path: string };
 export type ChatLocation = { projectId?: string; cwd?: string };
-export type ModelInfo = { id: string; name: string; provider: string; contextWindow?: number; reasoning?: boolean };
+export type ModelInfo = {
+  id: string; name: string; provider: string; contextWindow?: number; reasoning?: boolean;
+  thinkingLevels?: { id: string; label: string }[];
+  thinkingDefault?: string;
+};
 export type MessageFile = { name: string; mimeType: string; imageData?: string };
 export type PermissionMode = 'read-only' | 'guarded' | 'workspace' | 'full';
 export type TokenUsage = { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number };
@@ -63,6 +67,7 @@ export type CloseBehavior = 'quit' | 'tray';
 export type MenuId = 'file' | 'edit' | 'view' | 'help';
 export type PincerApi = {
   settings: import('./settings').GatewaySettingsApi;
+  secrets: import('./secrets').SecretsApi;
   gatewayAdmin: import('./gateway-admin').GatewayAdminApi;
   approvals: import('./approvals').ApprovalsApi;
   configuration: import('./configuration').ConfigurationApi;
@@ -81,6 +86,7 @@ export type PincerApi = {
   chat: {
     snapshot(): Promise<WorkspaceState>;
     refresh(): Promise<Result<void>>;
+    refreshModels(): Promise<Result<void>>;
     select(key: string): Promise<Result<void>>;
     prepare(location?: ChatLocation): Promise<Result<void>>;
     create(agentId: string, location?: ChatLocation): Promise<Result<void>>;
@@ -118,6 +124,7 @@ export type PincerApi = {
   };
   window: {
     action(action: WindowAction): Promise<void>;
+    setLanguage(language: 'ru' | 'en'): Promise<void>;
     isMaximized(): Promise<boolean>;
     onMaximized(listener: (maximized: boolean) => void): () => void;
     showMenu(menu: MenuId): Promise<void>;

@@ -99,7 +99,9 @@
     "generateQRCode": "Generate QR Code",
     "updateAndReconnect": "Update & Reconnect",
     "saveAndConnect": "Save & Connect",
-    "envVar": "Environment Variable: {{var}}"
+    "envVar": "Environment Variable: {{var}}",
+    "qrUnavailable": "Gateway did not return a login QR code",
+    "qrExpired": "The QR code expired or login was not confirmed"
   },
   "health": {
     "state": {
@@ -128,7 +130,7 @@
   "meta": {
     "telegram": {
       "description": "Connect Telegram using a bot token from @BotFather",
-      "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/TjiGwxsMWi7hpDkDAQBc0ydMnEf#MEkKdqXP1orZU2x4SrFcdUHgnl1",
+      "docsUrl": "https://docs.openclaw.ai/channels/telegram",
       "fields": {
         "botToken": {
           "label": "Bot Token",
@@ -150,11 +152,16 @@
     },
     "discord": {
       "description": "Connect Discord using a bot token from Developer Portal",
-      "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#QS6LdxnA2oNtfcxtFc8cgabnnNd",
+      "docsUrl": "https://docs.openclaw.ai/channels/discord",
       "fields": {
         "token": {
           "label": "Bot Token",
           "placeholder": "Your Discord bot token"
+        },
+        "applicationId": {
+          "label": "Application ID (optional)",
+          "placeholder": "e.g., 123456789012345678",
+          "description": "Lets Gateway start without an extra Discord API application lookup."
         },
         "guildId": {
           "label": "Guild/Server ID",
@@ -178,7 +185,7 @@
     },
     "whatsapp": {
       "description": "Connect WhatsApp by scanning a QR code (no phone number required)",
-      "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
+      "docsUrl": "https://docs.openclaw.ai/channels/whatsapp",
       "instructions": [
         "Open WhatsApp on your phone",
         "Go to Settings > Linked Devices > Link a Device",
@@ -399,6 +406,31 @@
         "Get App ID and Client Secret",
         "Fill in your credentials below"
       ]
+    }
+  },
+  "integrations": {
+    "title": "Integrations",
+    "subtitle": "Extensions actually exposed by the connected OpenClaw Gateway.",
+    "refresh": "Refresh integrations",
+    "searchPlaceholder": "Search integrations...",
+    "install": "Install",
+    "enable": "Enable",
+    "disable": "Disable",
+    "installUnavailable": "Gateway does not provide an installation method for this integration",
+    "installedToast": "{{name}} integration installed",
+    "enabledToast": "{{name}} integration enabled",
+    "disabledToast": "{{name}} integration disabled",
+    "restartRequired": "Restart Gateway to apply the changes",
+    "loadError": "Could not load integrations: {{error}}",
+    "readOnly": "This Gateway only permits viewing integrations.",
+    "empty": "Gateway did not report any available integrations.",
+    "noResults": "No integrations match your search.",
+    "liveHint": "The list comes directly from Gateway; unsupported or fictional connections are not shown.",
+    "state": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "not-installed": "Not installed",
+      "error": "Error"
     }
   },
   "viewDocs": "View Documentation"

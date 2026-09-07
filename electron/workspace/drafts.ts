@@ -17,7 +17,19 @@ export class DraftStore {
         for (const [key, text] of Object.entries(entries)) { bounded(key); bounded(text, 100000, true); }
       }
       this.data = value as Record<string, Record<string, string>>;
-    } catch { this.healthy = false; } // Never overwrite unreadable user drafts.
+    } catch {
+      // Preserve the unreadable bytes verbatim, but move them out of the active
+      // slot so one damaged legacy draft cannot permanently disable the chat.
+      // The backup remains beside the new vault for manual recovery.
+      try {
+        mkdirSync(dirname(this.path), { recursive: true });
+        let backup = `${this.path}.unreadable-${Date.now()}`;
+        let suffix = 1;
+        while (existsSync(backup)) backup = `${this.path}.unreadable-${Date.now()}-${suffix++}`;
+        renameSync(this.path, backup);
+        this.data = {};
+      } catch { this.healthy = false; }
+    }
   }
   read(scope: unknown): Record<string, string> {
     if (!this.healthy) throw new Error('DRAFTS_UNREADABLE');
