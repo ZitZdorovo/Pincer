@@ -13,6 +13,31 @@ const labels: Record<string, string> = {
   attachments: 'Вложения', tts: 'Синтез речи', talk: 'Разговор', cloudWorkers: 'Облачные воркеры', surfaces: 'Поверхности интерфейса',
   allow: 'Разрешить', deny: 'Запретить', policy: 'Политика', rules: 'Правила', default: 'По умолчанию', language: 'Язык', locale: 'Локаль',
   active: 'Активно', auto: 'Автоматически', local: 'Локальный', remote: 'Удалённый', status: 'Состояние', format: 'Формат', directory: 'Каталог', workspace: 'Рабочая область',
+  queue: 'Очередь сообщений', inbound: 'Входящие сообщения', drop: 'При переполнении', byChannel: 'Правила для каналов',
+  debounceMsByChannel: 'Задержка для каждого канала, мс', debounceMs: 'Задержка объединения, мс',
+  ackReaction: 'Реакция на получение', ackReactionScope: 'Где подтверждать получение', statusReactions: 'Реакции состояния',
+  visibleReplies: 'Видимые ответы', responsePrefix: 'Префикс ответа', messagePrefix: 'Префикс сообщения',
+  removeAckAfterReply: 'Убирать реакцию после ответа', groupChat: 'Групповые чаты', cap: 'Размер очереди',
+  typingMode: 'Индикатор набора текста', typingIntervalSeconds: 'Интервал индикатора, с',
+  usageTemplate: 'Шаблон статистики', responseUsage: 'Статистика в ответах', suppressToolErrors: 'Скрывать ошибки инструментов',
+  agentId: 'Агент', consultThinkingLevel: 'Глубина обдумывания', consultFastMode: 'Быстрый режим',
+  interruptOnSpeech: 'Прерывать ответ при речи', silenceTimeoutMs: 'Ожидание тишины, мс',
+  summaryModel: 'Модель для краткого пересказа', modelOverrides: 'Параметры отдельных моделей', maxTextLength: 'Максимальная длина текста',
+  customBindHost: 'Свой адрес привязки', publicOrigin: 'Публичный адрес', roles: 'Роли доступа',
+  allowRealIpFallback: 'Использовать резервный IP-адрес', reload: 'Применение изменений', terminal: 'Терминал',
+  tls: 'Шифрование соединения', http: 'HTTP-сервер', push: 'Push-уведомления', nodes: 'Ноды',
+  allowSystemProfileImport: 'Импорт профиля браузера', evaluateEnabled: 'Выполнение JavaScript', cdpUrl: 'Адрес подключения к браузеру',
+  executablePath: 'Путь к приложению', headless: 'Работа без окна', noSandbox: 'Отключить изоляцию браузера', attachOnly: 'Только подключение к браузеру',
+  defaultProfile: 'Профиль по умолчанию', snapshotDefaults: 'Параметры снимков страниц', ssrfPolicy: 'Доступ к сетевым адресам',
+  profiles: 'Профили', profile: 'Профиль', extraArgs: 'Дополнительные аргументы', tabCleanup: 'Очистка вкладок', extensionRelay: 'Связь с расширением',
+  alsoAllow: 'Дополнительные разрешения', byProvider: 'Правила для поставщиков', toolsBySender: 'Инструменты по отправителям',
+  web: 'Веб-доступ', media: 'Медиа', links: 'Ссылки', message: 'Отправка сообщений', agentToAgent: 'Общение между агентами',
+  elevated: 'Повышенные права', exec: 'Выполнение команд', fs: 'Файловая система', subagents: 'Субагенты', sandbox: 'Изоляция',
+  sessions_spawn: 'Создание сессий', updatePlan: 'Обновление плана', scope: 'Область действия', dmScope: 'Личные разговоры', groupScope: 'Групповые разговоры',
+  identityLinks: 'Связанные учётные записи', resetTriggers: 'Команды сброса', reset: 'Сброс сессий', resetByType: 'Сброс по типу', resetByChannel: 'Сброс по каналу',
+  store: 'Хранилище', mainKey: 'Основная сессия', sendPolicy: 'Правила отправки', threadBindings: 'Привязки к обсуждениям', sharing: 'Общий доступ', maintenance: 'Обслуживание',
+  servers: 'Серверы', apps: 'Приложения', projectProfiles: 'Профили проектов',
+  unmentionedInbound: 'Сообщения без упоминания', mentionPatterns: 'Шаблоны упоминаний',
 };
 
 const exactLabels: Record<string, string> = {
@@ -55,6 +80,12 @@ const enumValues: Record<string, string> = {
   public: 'Публичный', private: 'Закрытый', system: 'Как в системе', light: 'Светлая', dark: 'Тёмная', true: 'Да', false: 'Нет',
   off: 'Выкл.', on: 'Вкл.', always: 'Всегда', inbound: 'Входящие', tagged: 'С тегом', direct: 'Напрямую', all: 'Все',
   realtime: 'Реальное время', 'stt-tts': 'Распознавание и синтез', transcription: 'Транскрипция', 'agent-consult': 'Консультация агента', 'direct-tools': 'Прямые инструменты',
+  steer: 'Уточнять текущий запрос', followup: 'После текущего ответа', collect: 'Объединять сообщения', interrupt: 'Прерывать ответ',
+  old: 'Удалять старые', new: 'Отклонять новые', summarize: 'Сохранять сводку',
+  'group-mentions': 'Упоминания в группах', 'group-all': 'Все сообщения в группах', 'direct-only': 'Личные сообщения',
+  'message-tool': 'Через инструмент сообщений', immediate: 'Сразу', final: 'Готовый ответ',
+  object: 'Подробные параметры', string: 'Текстовое значение', array: 'Список значений', number: 'Число', integer: 'Целое число', boolean: 'Переключатель',
+  user_request: 'Запрос пользователя', room_event: 'Событие группы',
 };
 
 const words: Record<string, string> = {
@@ -77,9 +108,19 @@ export function russianSettingLabel(path: string[], source: string): string {
   return exactLabels[fieldPath] || labels[path.at(-1) || ''] || translatedWords(path.at(-1) || source);
 }
 
-export function russianSettingHelp(source: string | undefined, label: string): string | undefined {
+export function russianSettingHelp(source: string | undefined, _label: string): string | undefined {
+  const help: Record<string, string> = {
+    'Очередь сообщений': 'Обработка сообщений, которые поступают, пока агент готовит ответ.',
+    'При переполнении': 'Что делать с сообщениями, когда очередь достигла своего размера.',
+    'Задержка объединения, мс': 'Сколько ждать перед объединением нескольких сообщений в один запрос.',
+    'Реакция на получение': 'Эмодзи, которым агент подтверждает, что получил сообщение.',
+    'Где подтверждать получение': 'В каких разговорах добавлять реакцию на входящее сообщение.',
+    'Реакции состояния': 'Показывать ход работы агента с помощью реакций на сообщение.',
+    'Убирать реакцию после ответа': 'Удалять подтверждение получения, когда ответ уже отправлен.',
+  };
+  if (help[_label]) return help[_label];
   if (!source || cyrillic.test(source)) return source;
-  return exactHelp[source] || `Настройка «${label}» в конфигурации OpenClaw.`;
+  return exactHelp[source];
 }
 
 export function russianEnumValue(value: unknown): string {

@@ -151,7 +151,6 @@ export class MockGateway {
         gateway: { type: 'object', title: 'Gateway', properties: { mode: { type: 'string', enum: ['local', 'remote'] }, cliAgents: { type: 'boolean', title: 'CLI Agents Enabled' } }, additionalProperties: false },
         memory: { type: 'object', title: 'Memory', properties: { search: { type: 'object', title: 'Memory Search', properties: { provider: { type: 'string' }, apiKey: { type: 'string' } }, additionalProperties: false } }, additionalProperties: false },
         ui: { type: 'object', title: 'UI', properties: { enabled: { type: 'boolean' } }, additionalProperties: false },
-        messages: { type: 'object', title: 'Messages', description: 'Message handling and routing settings', properties: {}, additionalProperties: false },
         tts: { type: 'object', title: 'TTS', description: 'Text-to-speech policy for reading agent replies aloud on supported voice or audio surfaces.', properties: {
           auto: { type: 'string', title: 'Auto', enum: ['off', 'always', 'inbound', 'tagged'] },
           persona: { type: 'string', title: 'TTS Persona', description: 'Default TTS persona id. Local TTS persona preferences can override this per host.' },
@@ -177,6 +176,15 @@ export class MockGateway {
         }, additionalProperties: false } }, additionalProperties: false },
         tools: { type: 'object', title: 'Tools', properties: {
           toolSearch: { type: 'boolean', title: 'Tool Search' }, loopDetection: { type: 'boolean', title: 'Tool Loop Detection' }, lightweightLocalModels: { type: 'boolean', title: 'Lightweight Local Model Tools' },
+        }, additionalProperties: false },
+        messages: { type: 'object', title: 'Messages', properties: {
+          queue: { type: 'object', title: 'Queue', properties: {
+            mode: { anyOf: ['steer', 'followup', 'collect', 'interrupt'].map(value => ({ type: 'string', const: value })) },
+            byChannel: { type: 'object', additionalProperties: { type: 'string' } },
+            drop: { type: 'string', enum: ['old', 'new', 'summarize'] },
+          }, additionalProperties: false },
+          ackReaction: { type: 'string' }, ackReactionScope: { type: 'string', enum: ['group-mentions', 'group-all', 'direct', 'all'] },
+          removeAckAfterReply: { type: 'boolean' },
         }, additionalProperties: false },
         logging: { type: 'object', title: 'Logging', properties: { audit: { type: 'object', title: 'Audit Ledger', properties: { messages: { type: 'string', title: 'Message Audit Scope', enum: ['off', 'direct', 'all'] } }, additionalProperties: false } }, additionalProperties: false },
         desktop: { type: 'object', title: 'Desktop', properties: { host: { type: 'object', title: 'Gateway Host Desktop', properties: { enabled: { type: 'boolean', title: 'Gateway Host Desktop (Labs)' } }, additionalProperties: false } }, additionalProperties: false },

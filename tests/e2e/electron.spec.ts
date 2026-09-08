@@ -79,7 +79,7 @@ test('complete Gateway settings are edited inside Pincer with profile, devices a
   await connect(); await page.keyboard.press('Control+,');
   await expect(page.getByTestId('gateway-settings-browser')).toBeVisible();
   await expect(page.getByTestId('gateway-settings-root')).toHaveCount(0);
-  await expect(page.getByText('OpenClaw', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-setting-root="ui"]')).toBeVisible();
   await page.getByRole('switch', { name: 'Включено', exact: true }).click();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('button', { name: 'Применить', exact: true }).click();
@@ -285,7 +285,7 @@ test('Labs is nine flat OpenClaw switches and Secrets uses the dedicated store',
   await expect(labs.getByRole('switch')).toHaveCount(9);
   const labRowBox = await labs.getByTestId('labs-code-mode').boundingBox();
   const labSwitchBox = await labs.getByRole('switch', { name: 'Code Mode' }).boundingBox();
-  expect(Math.round(labRowBox!.x + labRowBox!.width - labSwitchBox!.x - labSwitchBox!.width)).toBe(16);
+  expect(Math.round(labRowBox!.x + labRowBox!.width - labSwitchBox!.x - labSwitchBox!.width)).toBe(20);
   await labs.getByRole('switch', { name: 'Code Mode' }).click();
   await labs.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Применить', exact: true }).click();
@@ -325,12 +325,42 @@ test('main chat has reproducible empty and conversation screenshots in both them
   await page.keyboard.press('Control+,'); await page.getByTestId('settings-theme-dark').click(); await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
   await page.screenshot({ path: join(output, '04-conversation-dark.png') });
 });
+test('settings controls share aligned columns across nested groups and fit a narrow window', async () => {
+  await connect(); await page.keyboard.press('Control+,');
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 900));
+  const output = join(process.cwd(), 'artifacts', 'settings-redesign'); mkdirSync(output, { recursive: true });
+  for (const theme of ['light', 'dark'] as const) {
+    await page.getByTestId('settings-nav-appearance').click(); await page.getByTestId(`settings-theme-${theme}`).click();
+    await page.getByTestId('settings-nav-communications').click();
+    const rows = page.locator('[data-setting-root="messages"] .oc-setting-row');
+    await expect(rows).toHaveCount(5);
+    const boxes = await rows.evaluateAll(elements => elements.map(element => {
+      const label = element.firstElementChild!.getBoundingClientRect();
+      const control = element.querySelector('.oc-setting-control > input, .oc-setting-control > [role="combobox"], .oc-segmented, [role="switch"]')!.getBoundingClientRect();
+      return { label: label.x, right: control.right, width: control.width };
+    }));
+    for (const box of boxes) { expect(Math.abs(box.label - boxes[0].label)).toBeLessThan(1); expect(Math.abs(box.right - boxes[0].right)).toBeLessThan(1); }
+    for (const box of boxes.slice(0, -1)) expect(box.width).toBe(288);
+    await expect(page.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('gateway-settings-browser')).not.toContainText('Настройка «');
+    await chooseSelect(page.getByRole('combobox', { name: 'Режим', exact: true }), 'Объединять сообщения');
+    await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await page.screenshot({ path: join(output, `communications-${theme}.png`) });
+  }
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(760, 650));
+  await expect.poll(() => page.getByTestId('settings-scroll').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const control = page.getByRole('combobox', { name: 'Где подтверждать получение', exact: true });
+  await control.scrollIntoViewIfNeeded();
+  const bounds = await control.boundingBox(); expect(bounds!.x + bounds!.width).toBeLessThan(760);
+  await page.screenshot({ path: join(output, 'communications-narrow.png') });
+});
+
 test('every settings page has the same frame and a reproducible visual audit', async () => {
   test.setTimeout(90000);
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
   await page.keyboard.press('Control+,');
-  const output = join(process.cwd(), 'artifacts', 'settings-audit-0.4.3');
+  const output = join(process.cwd(), 'artifacts', 'theme-audit', 'settings');
   mkdirSync(output, { recursive: true });
   const pages = [
     'profile', 'appearance', 'chat', 'shortcuts', 'notifications',
@@ -342,20 +372,26 @@ test('every settings page has the same frame and a reproducible visual audit', a
   const content = page.getByTestId('settings-content');
   const scroller = page.getByTestId('settings-scroll');
   for (const theme of ['light', 'dark'] as const) {
+    let titleOrigin: { x: number; y: number } | undefined;
     const themeOutput = join(output, theme);
     mkdirSync(themeOutput, { recursive: true });
     await page.getByTestId('settings-nav-appearance').click();
     await page.getByTestId(`settings-theme-${theme}`).click();
+    await page.getByRole('button', { name: 'Оранжевый', exact: true }).click();
     for (const [index, section] of pages.entries()) {
       await page.getByTestId(`settings-nav-${section}`).click();
       const title = content.locator('.settings-section-title:visible, .openx-section-title:visible, .openx-page-title:visible').first();
       await expect(title).toBeVisible();
       await expect(title).toHaveCSS('font-size', '20px');
+      expect(await scroller.evaluate(element => element.scrollWidth <= element.clientWidth), `${section}: horizontal overflow`).toBe(true);
       await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBe(0);
       await page.waitForTimeout(250);
       await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBe(0);
       const titleBounds = await title.boundingBox();
       expect(titleBounds?.y).toBeGreaterThan(80);
+      titleOrigin ??= titleBounds!;
+      expect(Math.abs(titleBounds!.x - titleOrigin.x), `${section}: heading x`).toBeLessThanOrEqual(1);
+      expect(Math.abs(titleBounds!.y - titleOrigin.y), `${section}: heading y`).toBeLessThanOrEqual(1);
       const prefix = `${String(index + 1).padStart(2, '0')}-${section}`;
       await page.screenshot({ path: join(themeOutput, `${prefix}-top.png`) });
       const scrollable = await scroller.evaluate(element => element.scrollHeight > element.clientHeight + 8);
@@ -372,8 +408,54 @@ test('every settings page has the same frame and a reproducible visual audit', a
     await page.getByRole('tab', { name: 'Лимиты', exact: true }).click();
     await page.waitForTimeout(200);
     await page.screenshot({ path: join(themeOutput, '14-providers-limits.png') });
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(760, 650));
+    for (const section of pages) {
+      await page.getByTestId(`settings-nav-${section}`).click();
+      await expect(content.locator('.settings-section-title:visible, .openx-section-title:visible, .openx-page-title:visible').first()).toBeVisible();
+      await expect.poll(() => scroller.evaluate(element => element.scrollWidth <= element.clientWidth), { message: `${section}: narrow horizontal overflow` }).toBe(true);
+      await page.screenshot({ path: join(themeOutput, `${section}-narrow.png`) });
+    }
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
   }
   expect(pageErrors).toEqual([]);
+});
+
+test('every accent reaches provider selections, focus rings and portal controls in both themes', async () => {
+  test.setTimeout(90000);
+  await connect();
+  await page.keyboard.press('Control+,');
+  for (const theme of ['light', 'dark']) {
+    for (const accent of ['Оранжевый', 'Зелёный', 'Фиолетовый', 'Розовый', 'Синий']) {
+      await page.getByTestId('settings-nav-appearance').click();
+      await page.getByTestId(`settings-theme-${theme}`).click();
+      await page.getByRole('button', { name: accent, exact: true }).click();
+      const schemeColor = await page.getByRole('button', { name: accent, exact: true }).evaluate(element => getComputedStyle(element).accentColor);
+      await page.getByLabel('Шрифт чата', { exact: true }).click();
+      await expect(page.getByRole('option', { selected: true })).toHaveCSS('color', schemeColor);
+      await page.keyboard.press('Escape');
+      await page.getByTestId('settings-nav-providers').click();
+      await expect(page.getByRole('tab', { selected: true })).toHaveCSS('color', schemeColor);
+      await page.getByTestId('providers-add-button').click();
+      await page.getByTestId('add-provider-type-custom').click();
+      const input = page.getByTestId('add-provider-name-input');
+      await input.focus();
+      const primary = await input.evaluate(element => getComputedStyle(element).accentColor);
+      expect(primary).not.toBe('auto');
+      await expect(input).toHaveCSS('border-color', primary);
+      await expect(page.locator('html')).toHaveCSS('color-scheme', theme);
+      await page.getByTestId('add-provider-models-input').fill('theme-model');
+      const checkbox = page.getByRole('checkbox', { name: 'Выбрать модель theme-model', exact: true });
+      await checkbox.check();
+      await expect(checkbox).toHaveCSS('accent-color', primary);
+      const chip = checkbox.locator('..');
+      const selected = await chip.evaluate(element => getComputedStyle(element).backgroundColor);
+      expect(selected).not.toBe('rgba(0, 0, 0, 0)');
+      await checkbox.uncheck();
+      await expect(chip).not.toHaveCSS('background-color', selected);
+      await page.screenshot({ path: `artifacts/theme-audit/provider-${theme}-${accent}.png` });
+      await page.keyboard.press('Escape');
+    }
+  }
 });
 function launchEnv(): Record<string, string> {
   const env: Record<string, string> = { PINCER_TEST_DATA: directory };
@@ -916,7 +998,19 @@ test('a redacted provider key is requested once and reused from encrypted storag
   try {
     await connect(); await page.getByTestId('sidebar-nav-models').click();
     await page.getByTestId('provider-refresh-models-custom').click();
-    const dialog = page.getByRole('dialog'); await expect(dialog).toContainText('Gateway скрывает');
+    const dialog = page.getByRole('dialog'); await expect(dialog).toContainText('Введите API-ключ провайдера');
+    const box = await dialog.boundingBox();
+    expect(box!.width).toBeLessThanOrEqual(448);
+    expect(Math.abs(box!.x + box!.width / 2 - await page.evaluate(() => innerWidth / 2))).toBeLessThan(1);
+    const output = join(process.cwd(), 'artifacts', 'settings-redesign'); mkdirSync(output, { recursive: true });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme);
+      await expect(dialog).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await page.screenshot({ path: join(output, `api-key-dialog-${theme}.png`) });
+    }
+    await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByTestId('provider-refresh-models-custom').click();
     await dialog.getByLabel('API key', { exact: true }).fill('DISCOVERY_TEST_KEY');
     await dialog.getByRole('button', { name: 'Обновить модели', exact: true }).click();
     await expect(dialog).toHaveCount(0);

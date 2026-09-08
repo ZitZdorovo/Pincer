@@ -141,11 +141,11 @@ function DropInsertionIndicator({ testId, edge = 'bottom' }: { testId?: string; 
       data-testid={testId}
       data-edge={edge}
       className={cn(
-        'pointer-events-none absolute left-5 right-2 z-20 h-px bg-sky-500',
+        'pointer-events-none absolute left-5 right-2 z-20 h-px bg-primary',
         edge === 'top' ? 'top-0' : 'bottom-0',
       )}
     >
-      <span className="absolute -left-1 -top-[3px] h-[7px] w-[7px] rounded-full border border-sky-500 bg-surface-sidebar" />
+      <span className="absolute -left-1 -top-[3px] h-[7px] w-[7px] rounded-full border border-primary bg-surface-sidebar" />
     </span>
   );
 }
@@ -690,7 +690,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         {sessionList && getAgentDisplayName(session.key) && <span draggable={false} className="mr-1 max-w-24 shrink-0 select-none truncate rounded bg-black/[0.06] px-1.5 py-0.5 text-2xs font-semibold text-foreground/70 dark:bg-white/[0.08]" title={agentById.get(getSessionAgentId(session.key))?.name}>{getAgentDisplayName(session.key)}</span>}
         <OverflowMarqueeText fadeTail>{getSessionDisplayTitle(session, labels)}</OverflowMarqueeText>
         {busy && <SidebarActivity />}
-        {!busy && unread && <span className="h-1.5 w-1.5 shrink-0 bg-sky-400" title={t('newMessage')} />}
+        {!busy && unread && <span className="h-1.5 w-1.5 shrink-0 bg-primary" title={t('newMessage')} />}
         {sessionList && !busy && !unread && (
           <span
             draggable={false}
@@ -1056,13 +1056,13 @@ export function Sidebar({ active = true }: { active?: boolean }) {
             <button
               type="button"
               data-testid="sidebar-update-available"
-              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 dark:text-blue-400"
+              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:text-primary"
               title={updateLabel}
               aria-label={updateLabel}
               onClick={() => navigate('/settings?section=updates')}
             >
               <CircleArrowUp className={cn('h-4 w-4', updateStatus === 'downloading' && 'animate-pulse')} />
-              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500 ring-1 ring-surface-sidebar" />
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-1 ring-surface-sidebar" />
             </button>
           )}
           <button

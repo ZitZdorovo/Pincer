@@ -15,6 +15,7 @@ export function PanelTabButton({ testId, icon, label, active, onClick }: PanelTa
     <button
       data-testid={testId}
       type="button"
+      aria-pressed={active}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         pointerActivated.current = true;
@@ -31,7 +32,7 @@ export function PanelTabButton({ testId, icon, label, active, onClick }: PanelTa
       className={cn(
         'relative z-40 flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
         active
-          ? 'bg-foreground/10 text-foreground'
+          ? 'bg-primary/10 text-primary'
           : 'text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
       )}
     >

@@ -59,7 +59,7 @@ interface ChannelConfigModalProps {
   onChannelConfigured?: (channelType: ChannelType, accountId: string, values: Record<string, string>) => void | Promise<void>;
 }
 
-const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary dark:focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 const outlineButtonClasses = 'h-9 text-meta font-medium rounded-lg px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
 const primaryButtonClasses = 'h-9 text-meta font-medium rounded-lg px-4 shadow-none';
@@ -252,7 +252,7 @@ export function ChannelConfigModal({ initialSelectedType = null, configuredTypes
           ) : (
             <div className="space-y-6">
               {isExistingConfig && (
-                <div className="bg-blue-500/10 text-blue-600 dark:text-blue-400 p-4 rounded-2xl text-sm flex items-center gap-2 border border-blue-500/20">
+                <div className="bg-primary/10 text-primary dark:text-primary p-4 rounded-2xl text-sm flex items-center gap-2 border border-primary/20">
                   <CheckCircle className="h-4 w-4 shrink-0" />
                   <span>{t('dialog.existingHint')}</span>
                 </div>

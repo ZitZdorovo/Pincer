@@ -42,7 +42,7 @@ function SettingsPageHeader({ title, description, actions }: { title: string; de
   </div>;
 }
 function OpenClawSettingsPanel({ category, connected, scope, onDirty, supplemental = false }: { category: string; connected: boolean; scope: string; onDirty(value: boolean): void; expanded?: boolean; ru: boolean; supplemental?: boolean }) {
-  return <SettingsBrowser key={`${category}:${scope}`} category={category} connected={connected} scope={scope} onDirty={onDirty} suppressEmpty={supplemental} />;
+  return <SettingsBrowser key={`${category}:${scope}`} category={category} connected={connected} scope={scope} title={false} onDirty={onDirty} suppressEmpty={supplemental} />;
 }
 function handleTabListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -280,7 +280,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
           {/* Appearance */}
           <div className={cn('settings-section-panel', activeSection !== 'appearance' && 'hidden')} data-testid="settings-section-appearance">
             <SettingsPageHeader title={ru ? 'Внешний вид' : 'Appearance'} description={ru ? 'Внешний вид, язык и поведение этого клиента. Эти параметры сохраняются в Pincer и не меняют другие клиенты OpenClaw.' : 'Appearance, language and behavior of this client. Saved in Pincer without changing other OpenClaw clients.'} />
-            <div className="space-y-6">
+            <div className="settings-card space-y-6">
               <div id="settings-theme" className="space-y-3">
                 <Label className="text-sm font-medium text-foreground/80">{t('appearance.theme')}</Label>
                 <div className="settings-responsive-grid-3 gap-3">
@@ -319,16 +319,16 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                 </div>
               </div>
               <AppearanceExtras />
-              <div className="settings-card space-y-5">
-              <div id="settings-language" className="space-y-3">
+              <div className="space-y-5">
+              <div id="settings-language" className="local-setting-row">
                 <Label className="text-sm font-medium text-foreground/80">{t('appearance.language')}</Label>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex justify-end gap-2">
                   {SUPPORTED_LANGUAGES.map((lang) => (
                     <Button
                       key={lang.code}
                       variant={language === lang.code ? 'secondary' : 'outline'}
                       className={cn(
-                        'h-10 rounded-lg border-border px-5',
+                        'h-10 flex-1 rounded-lg border-border px-5',
                         language === lang.code
                           ? 'bg-black/5 dark:bg-white/10 text-foreground'
                           : 'bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -443,8 +443,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
 
           {/* Chat */}
           <div className={cn('settings-section-panel', activeSection !== 'chat' && 'hidden')} data-testid="settings-section-chat">
-            <h2 className="settings-section-title">{t('chat.title')}</h2>
-            <p className="settings-section-description mb-6">{t('chat.description')}</p>
+            <SettingsPageHeader title={t('chat.title')} description={t('chat.description')} />
             <ChatExtras />
             <div className="settings-card space-y-6">
               <div id="settings-default-workspace" className="space-y-3">
@@ -482,8 +481,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
 
           {/* Keyboard shortcuts */}
           <div className={cn('settings-section-panel', activeSection !== 'shortcuts' && 'hidden')} data-testid="settings-section-shortcuts">
-            <h2 className="settings-section-title">{t('shortcuts.title')}</h2>
-            <p className="settings-section-description mb-6">{t('shortcuts.description')}</p>
+            <SettingsPageHeader title={t('shortcuts.title')} description={t('shortcuts.description')} />
             <div className="settings-card divide-y divide-border !py-0">
               {([
                 ['settings-shortcut-new-chat', t('shortcuts.newChat'), 'Ctrl+N'],

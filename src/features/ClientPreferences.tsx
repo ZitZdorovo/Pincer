@@ -5,12 +5,12 @@ import { Select } from '../components/ui/select';
 import { cn } from '../lib/utils';
 
 export function SettingRow({ label, description, children }: { label: string; description?: string; children: ReactNode }) {
-  return <div className="flex flex-wrap items-center justify-between gap-4 py-4"><div className="min-w-[180px] flex-1"><p className="text-sm font-medium">{label}</p>{description && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>}</div><div className="max-w-full shrink-0">{children}</div></div>;
+  return <div className="local-setting-row py-4"><div className="min-w-0"><p className="text-sm font-medium">{label}</p>{description && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>}</div><div className="local-setting-control">{children}</div></div>;
 }
 export function AppearanceExtras() {
   const p = usePreferences(); const ru = p.language === 'ru';
   const fonts = [['system', ru ? 'По умолчанию' : 'Default'], ['sans', 'Segoe UI'], ['serif', 'Georgia'], ['mono', 'Consolas']] as const;
-  return <div className="divide-y divide-border rounded-2xl border border-border bg-surface-modal px-5" id="settings-typography">
+  return <div className="divide-y divide-border border-y border-border" id="settings-typography">
     {(['interfaceFont', 'chatFont'] as const).map(key => <SettingRow key={key} label={key === 'chatFont' ? ru ? 'Шрифт текста чата' : 'Chat font' : ru ? 'Шрифт интерфейса' : 'Interface font'} description={ru ? 'Сохраняется только в Pincer на этом устройстве.' : 'Saved only in Pincer on this device.'}><Select aria-label={key === 'chatFont' ? ru ? 'Шрифт чата' : 'Chat font' : ru ? 'Шрифт интерфейса' : 'Interface font'} value={p[key]} onChange={e => setPreferences({ [key]: e.target.value })}>{fonts.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</Select></SettingRow>)}
     <SettingRow label={ru ? 'Акцентный цвет' : 'Accent color'} description={ru ? 'Кнопки, индикаторы и выделение активных элементов.' : 'Buttons, indicators and selected controls.'}><div className="flex gap-2">{([
       ['default', ru ? 'Синий' : 'Blue', 'bg-blue-500'], ['orange', ru ? 'Оранжевый' : 'Orange', 'bg-orange-500'], ['green', ru ? 'Зелёный' : 'Green', 'bg-emerald-500'], ['violet', ru ? 'Фиолетовый' : 'Violet', 'bg-violet-500'], ['rose', ru ? 'Розовый' : 'Rose', 'bg-rose-500'],

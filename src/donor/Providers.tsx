@@ -58,7 +58,7 @@ import { usePreferences } from '../preferences';
 
 
 
-const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary dark:focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 type CodePlanMode = 'apikey' | 'codeplan';
 
@@ -274,13 +274,18 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
   return (
     <div data-testid="providers-settings" className="space-y-6">
       <Dialog open={refreshKeyProvider !== null} onOpenChange={open => { if (!open && !refreshBusy) { setRefreshKeyProvider(null); setRefreshKey(''); } }}>
-        <DialogContent>
-          <DialogTitle>{ru ? 'Обновить модели провайдера' : 'Refresh provider models'}</DialogTitle>
-          <DialogDescription>{ru ? 'Gateway скрывает сохранённый ключ этого провайдера. Введите API-ключ один раз: Pincer сохранит его с шифрованием ОС для следующих обновлений.' : 'Gateway hides this provider’s saved key. Enter the API key once; Pincer will store it with OS encryption for future refreshes.'}</DialogDescription>
-          <form className="space-y-4" onSubmit={async event => { event.preventDefault(); if (!refreshKeyProvider || refreshBusy) return; setRefreshBusy(true); setRefreshError(''); try { await refreshProviderModels(refreshKeyProvider, refreshKey.trim()); setRefreshKeyProvider(null); setRefreshKey(''); toast.success(ru ? 'Модели обновлены' : 'Models refreshed'); } catch (error) { setRefreshError(String(error)); } finally { setRefreshBusy(false); } }}>
-            <Input type="password" autoComplete="off" aria-label="API key" value={refreshKey} onChange={event => setRefreshKey(event.target.value)} disabled={refreshBusy} />
+        <DialogContent data-testid="refresh-provider-dialog" className="w-[calc(100%-2rem)] max-w-[28rem] max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-surface-modal p-6 text-foreground shadow-2xl">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Key className="h-5 w-5" /></div>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" aria-label={ru ? 'Закрыть' : 'Close'} disabled={refreshBusy} onClick={() => { setRefreshKeyProvider(null); setRefreshKey(''); }}><X className="h-4 w-4" /></Button>
+          </div>
+          <DialogTitle className="text-xl font-semibold tracking-tight">{ru ? 'Обновить модели' : 'Refresh models'}</DialogTitle>
+          <p className="mt-1 truncate text-sm font-medium text-muted-foreground">{accounts.find(account => account.id === refreshKeyProvider)?.label}</p>
+          <DialogDescription className="mt-3 text-sm leading-6 text-muted-foreground">{ru ? 'Введите API-ключ провайдера, чтобы загрузить актуальный список моделей. Ключ сохранится на этом компьютере в зашифрованном виде.' : 'Enter the provider API key to load the latest models. Your key will be stored encrypted on this computer.'}</DialogDescription>
+          <form className="mt-5 space-y-4" onSubmit={async event => { event.preventDefault(); if (!refreshKeyProvider || refreshBusy) return; setRefreshBusy(true); setRefreshError(''); try { await refreshProviderModels(refreshKeyProvider, refreshKey.trim()); setRefreshKeyProvider(null); setRefreshKey(''); toast.success(ru ? 'Модели обновлены' : 'Models refreshed'); } catch (error) { setRefreshError(String(error)); } finally { setRefreshBusy(false); } }}>
+            <div className="space-y-2"><Label htmlFor="refresh-provider-key">{ru ? 'API-ключ' : 'API key'}</Label><Input id="refresh-provider-key" type="password" placeholder="sk-…" autoComplete="off" aria-label="API key" value={refreshKey} onChange={event => setRefreshKey(event.target.value)} disabled={refreshBusy} /></div>
             {refreshError && <p role="alert" className="text-sm text-destructive">{refreshError}</p>}
-            <Button type="submit" disabled={!refreshKey.trim() || refreshBusy}>{refreshBusy ? (ru ? 'Загрузка…' : 'Loading…') : (ru ? 'Обновить модели' : 'Refresh models')}</Button>
+            <div className="flex justify-end gap-2 border-t border-border pt-4"><Button type="button" variant="ghost" disabled={refreshBusy} onClick={() => { setRefreshKeyProvider(null); setRefreshKey(''); }}>{ru ? 'Отмена' : 'Cancel'}</Button><Button type="submit" disabled={!refreshKey.trim() || refreshBusy}>{refreshBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{refreshBusy ? (ru ? 'Загрузка…' : 'Loading…') : (ru ? 'Обновить модели' : 'Refresh models')}</Button></div>
           </form>
         </DialogContent>
       </Dialog>
@@ -305,7 +310,7 @@ export const ProvidersSettings = forwardRef<ProvidersSettingsHandle, { connected
           <p className="text-meta text-center mb-6 max-w-sm">
             {t('aiProviders.empty.desc')}
           </p>
-          {!embedded && <Button onClick={() => setShowAddDialog(true)} className="h-10 rounded-lg bg-brand px-6 text-white hover:bg-brand-hover">
+          {!embedded && <Button onClick={() => setShowAddDialog(true)} className="h-10 rounded-lg bg-primary px-6 text-primary-foreground hover:bg-primary/90">
             <Plus className="h-4 w-4 mr-2" />
             {t('aiProviders.empty.cta')}
           </Button>}
@@ -579,7 +584,7 @@ function ProviderCard({
   };
 
   const currentInputClasses = isDefault
-    ? "h-[40px] rounded-xl font-mono text-meta bg-surface-modal border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-blue-500/50 shadow-sm"
+    ? "h-[40px] rounded-xl font-mono text-meta bg-surface-modal border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-primary/50 shadow-sm"
     : inputClasses;
 
   const currentLabelClasses = isDefault ? "text-meta text-muted-foreground" : labelClasses;
@@ -655,7 +660,7 @@ function ProviderCard({
               data-testid={`provider-refresh-models-${account.id}`}
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-blue-600 hover:bg-surface-modal shadow-sm"
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary/80 hover:bg-surface-modal shadow-sm"
               onClick={onRefreshModels}
               title={t('aiProviders.refresh', 'Обновить API и модели')}
               >
@@ -693,7 +698,7 @@ function ProviderCard({
                 href={effectiveDocsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+                className="text-xs text-primary hover:text-primary/80 font-medium inline-flex items-center gap-1"
               >
                 {t('aiProviders.dialog.customDoc')}
                 <ExternalLink className="h-3 w-3" />
@@ -721,7 +726,7 @@ function ProviderCard({
                     <span className="text-xs text-muted-foreground">{availableModelIds.length}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <button type="button" onClick={() => setSelectedModels(allModelsSelected ? [] : availableModelIds)} className="text-blue-500 hover:text-blue-600">
+                    <button type="button" onClick={() => setSelectedModels(allModelsSelected ? [] : availableModelIds)} className="text-primary hover:text-primary/80">
                       {allModelsSelected ? (i18n.language.startsWith('ru') ? 'Снять выбор' : 'Clear selection') : (i18n.language.startsWith('ru') ? 'Выбрать все' : 'Select all')}
                     </button>
                     {selectedModels.length > 0 && <button type="button" disabled={deletingModel !== null} onClick={() => void deleteSelectedModels()} className="text-destructive hover:text-destructive/80 disabled:opacity-50">
@@ -735,7 +740,7 @@ function ProviderCard({
                     <Input value={modelToAdd} onChange={(event) => setModelToAdd(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); appendProviderModels(); } }} placeholder={i18n.language.startsWith('ru') ? 'Добавить модель' : 'Add model'} className={cn(currentInputClasses, 'flex-1')} />
                     <Button type="button" variant="outline" onClick={appendProviderModels} disabled={!modelToAdd.trim()} className="shrink-0"><Plus className="mr-1.5 h-4 w-4" />{i18n.language.startsWith('ru') ? 'Добавить' : 'Add'}</Button>
                   </div>
-                  <div className="flex max-h-56 flex-wrap gap-2 overflow-auto rounded-xl border border-border/70 p-2">{visibleModelIds.map(id => <span key={id} className={cn("inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 text-xs", selectedModels.includes(id) ? 'border-blue-500/60 bg-blue-500/10' : 'border-border')}><input type="checkbox" aria-label={`${i18n.language.startsWith('ru') ? 'Выбрать модель' : 'Select model'} ${id}`} checked={selectedModels.includes(id)} onChange={() => setSelectedModels((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} className="h-3 w-3 rounded border-border text-blue-500 focus:ring-blue-500/50" /><span className="max-w-[24rem] break-words">{id}</span><button type="button" aria-label={`${t('aiProviders.modelDelete', 'Удалить модель')} ${id}`} title={t('aiProviders.modelDelete', 'Удалить модель')} disabled={deletingModel !== null} onClick={() => { setDeletingModel(id); void onDeleteModel(id).then(() => setModelList((current) => current.filter((value) => value !== id))).finally(() => setDeletingModel(null)); }} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"><X className="h-3 w-3" /></button></span>)}</div>
+                  <div className="flex max-h-56 flex-wrap gap-2 overflow-auto rounded-xl border border-border/70 p-2">{visibleModelIds.map(id => <span key={id} className={cn("inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 text-xs", selectedModels.includes(id) ? 'border-primary/60 bg-primary/10' : 'border-border')}><input type="checkbox" aria-label={`${i18n.language.startsWith('ru') ? 'Выбрать модель' : 'Select model'} ${id}`} checked={selectedModels.includes(id)} onChange={() => setSelectedModels((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} className="h-3 w-3 rounded border-border text-primary focus:ring-primary/50" /><span className="max-w-[24rem] break-words">{id}</span><button type="button" aria-label={`${t('aiProviders.modelDelete', 'Удалить модель')} ${id}`} title={t('aiProviders.modelDelete', 'Удалить модель')} disabled={deletingModel !== null} onClick={() => { setDeletingModel(id); void onDeleteModel(id).then(() => setModelList((current) => current.filter((value) => value !== id))).finally(() => setDeletingModel(null)); }} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"><X className="h-3 w-3" /></button></span>)}</div>
                 </div>
               )}
               <div className="space-y-2"><Label htmlFor={`provider-name-${account.id}`}>{t('aiProviders.dialog.displayName')}</Label><Input id={`provider-name-${account.id}`} value={providerName} onChange={(event) => setProviderName(event.target.value)} /></div>
@@ -749,7 +754,7 @@ function ProviderCard({
                         href={typeInfo.codePlanDocsUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+                        className="text-xs text-primary hover:text-primary/80 font-medium inline-flex items-center gap-1"
                       >
                         {t('aiProviders.dialog.codePlanDoc')}
                         <ExternalLink className="h-3 w-3" />
@@ -834,8 +839,8 @@ function ProviderCard({
                     onChange={(e) => setFallbackModelsText(e.target.value)}
                     placeholder={t('aiProviders.dialog.fallbackModelIdsPlaceholder')}
                     className={isDefault
-                      ? "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal px-3 py-2 text-meta font-mono outline-none focus-visible:ring-1 focus-visible:ring-blue-500/50 shadow-sm"
-                      : "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-meta font-mono outline-none focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"}
+                      ? "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal px-3 py-2 text-meta font-mono outline-none focus-visible:ring-1 focus-visible:ring-primary/50 shadow-sm"
+                      : "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-meta font-mono outline-none focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary dark:focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"}
                   />
                   <p className="text-xs text-muted-foreground">
                     {t('aiProviders.dialog.fallbackModelIdsHelp')}
@@ -853,9 +858,9 @@ function ProviderCard({
                             type="checkbox"
                             checked={fallbackProviderIds.includes(candidate.account.id)}
                             onChange={() => toggleFallbackProvider(candidate.account.id)}
-                            className="rounded border-black/20 dark:border-white/20 text-blue-500 focus:ring-blue-500/50"
+                            className="rounded border-black/20 dark:border-white/20 text-primary focus:ring-primary/50"
                           />
-                          <span className="font-medium group-hover/label:text-blue-500 transition-colors">{candidate.account.label}</span>
+                          <span className="font-medium group-hover/label:text-primary transition-colors">{candidate.account.label}</span>
                           <span className="text-xs text-muted-foreground">
                             {candidate.account.model || candidate.vendor?.name || candidate.account.vendorId}
                           </span>
@@ -891,7 +896,7 @@ function ProviderCard({
                   href={typeInfo.apiKeyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-meta text-blue-500 hover:text-blue-600 hover:underline flex items-center gap-1"
+                  className="text-meta text-primary hover:text-primary/80 hover:underline flex items-center gap-1"
                   tabIndex={-1}
                 >
                   {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
@@ -1482,7 +1487,7 @@ function AddProviderDialog({
                     setShowAdvancedConfig(false);
                     setCodePlanMode('apikey');
                   }}
-                  className="text-meta text-blue-500 hover:text-blue-600 font-medium"
+                  className="text-meta text-primary hover:text-primary/80 font-medium"
                 >
                     {t('aiProviders.dialog.change')}
                   </button>
@@ -1493,7 +1498,7 @@ function AddProviderDialog({
                         href={effectiveDocsUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-meta text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+                        className="text-meta text-primary hover:text-primary/80 font-medium inline-flex items-center gap-1"
                       >
                         {t('aiProviders.dialog.customDoc')}
                         <ExternalLink className="h-3 w-3" />
@@ -1552,7 +1557,7 @@ function AddProviderDialog({
                           href={typeInfo.apiKeyUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-meta text-blue-500 hover:text-blue-600 font-medium flex items-center gap-1"
+                          className="text-meta text-primary hover:text-primary/80 font-medium flex items-center gap-1"
                           tabIndex={-1}
                         >
                           {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
@@ -1615,13 +1620,13 @@ function AddProviderDialog({
                   </div>
                   {!!addModelIds.length && <>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <button type="button" onClick={() => setSelectedAddModels(allAddModelsSelected ? [] : addModelIds)} className="text-blue-500 hover:text-blue-600">
+                      <button type="button" onClick={() => setSelectedAddModels(allAddModelsSelected ? [] : addModelIds)} className="text-primary hover:text-primary/80">
                         {allAddModelsSelected ? (i18n.language.startsWith('ru') ? 'Снять выбор' : 'Clear selection') : (i18n.language.startsWith('ru') ? 'Выбрать все' : 'Select all')}
                       </button>
                       {selectedAddModels.length > 0 && <button type="button" onClick={removeSelectedAddModels} className="text-destructive hover:text-destructive/80">{i18n.language.startsWith('ru') ? `Удалить выбранные (${selectedAddModels.length})` : `Delete selected (${selectedAddModels.length})`}</button>}
                       {addModelIds.length > 8 && <button type="button" onClick={() => setModelsExpanded((value) => !value)} className="ml-auto text-muted-foreground hover:text-foreground">{modelsExpanded ? (i18n.language.startsWith('ru') ? 'Свернуть' : 'Show less') : (i18n.language.startsWith('ru') ? `Показать все (+${addModelIds.length - 8})` : `Show all (+${addModelIds.length - 8})`)}</button>}
                     </div>
-                    <div data-testid="add-provider-model-list" className="flex max-h-56 flex-wrap gap-1.5 overflow-auto rounded-xl border border-border/70 p-2">{visibleAddModelIds.map((id) => <span key={id} className={cn("inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 font-mono text-xs", selectedAddModels.includes(id) ? 'border-blue-500/60 bg-blue-500/10' : 'border-border bg-black/[.025] dark:bg-white/[.035]')}><input type="checkbox" aria-label={`${i18n.language.startsWith('ru') ? 'Выбрать модель' : 'Select model'} ${id}`} checked={selectedAddModels.includes(id)} onChange={() => setSelectedAddModels((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} className="h-3 w-3 rounded border-border text-blue-500 focus:ring-blue-500/50" /><span className="max-w-[24rem] break-words">{id}</span><button type="button" aria-label={`${i18n.language.startsWith('ru') ? 'Удалить модель' : 'Delete model'} ${id}`} onClick={() => { setModelId(addModelIds.filter((value) => value !== id).join('\n')); setSelectedAddModels((current) => current.filter((value) => value !== id)); }} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X className="h-3 w-3" /></button></span>)}</div>
+                    <div data-testid="add-provider-model-list" className="flex max-h-56 flex-wrap gap-1.5 overflow-auto rounded-xl border border-border/70 p-2">{visibleAddModelIds.map((id) => <span key={id} className={cn("inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 font-mono text-xs", selectedAddModels.includes(id) ? 'border-primary/60 bg-primary/10' : 'border-border bg-black/[.025] dark:bg-white/[.035]')}><input type="checkbox" aria-label={`${i18n.language.startsWith('ru') ? 'Выбрать модель' : 'Select model'} ${id}`} checked={selectedAddModels.includes(id)} onChange={() => setSelectedAddModels((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} className="h-3 w-3 rounded border-border text-primary focus:ring-primary/50" /><span className="max-w-[24rem] break-words">{id}</span><button type="button" aria-label={`${i18n.language.startsWith('ru') ? 'Удалить модель' : 'Delete model'} ${id}`} onClick={() => { setModelId(addModelIds.filter((value) => value !== id).join('\n')); setSelectedAddModels((current) => current.filter((value) => value !== id)); }} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X className="h-3 w-3" /></button></span>)}</div>
                   </>}
                 </div>
                 {codePlanPreset && (
@@ -1633,7 +1638,7 @@ function AddProviderDialog({
                           href={typeInfo.codePlanDocsUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-meta text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+                          className="text-meta text-primary hover:text-primary/80 font-medium inline-flex items-center gap-1"
                           tabIndex={-1}
                         >
                           {t('aiProviders.dialog.codePlanDoc')}
@@ -1716,15 +1721,15 @@ function AddProviderDialog({
                 {/* Device OAuth Trigger — only shown when in OAuth mode */}
                 {useOAuthFlow && (
                   <div className="space-y-4 pt-2">
-                    <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-5 text-center">
-                      <p className="text-meta font-medium text-blue-600 dark:text-blue-400 mb-4 block">
+                    <div className="rounded-xl bg-primary/10 border border-primary/20 p-5 text-center">
+                      <p className="text-meta font-medium text-primary dark:text-primary mb-4 block">
                         {t('aiProviders.oauth.loginPrompt')}
                       </p>
                       <Button
                         data-testid="add-provider-oauth-login-button"
                         onClick={handleStartOAuth}
                         disabled={oauthFlowing}
-                        className="h-[42px] w-full rounded-lg bg-brand font-semibold text-white shadow-sm hover:bg-brand-hover"
+                        className="h-[42px] w-full rounded-lg bg-primary font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
                       >
                         {oauthFlowing ? (
                           <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('aiProviders.oauth.waiting')}</>
@@ -1738,7 +1743,7 @@ function AddProviderDialog({
                     {oauthFlowing && (
                       <div className="mt-4 p-5 border border-black/10 dark:border-white/10 rounded-2xl bg-surface-modal shadow-sm relative overflow-hidden">
                         {/* Background pulse effect */}
-                        <div className="absolute inset-0 bg-blue-500/5 animate-pulse" />
+                        <div className="absolute inset-0 bg-primary/5 animate-pulse" />
 
                         <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-5">
                           {oauthError ? (
@@ -1752,7 +1757,7 @@ function AddProviderDialog({
                             </div>
                           ) : !oauthData ? (
                             <div className="space-y-4 py-6">
-                              <Loader2 className="h-10 w-10 animate-spin text-blue-500 mx-auto" />
+                              <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
                               <p className="text-meta font-medium text-muted-foreground animate-pulse">{t('aiProviders.oauth.requestingCode')}</p>
                             </div>
                           ) : oauthData.mode === 'manual' ? (
@@ -1797,7 +1802,7 @@ function AddProviderDialog({
                                     className={inputClasses}
                                   />
                                   <Button
-                                    className="h-[42px] w-full rounded-lg bg-brand font-semibold text-white hover:bg-brand-hover"
+                                    className="h-[42px] w-full rounded-lg bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
                                     onClick={handleSubmitManualOAuthCode}
                                     disabled={!manualCodeInput.trim()}
                                   >
@@ -1851,7 +1856,7 @@ function AddProviderDialog({
                               </Button>
 
                               <div className="flex items-center justify-center gap-2 text-meta font-medium text-muted-foreground pt-2">
-                                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
                                 <span>{t('aiProviders.oauth.waitingApproval')}</span>
                               </div>
 

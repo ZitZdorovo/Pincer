@@ -3,9 +3,13 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
+  accent-color: hsl(var(--primary));
   --radius-control: .5rem;
   --radius-panel: .75rem;
 }
+
+:root.dark { color-scheme: dark; }
 
 /* Shared row geometry: keep fields flexible and action labels intact. */
 input { min-width: 0; }
@@ -127,6 +131,8 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 
 .settings-content {
   container-type: inline-size;
+  --settings-control-width: 18rem;
+  --settings-row-inset: 1.25rem;
 }
 
 .settings-responsive-grid-3,
@@ -215,6 +221,7 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 
 [data-testid="settings-scroll"] {
   overflow-anchor: none;
+  scrollbar-gutter: stable;
 }
 
 /* Every settings page starts on the same baseline as Appearance. Embedded
@@ -235,6 +242,7 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.5rem;
+  min-height: 5rem;
 }
 
 .settings-section-title {
@@ -543,30 +551,49 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 
 .oc-setting-row {
   display: grid;
-  grid-template-columns: minmax(14rem, 1fr) minmax(12rem, .72fr);
+  grid-template-columns: minmax(0, 1fr) var(--settings-control-width, 18rem);
   align-items: center;
   gap: 1.5rem;
-  min-height: 4.45rem;
-  padding: .9rem 1rem;
+  min-height: 4.5rem;
+  padding: 1rem var(--settings-row-inset, 1.25rem);
 }
 
 .oc-setting-control {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: .5rem;
 }
 
 .oc-setting-control-compact {
   display: flex;
-  justify-content: flex-end;
+  align-items: flex-end;
 }
 
-.oc-setting-control > :is(input, select),
+.oc-setting-control > :is(input, select, [role='combobox']),
 .oc-setting-control > div:not(.oc-segmented) {
   width: 100%;
 }
 
+.oc-setting-control > :is(input, [role='combobox']) {
+  height: 2.5rem;
+  min-width: 0;
+  border-radius: var(--radius-control);
+  background: hsl(var(--surface-input));
+}
+
+.oc-setting-control [role='combobox'] > :first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .oc-segmented {
-  display: inline-flex;
-  justify-content: flex-end;
+  display: flex;
+  width: 100%;
+  min-height: 2.5rem;
+  align-items: stretch;
   max-width: 100%;
   padding: .2rem;
   border: 1px solid hsl(var(--border));
@@ -575,12 +602,15 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 }
 
 .oc-segmented-option {
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 1.85rem;
   border-radius: .45rem;
-  padding: .3rem .65rem;
+  padding: .3rem .4rem;
   color: hsl(var(--muted-foreground));
   font-size: .72rem;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .oc-segmented-option.is-active {
@@ -596,10 +626,12 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 
 .oc-setting-group-summary {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem;
+  min-height: 4rem;
+  padding: 1rem var(--settings-row-inset, 1.25rem);
+  background: hsl(var(--surface-input) / .4);
   cursor: pointer;
   list-style: none;
 }
@@ -627,13 +659,16 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 }
 
 .oc-setting-group-body > .oc-setting-row,
-.oc-setting-group-body > .oc-array-field,
+.oc-setting-group-body > .oc-array-field {
+  padding-left: var(--settings-row-inset, 1.25rem);
+}
+
 .oc-setting-group-body > .oc-setting-group {
-  padding-left: 2rem;
+  padding: 0;
 }
 
 .oc-array-field {
-  padding: 1rem;
+  padding: 1rem var(--settings-row-inset, 1.25rem);
 }
 
 .oc-setting-row-heading {
@@ -664,7 +699,7 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 .oc-add-entry {
   display: flex;
   gap: .6rem;
-  padding: 1rem;
+  padding: 1rem var(--settings-row-inset, 1.25rem);
   border-top: 1px solid hsl(var(--border) / .82);
 }
 
@@ -691,14 +726,19 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
 }
 
 .oc-advanced {
-  padding: 0 1rem 1rem;
+  padding: 0;
+  margin-top: 0;
+  border-top: 1px solid hsl(var(--border) / .82);
+}
+
+.oc-advanced > summary {
+  min-height: 3rem;
+  padding: .8rem var(--settings-row-inset, 1.25rem);
 }
 
 .oc-advanced-body {
   overflow: hidden;
-  margin-top: .7rem;
-  border: 1px solid hsl(var(--border));
-  border-radius: .8rem;
+  border-top: 1px solid hsl(var(--border));
 }
 
 .oc-raw-toggle {
@@ -723,7 +763,7 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
   backdrop-filter: blur(12px);
 }
 
-@media (max-width: 820px) {
+@container (max-width: 42rem) {
   .oc-setting-row {
     grid-template-columns: 1fr;
     gap: .75rem;
@@ -745,6 +785,43 @@ body :is([role="separator"][aria-orientation="vertical"], .cursor-col-resize) {
   .oc-save-bar {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+/* Local preference rows use the same control column as Gateway fields. */
+.local-setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--settings-control-width, 18rem);
+  align-items: center;
+  gap: 1rem 1.5rem;
+}
+.local-setting-control { display: flex; justify-content: flex-end; min-width: 0; }
+.local-setting-control > [role='combobox'] { width: 100%; min-width: 0; height: 2.5rem; }
+.settings-content :is(.settings-section-panel, .settings-card) :is(div, label):has(> [role='combobox']):has(> :is(div, label, span)) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--settings-control-width);
+  align-items: center;
+  gap: 1rem 1.5rem;
+}
+
+.settings-content :is(.settings-section-panel, .settings-card) :is(div, label):has(> [role='combobox']):has(> :is(div, label, span)) > [role='combobox'] {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 2.5rem;
+  margin: 0;
+}
+
+@container (max-width: 42rem) {
+  .local-setting-row { grid-template-columns: minmax(0, 1fr); gap: .65rem; }
+  .local-setting-row:has([role='switch']) { grid-template-columns: minmax(0, 1fr) auto; }
+  .settings-content :is(.settings-section-panel, .settings-card) :is(div, label):has(> [role='combobox']):has(> :is(div, label, span)) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .65rem;
+  }
+
+  .oc-setting-row:has([role='switch']) {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
 
@@ -793,9 +870,9 @@ button:active:not(:disabled),
 }
 
 .settings-tab-active {
-  background: hsl(var(--surface-modal));
-  border-color: hsl(var(--border));
-  color: hsl(var(--foreground));
+  background: hsl(var(--primary) / .1);
+  border-color: hsl(var(--primary) / .3);
+  color: hsl(var(--primary));
   font-weight: 600;
   box-shadow: 0 1px 3px rgb(0 0 0 / .12), inset 0 1px 0 hsl(var(--foreground) / .035);
 }
@@ -1165,11 +1242,11 @@ button:active:not(:disabled),
   }
 
   .openx-skill-token-overlay {
-    background-color: color-mix(in srgb, #2f6bff 14%, hsl(var(--surface-modal)));
+    background-color: color-mix(in srgb, hsl(var(--primary)) 14%, hsl(var(--surface-modal)));
   }
 
   .dark .openx-skill-token-overlay {
-    background-color: color-mix(in srgb, #2f6bff 18%, hsl(var(--surface-modal)));
+    background-color: color-mix(in srgb, hsl(var(--primary)) 18%, hsl(var(--surface-modal)));
   }
 
   .openx-dialog-overlay {

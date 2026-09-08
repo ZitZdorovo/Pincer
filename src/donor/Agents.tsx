@@ -417,7 +417,7 @@ function AgentCard({
 }
 
 const inputClasses =
-  'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+  'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary dark:focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const selectClasses =
   'h-10 w-full rounded-xl font-mono text-meta text-foreground';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
@@ -752,7 +752,7 @@ function AgentSettingsModal({
                   onChange={(event) => setPersonality(event.target.value)}
                   disabled={loadingPersonality || savingPersonality}
                   placeholder={loadingPersonality ? t('settingsDialog.personalityLoading') : t('settingsDialog.personalityPlaceholder')}
-                  className="min-h-36 resize-y rounded-xl border-black/10 bg-transparent font-mono text-sm leading-6 text-foreground shadow-sm focus-visible:border-blue-500 focus-visible:ring-1 focus-visible:ring-blue-500/50 dark:border-white/10"
+                  className="min-h-36 resize-y rounded-xl border-black/10 bg-transparent font-mono text-sm leading-6 text-foreground shadow-sm focus-visible:border-primary dark:focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary/50 dark:border-white/10"
                 />
               </div>
 

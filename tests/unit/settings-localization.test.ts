@@ -14,7 +14,6 @@ describe('OpenClaw settings localization', () => {
     const known = russianSettingHelp('Gateway runtime surface for bind mode, auth, control UI, remote transport, and operational safety controls.', 'Gateway');
     const unknown = russianSettingHelp('Vendor supplied English-only documentation.', 'Особый параметр');
     expect(known).toContain('Параметры среды Gateway');
-    expect(unknown).toBe('Настройка «Особый параметр» в конфигурации OpenClaw.');
-    expect(unknown).not.toContain('Vendor supplied');
+    expect(unknown).toBeUndefined();
   });
 });

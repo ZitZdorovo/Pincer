@@ -239,7 +239,7 @@ export function Channels({ workspace, connected }: { workspace: WorkspaceState |
                                 className={cn(
                                   'inline-block h-1.5 w-1.5 rounded-full shrink-0',
                                   group.status === 'connected' && 'bg-green-500',
-                                  group.status === 'connecting' && 'bg-sky-500 animate-pulse',
+                                  group.status === 'connecting' && 'bg-primary animate-pulse',
                                   group.status === 'degraded' && 'bg-yellow-500',
                                   group.status === 'error' && 'bg-red-500',
                                   group.status === 'disconnected' && 'bg-muted-foreground',

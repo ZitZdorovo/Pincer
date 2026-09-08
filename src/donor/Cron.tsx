@@ -108,7 +108,7 @@ function findSkillTokenRanges(value: string): SkillTokenRange[] {
 }
 
 const SKILL_TOKEN_HIGHLIGHT_CLASS =
-  'rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
+  'rounded-md bg-primary/15 text-primary [-webkit-box-decoration-break:clone] [box-decoration-break:clone] dark:bg-primary/20';
 
 function renderHighlightedCronMessage(value: string, tokenRanges: SkillTokenRange[]) {
   if (tokenRanges.length === 0) {
