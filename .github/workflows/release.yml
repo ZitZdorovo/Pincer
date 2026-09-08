@@ -34,8 +34,11 @@ jobs:
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { $env:GITHUB_REF_NAME }
           if ($tag -ne "v$version") { throw "Tag $tag and package version $version differ" }
 
-
+      - run: npm run typecheck
+      - run: npm test
       - run: npm run build
-      - run: npx electron-builder --win nsis --x64 --publish always
+      - run: npx playwright test
+      - run: npm run package:win:publish
+      - run: npm run verify:installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

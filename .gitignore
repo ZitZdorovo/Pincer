@@ -5,6 +5,9 @@ test-results/
 playwright-report/
 artifacts/
 release/
+settings-port/
+settings-screenshots/
+memory/
 *.log
 .env*
 

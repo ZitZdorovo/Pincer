@@ -13,12 +13,15 @@
   "main": "dist-electron/main.mjs",
   "scripts": {
     "build": "tsc --noEmit && vite build && node scripts/build-electron.mjs",
+    "package:win": "electron-builder --win nsis --x64 --publish never",
+    "package:win:publish": "electron-builder --win nsis --x64 --publish always",
+    "verify:installer": "node scripts/verify-installer.mjs",
     "start": "node scripts/start.mjs",
     "dev": "npm run build && npm start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
-    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never"
+    "dist:win": "npm run build && npm run package:win && npm run verify:installer"
   },
   "dependencies": {
     "@openclaw/gateway-client": "2026.8.2",
