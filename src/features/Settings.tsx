@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../components/ui/dialog';
 import { Switch } from '../components/ui/switch';
 import { Select } from '../components/ui/select';
 import { Separator } from '../components/ui/separator';
@@ -19,6 +20,7 @@ import { AppearanceExtras, ChatExtras, NotificationSettings } from './ClientPref
 import { ProviderLimitsSettings } from './ProviderLimits';
 import { ProvidersSettings, type ProvidersSettingsHandle } from '../donor/Providers';
 import { DonorProvider } from '../donor/adapter';
+import { GatewayDirectoryBrowser } from '../donor/GatewayDirectoryBrowser';
 import { Agents } from '../donor/Agents';
 import { Channels } from '../donor/Channels';
 import { Skills } from '../donor/Skills';
@@ -89,7 +91,13 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
  const setDevModeUnlocked = (value: boolean) => setPreferences({ devMode: value });
  const setSendShortcut = (value: typeof sendShortcut) => setPreferences({ sendShortcut: value });
  const setChatWorkspacePath = (value: string) => setPreferences({ chatWorkspacePath: value });
- const chooseDefaultWorkspace = () => { document.querySelector<HTMLInputElement>('#settings-default-workspace input')?.focus(); toast.info(t('pincer.remoteWorkspace')); };
+ const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+ const [workspaceDraft, setWorkspaceDraft] = useState('');
+ const chooseDefaultWorkspace = async () => {
+   const result = await window.pincer.desktop.chooseDirectory();
+   if (!result.ok) toast.error(result.error.message);
+   else if (result.value) setChatWorkspacePath(result.value);
+ };
  const [startup, setStartup] = useState({ supported: false, enabled: false }); const [startupBusy, setStartupBusy] = useState(false);
  const launchAtStartup = startup.enabled;
  const setLaunchAtStartup = (enabled: boolean) => { setStartupBusy(true); void window.pincer.desktop.setStartup(enabled).then((result) => { if (result.ok) setStartup((previous) => ({ ...previous, enabled: result.value })); else toast.error(result.error.message); }).finally(() => setStartupBusy(false)); };
@@ -457,6 +465,7 @@ export function Settings({ gateway, updates, back: leave, dirty, initialSection 
                   <Button variant="ghost" size="sm" className="h-9 rounded-lg" onClick={() => setChatWorkspacePath(DEFAULT_WORKSPACE_CWD)}>{t('chat.resetWorkspace')}</Button>
                 </div>
               </div>
+              <Dialog open={workspacePickerOpen} onOpenChange={setWorkspacePickerOpen}><DialogContent className="max-w-md rounded-2xl border border-border bg-surface-modal p-6 shadow-2xl"><DialogTitle className="text-xl font-semibold">{t('chat.choose')}</DialogTitle><DialogDescription className="mt-2 text-sm text-muted-foreground">{t('pincer.remoteWorkspace')}</DialogDescription><div className="mt-4"><GatewayDirectoryBrowser value={workspaceDraft} onChange={setWorkspaceDraft} /></div><div className="mt-4 flex justify-end gap-2"><Button variant="ghost" onClick={() => setWorkspacePickerOpen(false)}>{t('common:actions.cancel')}</Button><Button disabled={!workspaceDraft.trim()} onClick={() => { setChatWorkspacePath(workspaceDraft.trim()); setWorkspacePickerOpen(false); }}>{t('common:actions.save')}</Button></div></DialogContent></Dialog>
               <div id="settings-send-shortcut" className="flex items-center justify-between gap-6 border-t border-border pt-5">
                 <div>
                   <Label htmlFor="send-shortcut" className="text-sm font-medium text-foreground">{t('chat.sendShortcut')}</Label>

@@ -18,6 +18,22 @@ win:
     - target: nsis
       arch: [x64]
   artifactName: Pincer-Setup-${version}-${arch}.${ext}
+mac:
+  icon: assets/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  artifactName: Pincer-${version}-mac-${arch}.${ext}
+linux:
+  icon: assets/icon.png
+  category: Development
+  target:
+    - target: AppImage
+      arch: [x64]
+  artifactName: Pincer-${version}-linux-${arch}.${ext}
 nsis:
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
@@ -31,5 +47,3 @@ publish:
   owner: ZitZdorovo
   repo: Pincer
   releaseType: release
-releaseInfo:
-  releaseNotesFile: RELEASE_NOTES.md

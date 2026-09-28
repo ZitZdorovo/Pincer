@@ -13,6 +13,7 @@ function bounded(value: unknown, max: number): string {
 /** Pincer projects are local chat groupings and may point at any folder, Git or otherwise. */
 export class ProjectStore {
   private data: Record<string, Project[]> = {};
+  private sessionPaths: Record<string, Record<string, string>> = {};
   private healthy = true;
 
   constructor(private storage?: Storage) {
@@ -21,6 +22,16 @@ export class ProjectStore {
       const value: unknown = JSON.parse(storage.cipher.decrypt(readFileSync(storage.path)));
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_PROJECTS');
       for (const [scope, projects] of Object.entries(value)) {
+        if (scope === '__sessionPaths') {
+          if (!projects || typeof projects !== 'object' || Array.isArray(projects)) throw new Error('INVALID_PROJECTS');
+          for (const [key, paths] of Object.entries(projects)) {
+            this.scope(key);
+            if (!paths || typeof paths !== 'object' || Array.isArray(paths)) throw new Error('INVALID_PROJECTS');
+            for (const [sessionKey, path] of Object.entries(paths)) { bounded(sessionKey, 1024); bounded(path, 8192); }
+          }
+          this.sessionPaths = projects as Record<string, Record<string, string>>;
+          continue;
+        }
         if (!/^[a-f0-9]{64}$/.test(scope) || !Array.isArray(projects) || projects.length > 500) throw new Error('INVALID_PROJECTS');
         for (const project of projects) {
           if (!project || typeof project !== 'object' || Array.isArray(project)) throw new Error('INVALID_PROJECTS');
@@ -28,7 +39,7 @@ export class ProjectStore {
           bounded(item.id, 128); bounded(item.name, 128); bounded(item.path, 8192);
         }
       }
-      this.data = value as Record<string, Project[]>;
+      this.data = Object.fromEntries(Object.entries(value).filter(([key]) => key !== '__sessionPaths')) as Record<string, Project[]>;
     } catch { this.healthy = false; }
   }
 
@@ -54,6 +65,21 @@ export class ProjectStore {
     if (next.length === projects.length) throw new Error('PROJECT_NOT_FOUND');
     this.save(key, next);
   }
+  updatePath(scope: unknown, id: unknown, path: unknown): Project {
+    const key = this.scope(scope); const projectId = bounded(id, 128); const folder = bounded(path, 8192).trim();
+    const projects = this.list(key);
+    const current = projects.find((project) => project.id === projectId);
+    if (!current) throw new Error('PROJECT_NOT_FOUND');
+    const updated = { ...current, path: folder };
+    this.save(key, projects.map((project) => project.id === projectId ? updated : project));
+    return updated;
+  }
+  sessionPath(scope: unknown, sessionKey: unknown): string | undefined { return this.sessionPaths[this.scope(scope)]?.[bounded(sessionKey, 1024)]; }
+  rememberSessionPath(scope: unknown, sessionKey: unknown, path: unknown): void {
+    const key = this.scope(scope); const id = bounded(sessionKey, 1024); const cwd = bounded(path, 8192);
+    this.sessionPaths = { ...this.sessionPaths, [key]: { ...this.sessionPaths[key], [id]: cwd } };
+    this.save(key, this.list(key));
+  }
 
   private scope(value: unknown): string {
     if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new Error('INVALID_SCOPE');
@@ -64,7 +90,7 @@ export class ProjectStore {
     if (!this.healthy) throw new Error('PROJECTS_UNREADABLE');
     const next = { ...this.data, [scope]: projects };
     if (this.storage) {
-      const raw = JSON.stringify(next);
+      const raw = JSON.stringify({ ...next, __sessionPaths: this.sessionPaths });
       if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw new Error('PROJECT_STORAGE_FULL');
       mkdirSync(dirname(this.storage.path), { recursive: true });
       const staging = this.storage.path + '.tmp';

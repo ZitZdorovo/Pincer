@@ -176,11 +176,16 @@ test('run progresses from starting to working and retains 16 seconds after histo
   await application.evaluate((_, time) => { Date.now = () => time; }, started + 16000);
   mock.histories.get(key)!.push({ role: 'assistant', timestamp: (mock.histories.get(key)![0] as { timestamp: number }).timestamp, content: 'Время сохранено', usage: { output: 1102 } }); mock.activeRuns.delete(key);
   mock.broadcast('chat', { sessionKey: key, runId, seq: 2, state: 'final', message: { content: 'Время сохранено', usage: { output: 1102 } } });
+  await expect(page.getByTestId('chat-run-status')).toHaveAttribute('data-phase', 'completed');
+  await expect(page.getByTestId('chat-run-status')).toContainText('Выполнено');
+  await expect(page.getByTestId('chat-run-status').getByTestId('chat-run-indicator')).toHaveCount(0);
   await expect(page.getByTestId('response-stats')).toHaveText(/16 с · 1\s?102 выходных токенов/);
   await page.evaluate(key => window.pincer.chat.select(key), key);
+  await expect(page.getByTestId('chat-run-status')).toContainText('Выполнено');
   await expect(page.getByTestId('response-stats')).toHaveText(/16 с · 1\s?102 выходных токенов/);
   await application.close(); application = await launchApplication(); page = await application.firstWindow(); page.on('pageerror', error => pageErrors.push(error.message));
   await page.getByTestId(`sidebar-session-${key}`).click();
+  await expect(page.getByTestId('chat-run-status')).toContainText('Выполнено');
   await expect(page.getByTestId('response-stats')).toHaveText(/16 с · 1\s?102 выходных токенов/);
 });
 test('real Gateway compaction is shown chronologically and notifies until completion', async () => {
@@ -574,11 +579,73 @@ test('chat sends once, streams and reloads authoritative history', async () => {
   await expect(page.getByRole('button', { name: 'Остановить', exact: true })).not.toBeVisible();
   await expect(page.getByTestId('chat-page').locator('article').getByText('Hello test', { exact: true })).toHaveCount(1);
   await expect.poll(async () => (await page.evaluate(() => window.pincer.chat.snapshot())).messages.filter((message) => message.role === 'assistant').length).toBe(1);
+  await expect(page.getByTestId(`sidebar-session-${mock.sessions[0].key}`).getByTestId('sidebar-session-activity')).toHaveCount(0);
   expect(mock.responses.filter((request) => request.method === 'chat.send')).toHaveLength(1);
   expect(mock.responses.find((request) => request.method === 'sessions.create')?.params).toMatchObject({ permissionMode: 'full' });
   await page.keyboard.press('Control+,'); await page.getByTestId('settings-theme-dark').click(); await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
   await expect(page.locator('html')).toHaveClass('dark');
   await page.screenshot({ path: 'artifacts/pincer-chat-dark.png' });
+});
+
+test('slash commands come from Gateway, filter while typing and send after selection', async () => {
+  for (let index = 0; index < 30; index += 1) mock.extraCommands.push({ name: `extra_${index}`, description: `Extra command ${index}`, source: 'skill', scope: 'text', category: 'tools', acceptsArgs: false });
+  await connect();
+  await page.getByRole('button', { name: 'Новый чат', exact: true }).click();
+  const editor = page.getByTestId('chat-composer-input');
+  await editor.fill('/');
+  const menu = page.getByTestId('chat-slash-menu');
+  await expect(menu).toBeVisible();
+  await expect(page.getByTestId('chat-slash-option-compact')).toBeVisible();
+  const menuBounds = await menu.boundingBox();
+  await page.mouse.move(menuBounds!.x + menuBounds!.width / 2, menuBounds!.y + menuBounds!.height - 12);
+  await expect.poll(() => menu.evaluate((element) => element.scrollTop)).toBe(0);
+  await page.screenshot({ path: 'artifacts/pincer-donor/slash-menu-long.png' });
+  await expect(page.getByTestId('chat-slash-option-native-only')).toHaveCount(0);
+  await page.getByTestId('chat-scroll-container').click({ position: { x: 24, y: 24 } });
+  await expect(menu).toHaveCount(0);
+  await expect(editor).toHaveValue('/');
+  await editor.click();
+  await expect(menu).toBeVisible();
+  await page.getByTestId('chat-model-picker-button').click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await editor.click();
+  await expect(page.getByTestId('chat-model-picker-menu')).toHaveCount(0);
+  await expect(menu).toBeVisible();
+  await page.getByTestId('chat-composer-skill').click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByTestId('chat-composer-skill-option-test-skill')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await editor.click();
+  await expect(page.getByTestId('chat-composer-skill-option-test-skill')).toHaveCount(0);
+  await expect(menu).toBeVisible();
+  await editor.fill('/co');
+  await expect(page.getByTestId('chat-slash-option-compact')).toBeVisible();
+  await expect(page.getByTestId('chat-slash-option-context')).toBeVisible();
+  await expect(page.getByTestId('chat-slash-option-stop')).toHaveCount(0);
+  await page.screenshot({ path: 'artifacts/pincer-donor/slash-menu.png' });
+  await editor.press('Enter');
+  await expect(editor).toHaveValue('/compact ');
+  await expect(menu).toHaveCount(0);
+  expect(mock.responses.filter((request) => request.method === 'chat.send')).toHaveLength(0);
+  await editor.press('Enter');
+  await expect.poll(() => mock.responses.filter((request) => request.method === 'chat.send').length).toBe(1);
+  expect(mock.responses.find((request) => request.method === 'chat.send')?.params).toMatchObject({ message: '/compact ' });
+  await expect.poll(async () => (await page.evaluate(() => window.pincer.chat.snapshot())).activeRun).toBe(null);
+  await editor.fill('/');
+  await expect(menu).toBeVisible();
+  await page.getByTestId('chat-thinking-picker-button').click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByTestId('chat-thinking-picker-menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await editor.click();
+  await expect(page.getByTestId('chat-thinking-picker-menu')).toHaveCount(0);
+  await expect(menu).toBeVisible();
+  await editor.fill('/co');
+  await page.getByTestId('chat-slash-option-context').click();
+  await expect(editor).toHaveValue('/context ');
+  await expect(menu).toHaveCount(0);
 });
 
 test('memory lives on Gateway, rejects conflicting edits and distinguishes missing embeddings', async () => {
@@ -730,7 +797,7 @@ test('cron creation, enable switch, run and deletion round-trip', async () => {
 
 });
 
-test('project creates a chat in its actual Gateway workspace', async () => {
+test('local Windows project binds new chats to the Pincer node with a remote Linux Gateway', async () => {
 
  await connect(); await page.getByRole('button', { name: 'Новый проект', exact: true }).click();
  const editor = page.getByRole('dialog'); await editor.getByRole('textbox').first().fill('Research project'); await page.getByTestId('project-path').fill('C:/Research');
@@ -738,13 +805,52 @@ test('project creates a chat in its actual Gateway workspace', async () => {
  expect(await page.getByTestId('project-path').evaluate((element) => getComputedStyle(element).boxShadow)).toContain('2px');
  await editor.getByRole('button', { name: 'Создать', exact: true }).click();
  const project = page.locator('[data-testid^="sidebar-project-"]').filter({ hasText: 'Research project' });
- await project.click({ button: 'right' });
+ await project.locator('[role="button"]').first().click({ button: 'right' });
  await page.getByTestId('node-context-menu').getByRole('button', { name: 'Новый чат', exact: true }).click();
  expect(mock.sessions).toHaveLength(0);
  await page.getByTestId('chat-composer-input').fill('Research'); await page.getByRole('button', { name: 'Отправить', exact: true }).click();
  await expect.poll(() => mock.sessions[0]?.execCwd).toBe('C:/Research');
  expect(mock.responses.find((item) => item.method === 'sessions.create')?.params).toMatchObject({ cwd: 'C:/Research' });
  await expect(page.getByTestId('chat-page')).toContainText('Research');
+ const firstProjectChat = mock.sessions[0].key;
+ await page.getByTestId('sidebar-new-chat').click();
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', 'C:/Research');
+ await page.getByTestId('chat-composer-input').fill('Another research chat');
+ await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+ await expect.poll(() => mock.sessions[1]?.execCwd).toBe('C:/Research');
+ mock.platform = 'linux'; mock.sessions[0].execCwd = '/root/openclaw/workspace';
+ await page.evaluate(() => window.pincer.chat.refresh());
+ expect((await page.evaluate(() => window.pincer.chat.snapshot())).sessions.find((session) => session.key === firstProjectChat)?.cwd).toBe('C:/Research');
+ await project.locator('[role="button"]').first().click({ button: 'right' });
+ await page.getByTestId('node-context-menu').getByRole('button', { name: 'Новый чат', exact: true }).click();
+ await expect(page.getByRole('dialog', { name: 'Изменить путь проекта' })).toHaveCount(0);
+ await page.getByTestId('chat-composer-input').fill('Local node project');
+ await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+ await expect.poll(() => mock.sessions[2]?.execCwd).toBe('C:/Research');
+ const nodeId = mock.connects.find((connection) => connection.role === 'node')?.device?.id;
+ expect(mock.responses.findLast((item) => item.method === 'sessions.create')?.params).toMatchObject({ cwd: 'C:/Research', execNode: nodeId });
+
+ await page.getByTestId('sidebar-new-chat').click();
+ await page.getByTestId('chat-workspace-selector').click();
+ await page.getByTestId('chat-workspace-default').click();
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', '@gateway-default');
+ await page.getByTestId('chat-composer-input').fill('Default chat');
+ await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+ await expect.poll(() => mock.sessions.length).toBe(4);
+ const defaultChat = mock.sessions[3].key;
+ expect(mock.responses.findLast((item) => item.method === 'sessions.create')?.params).not.toHaveProperty('cwd');
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', '@gateway-default');
+ await page.getByTestId('sidebar-new-chat').click();
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', '@gateway-default');
+ await page.getByTestId(`sidebar-session-${firstProjectChat}`).click();
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', 'C:/Research');
+ await application.close(); application = await launchApplication(); page = await application.firstWindow(); page.on('pageerror', error => pageErrors.push(error.message));
+ await page.getByTestId(`sidebar-session-${defaultChat}`).click();
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', '@gateway-default');
+ await page.getByTestId(`sidebar-session-${firstProjectChat}`).click();
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', 'C:/Research');
+ await page.getByTestId('sidebar-new-chat').click();
+ await expect(page.getByTestId('chat-workspace-selector')).toHaveAttribute('title', 'C:/Research');
 
 });
 
@@ -854,6 +960,25 @@ test('attachments are sent as validated content exactly once', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
   await page.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('A user-selected attachment') });
   await expect(page.getByTestId('chat-page')).toContainText('notes.txt');
+  const card = page.getByTestId('chat-attachment-preview');
+  await card.hover();
+  const remove = card.getByRole('button', { name: /notes.txt/ }).last();
+  const cardBox = await card.boundingBox(); const removeBox = await remove.boundingBox();
+  expect(cardBox && removeBox && removeBox.x >= cardBox.x && removeBox.x + removeBox.width <= cardBox.x + cardBox.width).toBe(true);
+  await card.getByRole('button', { name: /preview|предпросмотр|посмотреть/i }).click();
+  await expect(page.getByRole('dialog')).toContainText('notes.txt');
+  await expect(page.getByRole('dialog')).toContainText('A user-selected attachment');
+  await page.keyboard.press('Escape');
+  const pdf = await application.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.printToPDF({ printBackground: true })).toString('base64'));
+  await page.locator('input[type=file]').setInputFiles({ name: 'preview.pdf', mimeType: 'application/pdf', buffer: Buffer.from(pdf, 'base64') });
+  const stagedBoxes = await Promise.all([card.first().boundingBox(), page.getByTestId('chat-attachment-preview').filter({ hasText: 'preview.pdf' }).boundingBox()]);
+  expect(stagedBoxes[0] && stagedBoxes[1] && stagedBoxes[1].x > stagedBoxes[0].x && Math.abs(stagedBoxes[1].y - stagedBoxes[0].y) < 2).toBe(true);
+  await page.getByTestId('chat-attachment-preview').filter({ hasText: 'preview.pdf' }).getByRole('button').first().click();
+  await expect(page.getByRole('dialog').locator('iframe[title="preview.pdf"]')).toBeVisible();
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: 'artifacts/pincer-staged-pdf-preview.png' });
+  await page.getByRole('dialog').getByRole('button', { name: 'Закрыть просмотр' }).click();
+  await page.getByTestId('chat-attachment-preview').filter({ hasText: 'preview.pdf' }).getByRole('button').last().click();
   await page.getByTestId('chat-composer-input').fill('Read this attachment');
   await page.getByRole('button', { name: 'Отправить', exact: true }).click();
   await expect.poll(() => mock.responses.filter((item) => item.method === 'chat.send').length).toBe(1);
@@ -862,19 +987,172 @@ test('attachments are sent as validated content exactly once', async () => {
 
 test('sent image attachments remain visible above the user message', async () => {
   await connect(); await page.getByTestId('sidebar-new-chat').click();
-  await page.locator('input[type=file]').setInputFiles({ name: 'pixel.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') });
+  const pixel = await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 80; canvas.height = 100; canvas.getContext('2d')!.fillRect(0, 0, 80, 100); return canvas.toDataURL('image/png').split(',')[1]; });
+  await page.locator('input[type=file]').setInputFiles([
+    { name: 'pixel.png', mimeType: 'image/png', buffer: Buffer.from(pixel, 'base64') },
+    { name: 'sample.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from('XLSX') },
+    { name: 'sample.pdf', mimeType: 'application/pdf', buffer: Buffer.from('PDF') },
+  ]);
   await page.getByTestId('chat-composer-input').fill('Image caption');
   await page.getByRole('button', { name: 'Отправить', exact: true }).click();
   const user = page.getByTestId('acp-user-message');
-  await expect(user.getByTestId('message-attachment')).toBeVisible();
+  await expect(user.getByTestId('message-attachment').first()).toBeVisible();
   await expect(user.getByRole('img', { name: 'pixel.png' })).toBeVisible();
+  await expect(user.getByTestId('message-document')).toHaveCount(2);
+  const boxes = await Promise.all([user.getByRole('img', { name: 'pixel.png' }), user.getByTestId('message-document').nth(0), user.getByTestId('message-document').nth(1)].map((item) => item.boundingBox()));
+  expect(boxes[0] && boxes[1] && boxes[2] && boxes[0].x < boxes[1].x && boxes[1].x < boxes[2].x && Math.abs(boxes[0].y - boxes[1].y) < 2 && Math.abs(boxes[1].y - boxes[2].y) < 2).toBe(true);
   const attachmentComesFirst = await user.evaluate((element) => {
     const attachment = element.querySelector('[data-testid="message-attachment"]');
     const bubble = element.querySelector('[data-testid="user-message-bubble"]');
     return Boolean(attachment && bubble && (attachment.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(attachmentComesFirst).toBe(true);
+  const sentKey = mock.sessions.at(-1)!.key;
+  await expect.poll(() => mock.histories.get(sentKey)?.length).toBeGreaterThan(0);
+  mock.histories.set(sentKey, (mock.histories.get(sentKey) || []).map((entry) => ({ ...(entry as Record<string, unknown>), attachments: undefined })));
+  await page.getByTestId('sidebar-new-chat').click();
+  await page.getByTestId(`sidebar-session-${sentKey}`).click();
+  await expect(user.getByRole('img', { name: 'pixel.png' })).toBeVisible();
+  const thumbnail = await user.getByTestId('message-attachment').first().boundingBox();
+  expect(thumbnail && thumbnail.width <= 100 && thumbnail.height <= 100).toBe(true);
+  const localCopy = join(directory, 'sent-files.vault');
+  await expect.poll(() => { try { return readFileSync(localCopy).length; } catch { return 0; } }).toBeGreaterThan(0);
+  expect(readFileSync(localCopy).includes(Buffer.from('pixel.png'))).toBe(false);
+  await application.close(); application = await launchApplication(); page = await application.firstWindow();
+  await expect(page.getByTestId(`sidebar-session-${sentKey}`)).toBeVisible();
+  await page.getByTestId(`sidebar-session-${sentKey}`).click();
+  await expect(page.getByTestId('acp-user-message').getByRole('img', { name: 'pixel.png' })).toBeVisible();
   await page.screenshot({ path: 'artifacts/pincer-message-attachment.png' });
+});
+
+test('files dropped over the sidebar are attached to the chat', async () => {
+  await connect(); await page.getByTestId('sidebar-new-chat').click();
+  await page.getByTestId('sidebar-new-chat').evaluate((element) => {
+    const transfer = new DataTransfer(); transfer.items.add(new File(['Dropped content'], 'from-sidebar.txt', { type: 'text/plain' }));
+    element.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await expect(page.getByTestId('chat-attachment-preview')).toContainText('from-sidebar.txt');
+});
+test('Gateway artifacts show image previews and downloadable documents in a chat', async () => {
+  const key = 'agent:main:pincer:artifacts';
+  mock.sessions.push({ key, label: 'Files', agentId: 'main' });
+  mock.histories.set(key, [{ role: 'user', content: 'Show files' }, { role: 'assistant', content: [
+    { type: 'text', text: 'Files are ready: picture.png, second.png, third.png, fourth.png, sample.pdf, sample.docx and sample.xlsx' },
+    ...['image-1', 'image-2', 'image-3', 'image-4'].map((artifactId) => ({ type: 'image', artifactId, mimeType: 'image/png', url: `/media/${artifactId}` })),
+  ] }]);
+  const pngs = await page.evaluate(() => ['#4235a5', '#0d7684', '#a44b29', '#387a43'].map((color, index) => {
+    const canvas = document.createElement('canvas'); canvas.width = index === 1 ? 440 : 320; canvas.height = index === 1 ? 180 : 440;
+    const context = canvas.getContext('2d')!;
+    const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height); gradient.addColorStop(0, color); gradient.addColorStop(1, '#10131c');
+    context.fillStyle = gradient; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#ffffffbb'; context.beginPath(); context.arc(160, 145, 70, 0, Math.PI * 2); context.fill();
+    context.fillStyle = '#ffffff'; context.font = 'bold 130px sans-serif'; context.textAlign = 'center'; context.fillText(String(index + 1), 160, 360);
+    return canvas.toDataURL('image/png').split(',')[1];
+  }));
+  mock.artifacts.set(key, [
+    ...['picture.png', 'second.png', 'third.png', 'fourth.png'].map((title, index) => ({ id: `image-${index + 1}`, title, mimeType: 'image/png', data: pngs[index] })),
+    { id: 'document-1', title: 'sample.pdf', mimeType: 'application/pdf', data: Buffer.from('PDF').toString('base64') },
+    { id: 'document-2', title: 'sample.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: Buffer.from('DOCX').toString('base64') },
+    { id: 'document-3', title: 'sample.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: Buffer.from('XLSX').toString('base64') },
+  ]);
+  await connect(); await page.getByTestId(`sidebar-session-${key}`).click();
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 850));
+  const assistant = page.getByTestId('acp-assistant-message');
+  const gallery = assistant.getByTestId('message-image-gallery');
+  const thumbnails = gallery.locator('[data-image-thumbnail="true"]');
+  await expect(thumbnails).toHaveCount(4);
+  await expect(gallery.getByTestId('image-thumbnail-download')).toHaveCount(4);
+  const firstBox = await thumbnails.first().boundingBox();
+  const secondBox = await thumbnails.nth(1).boundingBox();
+  const lastBox = await thumbnails.last().boundingBox();
+  expect(firstBox && lastBox && lastBox.y > firstBox.y).toBe(true);
+  expect(firstBox && secondBox && secondBox.height < firstBox.height).toBe(true);
+  await expect(assistant.getByTestId('message-document').getByText('sample.pdf')).toBeVisible();
+  await expect(assistant.getByTestId('message-document')).toHaveCount(3);
+  expect(await assistant.getByTestId('message-document').locator('svg').count()).toBeGreaterThan(0);
+  await page.screenshot({ path: 'artifacts/pincer-attachment-gallery.png' });
+  const savedThumbnailPath = join(directory, 'artifact-thumbnail-test.png');
+  await application.evaluate(({ dialog }, path) => { dialog.showSaveDialog = (async () => ({ canceled: false, filePath: path })) as typeof dialog.showSaveDialog; }, savedThumbnailPath);
+  await gallery.getByTestId('image-thumbnail-download').first().click();
+  await expect.poll(() => { try { return readFileSync(savedThumbnailPath).toString('base64'); } catch { return ''; } }).toBe(pngs[0]);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByTestId('chat-scroll-container').evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await page.screenshot({ path: 'artifacts/pincer-document-card.png' });
+  await expect(assistant.getByRole('img', { name: 'picture.png' })).toBeVisible();
+  await assistant.getByRole('img', { name: 'picture.png' }).click();
+  await expect(page.getByRole('dialog').getByRole('img', { name: 'picture.png' })).toBeVisible();
+  await page.getByRole('button', { name: 'Следующее изображение' }).click();
+  await expect(page.getByRole('dialog').getByRole('img', { name: 'second.png' })).toBeVisible();
+  await page.getByRole('button', { name: 'Увеличить' }).click();
+  await expect(page.getByRole('dialog').getByText('125%')).toBeVisible();
+  await page.getByTestId('image-preview').dispatchEvent('wheel', { deltaY: -100 });
+  await expect(page.getByRole('dialog').getByText('150%')).toBeVisible();
+  const savedImagePath = join(directory, 'artifact-image-test.png');
+  await application.evaluate(({ dialog }, path) => { dialog.showSaveDialog = (async () => ({ canceled: false, filePath: path })) as typeof dialog.showSaveDialog; }, savedImagePath);
+  await page.getByTestId('image-download').click();
+  await expect.poll(() => { try { return readFileSync(savedImagePath).toString('base64'); } catch { return ''; } }).toBe(pngs[1]);
+  await page.screenshot({ path: 'artifacts/pincer-attachment-lightbox.png' });
+  await page.getByRole('dialog').click({ position: { x: 220, y: 300 } });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.keyboard.press('Control+,');
+  await page.getByTestId('settings-theme-dark').click();
+  await page.getByRole('button', { name: 'Вернуться в приложение' }).click();
+  await assistant.getByRole('img', { name: 'picture.png' }).click();
+  await expect(page.locator('.pincer-image-lightbox-overlay')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0.36)');
+  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await page.screenshot({ path: 'artifacts/pincer-attachment-lightbox-dark.png' });
+  await page.getByRole('dialog').click({ position: { x: 220, y: 300 } });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByTestId('chat-artifacts')).toHaveCount(0);
+  const savedPath = join(directory, 'artifact-open-test.pdf');
+  await application.evaluate(({ dialog, shell }, path) => { dialog.showSaveDialog = (async () => ({ canceled: false, filePath: path })) as typeof dialog.showSaveDialog; shell.openPath = (async () => '') as typeof shell.openPath; }, savedPath);
+  await assistant.getByTestId('message-document').filter({ hasText: 'sample.pdf' }).getByRole('button').click();
+  await expect.poll(() => mock.responses.filter((item) => item.method === 'artifacts.download' && (item.params as { artifactId?: string }).artifactId === 'document-1').length).toBe(1);
+  await expect.poll(() => { try { return readFileSync(savedPath, 'utf8'); } catch { return ''; } }).toBe('PDF');
+});
+test('chat menu invokes Gateway context compaction', async () => {
+  await connect(); await page.getByTestId('sidebar-new-chat').click();
+  await page.getByTestId('chat-composer-input').fill('A chat to compact');
+  await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect.poll(() => mock.sessions.length).toBe(1);
+  await expect.poll(() => mock.activeRuns.size).toBe(0);
+  await expect.poll(async () => (await page.evaluate(() => window.pincer.chat.snapshot())).activeRun).toBeNull();
+  await expect(page.getByTestId('chat-title-menu-button')).toBeVisible();
+  await page.getByTestId('chat-title-menu-button').click();
+  await page.getByTestId('chat-title-menu').getByRole('button', { name: 'Сжать контекст' }).click();
+  await expect.poll(() => mock.responses.filter((item) => item.method === 'sessions.compact').length).toBe(1);
+});
+test('running status stays before current commands when history catches up with live tools', async () => {
+  const key = 'agent:main:pincer:tool-dedup'; const runId = 'run-tool-dedup';
+  mock.sessions.push({ key, label: 'Tool dedup', agentId: 'main' });
+  mock.histories.set(key, [{ role: 'user', content: 'Read a file' }, { role: 'assistant', content: [{ type: 'toolCall', id: 'tool-1', name: 'Read', arguments: { path: 'README.md' } }], usage: { output: 597 } }]);
+  mock.activeRuns.set(key, runId);
+  await connect(); await page.getByTestId(`sidebar-session-${key}`).click();
+  await expect(page.getByTestId('tool-activity')).toHaveCount(1);
+  await expect(page.getByTestId('chat-run-status')).toContainText('Работает уже');
+  const statusBeforeTools = await page.evaluate(() => {
+    const status = document.querySelector('[data-testid="chat-run-status"]');
+    const tool = document.querySelector('[data-testid="tool-activity"]');
+    return Boolean(status && tool && status.compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(statusBeforeTools).toBe(true);
+  await expect(page.getByTestId('response-stats')).toHaveCount(0);
+  mock.broadcast('agent', { sessionKey: key, runId, stream: 'tool', data: { toolCallId: 'tool-1', name: 'Read', phase: 'start', args: { path: 'README.md' } } });
+  await expect(page.getByTestId('tool-activity')).toHaveCount(1);
+  mock.broadcast('agent', { sessionKey: key, runId, stream: 'tool', data: { toolCallId: 'tool-2', name: 'Read', phase: 'start', args: { path: 'other.md' } } });
+  await expect(page.getByTestId('tool-activity')).toHaveCount(2);
+  await page.evaluate((sessionKey) => window.pincer.chat.select(sessionKey), key);
+  await expect(page.getByTestId('tool-activity')).toHaveCount(2);
+  expect(await page.evaluate(() => {
+    const status = document.querySelector('[data-testid="chat-run-status"]');
+    const tools = [...document.querySelectorAll('[data-testid="tool-activity"]')];
+    return Boolean(status && tools.length === 2 && tools.every((tool) => status.compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING));
+  })).toBe(true);
+  await page.screenshot({ path: 'artifacts/pincer-running-command-order.png' });
+  mock.activeRuns.delete(key); mock.broadcast('chat', { sessionKey: key, runId, seq: 2, state: 'final' });
+  await expect(page.getByTestId('chat-run-status')).toHaveAttribute('data-phase', 'completed');
+  await expect(page.getByTestId('response-stats').filter({ hasText: '597' })).toContainText('597 выходных токенов');
 });
 
 test('long code blocks are collapsed and can be expanded', async () => {
@@ -1299,9 +1577,10 @@ test('tool cards, token footer, quotas and text selection are confined to the co
   const activity = page.getByTestId('activity-stream'); await expect(activity).toContainText('Выполнено команд: 2');
   await expect(page.getByTestId('tool-activity')).toHaveCount(1);
   await expect(page.getByTestId('tool-call')).toHaveCount(3);
+  await expect(page.getByTestId('tool-call').first()).toHaveAttribute('data-tool-id', 't3');
   await expect(page.getByTestId('tool-result').first()).not.toBeVisible();
   await page.getByTestId('tool-activity').first().locator(':scope > button').click();
-  await expect(page.getByTestId('tool-result').first()).toContainText('123 electron');
+  await expect(page.getByTestId('tool-call').filter({ hasText: 'Get-Process' }).getByTestId('tool-result')).toContainText('123 electron');
   await expect(page.getByTestId('response-stats')).toHaveText('8 с · 171 выходных токенов');
   await page.getByTestId('chat-request-stats-button').click();
   await expect(page.getByTestId('chat-request-stats-button')).toHaveCSS('border-top-width', '1px');
@@ -1335,22 +1614,37 @@ test('many live tool calls keep their own layout when the activity is expanded',
   const activity = page.getByTestId('tool-activity');
   await expect(activity).toHaveAttribute('data-live', 'true');
   await expect(page.getByTestId('tool-call')).toHaveCount(4);
-  await activity.locator(':scope > button').click();
+  await expect(activity.locator(':scope > button')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('tool-activity-running')).toBeVisible();
+  await expect(page.getByTestId('tool-call').first()).toHaveAttribute('data-tool-id', 'live-tool-3');
   for (let index = 4; index < 12; index += 1) {
     mock.broadcast('agent', { sessionKey: key, runId, stream: 'tool', data: { toolCallId: `live-tool-${index}`, name: index % 2 ? 'session_status' : 'exec', phase: 'start', args: index % 2 ? { sessionKey: `agent-${index}` } : { command: `Get-Item item-${index}` } } });
   }
   await expect(page.getByTestId('tool-call')).toHaveCount(12);
   await expect(page.locator('[data-tool-status="running"]')).toHaveCount(12);
+  await expect(page.getByTestId('tool-call').first()).toHaveAttribute('data-tool-id', 'live-tool-11');
+  await expect(page.getByTestId('tool-call').last()).toHaveAttribute('data-tool-id', 'live-tool-0');
+  await expect(page.getByTestId('tool-call').first().locator('[data-tool-status="running"] svg')).toHaveClass(/animate-spin/);
   mock.broadcast('agent', { sessionKey: key, runId, stream: 'tool', data: { toolCallId: 'live-tool-0', name: 'exec', phase: 'end', result: 'ok' } });
   mock.broadcast('agent', { sessionKey: key, runId, stream: 'tool', data: { toolCallId: 'live-tool-1', name: 'session_status', phase: 'end', isError: true, result: 'failed' } });
   await expect(page.locator('[data-tool-status="completed"]')).toHaveCount(1);
   await expect(page.locator('[data-tool-status="failed"]')).toHaveCount(1);
+  const toolStatusSizes = await page.locator('[data-tool-status] svg').evaluateAll((icons) => icons.map((icon) => [icon.getAttribute('width'), icon.getAttribute('height')]));
+  expect(new Set(toolStatusSizes.map((size) => size.join('x')))).toEqual(new Set(['15x15']));
+  await expect(page.getByTestId('tool-call').first()).toHaveAttribute('data-tool-id', 'live-tool-11');
+  await expect(page.getByTestId('tool-call').last()).toHaveAttribute('data-tool-id', 'live-tool-0');
   await page.getByTestId('tool-call').nth(0).locator(':scope > button').click();
   await page.getByTestId('tool-call').nth(1).locator(':scope > button').click();
   await expect(page.getByTestId('tool-call').first().locator('pre').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   const rows = page.getByTestId('tool-call').locator(':scope > button');
   const boxes = await rows.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
   for (let index = 1; index < boxes.length; index += 1) expect(boxes[index].top).toBeGreaterThanOrEqual(boxes[index - 1].bottom);
+  const list = activity.locator('[data-open="true"]');
+  await list.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  mock.broadcast('agent', { sessionKey: key, runId, stream: 'tool', data: { toolCallId: 'live-tool-12', name: 'exec', phase: 'start', args: { command: 'Get-Item newest' } } });
+  await expect(page.getByTestId('tool-call').first()).toHaveAttribute('data-tool-id', 'live-tool-12');
+  await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0);
   await page.screenshot({ path: 'artifacts/pincer-donor/live-tool-layout.png' });
 });
 
@@ -1371,19 +1665,57 @@ test('one live thinking indicator and permission choices change Gateway policy',
 test('a running chat stays marked while another session is selected', async () => {
   mock.holdRun = true; mock.deltaDelayMs = 60000; await connect(); await page.getByTestId('sidebar-new-chat').click();
   await page.getByTestId('chat-composer-input').fill('Работай в фоне'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect.poll(() => mock.sessions.length).toBe(1); const running = mock.sessions[0].key;
-  await expect(page.getByTestId(`sidebar-session-${running}`)).toContainText('В работе');
+  await expect(page.getByTestId(`sidebar-session-${running}`).getByTestId('sidebar-session-activity')).toHaveCount(0);
   await page.getByTestId('sidebar-new-chat').click(); expect(mock.sessions).toHaveLength(1);
-  await expect(page.getByTestId(`sidebar-session-${running}`)).toContainText('В работе');
+  await expect(page.getByTestId(`sidebar-session-${running}`).getByTestId('sidebar-session-activity')).toHaveAttribute('data-state', 'running');
+  await expect(page.getByTestId(`sidebar-session-${running}`).getByTestId('sidebar-session-activity').locator('svg')).toHaveClass(/animate-spin/);
+  await page.getByTestId(`sidebar-session-${running}`).hover();
+  await expect(page.getByTestId('sidebar-chat-preview')).toContainText('Выполняется');
+  await expect(page.getByTestId(`sidebar-session-${running}`).getByTestId('sidebar-session-activity')).toHaveCSS('opacity', '0');
+  await page.mouse.move(500, 400);
   await page.getByTestId('chat-composer-input').fill('Другой чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect.poll(() => mock.sessions.length).toBe(2);
   await page.screenshot({ path: 'artifacts/pincer-donor/background-run-other-chat.png' });
   await page.getByTestId(`sidebar-session-${running}`).click(); await expect(page.getByTestId('chat-run-status')).toBeVisible();
+  await expect(page.getByTestId(`sidebar-session-${running}`).getByTestId('sidebar-session-activity')).toHaveCount(0);
   await page.screenshot({ path: 'artifacts/pincer-donor/background-run.png' });
   const other = page.getByTestId(`sidebar-session-${mock.sessions[1].key}`);
   await other.click(); await expect(other).toHaveAttribute('aria-current', 'page');
   const runId = mock.activeRuns.get(running)!;
   mock.activeRuns.delete(running); mock.broadcast('chat', { sessionKey: running, runId, seq: 2, state: 'final' });
   await expect.poll(async () => (await page.evaluate(() => window.pincer.chat.snapshot())).sessions.find((session) => session.key === running)?.activeRunId).toBeUndefined();
-  await expect(page.getByTestId(`sidebar-session-${running}`)).not.toContainText('В работе');
+  const finished = page.getByTestId(`sidebar-session-${running}`);
+  await expect(finished.getByTestId('sidebar-session-activity')).toHaveAttribute('aria-label', 'Выполнено');
+  await expect(finished.getByTestId('sidebar-session-activity')).toHaveAttribute('data-state', 'completed');
+  await expect(finished.getByTestId('sidebar-session-activity').locator('span')).toHaveCSS('box-shadow', 'none');
+  await finished.click();
+  await expect(finished.getByTestId('sidebar-session-activity')).toHaveCount(0);
+  await other.click();
+  await expect(finished.getByTestId('sidebar-session-activity')).toHaveCount(0);
+  mock.broadcast('agent', { sessionKey: running, runId, stream: 'lifecycle', data: { phase: 'end' } });
+  await page.waitForTimeout(60);
+  await expect(finished.getByTestId('sidebar-session-activity')).toHaveCount(0);
+});
+
+test('a missed final event still changes the sidebar spinner to a blue dot', async () => {
+  mock.holdRun = true; mock.deltaDelayMs = 60000; await connect();
+  await page.getByTestId('sidebar-new-chat').click();
+  await page.getByTestId('chat-composer-input').fill('Долгая задача');
+  await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect.poll(() => mock.sessions.length).toBe(1);
+  const key = mock.sessions[0].key;
+  const dot = page.getByTestId(`sidebar-session-${key}`).getByTestId('sidebar-session-activity');
+  await expect(dot).toHaveCount(0);
+  await page.getByTestId('sidebar-new-chat').click();
+  await expect(dot).toHaveAttribute('data-state', 'running');
+  await expect(page.getByTestId(`sidebar-session-${key}`)).not.toContainText('В работе');
+  mock.activeRuns.delete(key);
+  mock.sessions[0].status = 'done';
+  await page.evaluate(() => window.pincer.chat.refresh());
+  await expect(dot).toHaveAttribute('data-state', 'completed');
+  await expect(dot).toHaveAttribute('aria-label', 'Выполнено');
+  await expect(page.getByTestId(`sidebar-session-${key}`)).not.toContainText('Выполнено');
+  await page.getByTestId(`sidebar-session-${key}`).click();
+  await expect(dot).toHaveCount(0);
 });
 
 test('an existing chat locks its agent; Russian creation and task listing work', async () => {
@@ -1406,7 +1738,8 @@ test('an existing chat locks its agent; Russian creation and task listing work',
   await page.screenshot({ path: 'artifacts/pincer-donor/agents-russian.png' });
 });
 
-test('usage page displays model-attributed totals and native project directory choice', async () => {
+test('usage page and project picker use the local node folder on a remote Gateway', async () => {
+  mock.platform = 'linux';
   mock.usageData = { sessions: [{ key: 'usage-test', agentId: 'main', usage: { lastActivity: Date.now(), modelUsage: [{ model: 'gpt-5.6-sol-high', provider: 'codex', totals: { input: 1000, output: 151, cacheRead: 400, cacheWrite: 0, totalTokens: 1551, totalCost: 0, missingCostEntries: 0 } }] } }] };
   await connect(); await page.getByTestId('sidebar-nav-models').click();
   await expect(page.getByTestId('token-usage-entry')).toContainText('GPT 5.6 Sol');
@@ -1420,6 +1753,17 @@ test('usage page displays model-attributed totals and native project directory c
   await form.getByRole('button', { name: 'Создать', exact: true }).click();
   await expect.poll(async () => (await page.evaluate(() => window.pincer.chat.snapshot())).projects.some((p) => p.name === 'Русский проект')).toBe(true);
   expect(mock.responses.some((item) => String(item.method).startsWith('projects.'))).toBe(false);
+  const project = page.locator('[data-testid^="sidebar-project-"]').filter({ hasText: 'Русский проект' });
+  await project.click({ button: 'right' });
+  await page.getByTestId('node-context-menu').getByRole('button', { name: 'Новый чат', exact: true }).click();
+  await page.getByTestId('chat-composer-input').fill('Проверь папку');
+  await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect.poll(() => mock.sessions[0]?.execCwd).toBe('C:/MockWorkspace');
+  expect(mock.responses.findLast((item) => item.method === 'sessions.create')?.params).toMatchObject({ execNode: mock.connects.find((connection) => connection.role === 'node')?.device?.id });
+  await page.keyboard.press('Control+,');
+  await page.getByTestId('settings-nav-chat').click();
+  await page.locator('#settings-default-workspace').getByRole('button', { name: 'Выбрать', exact: true }).click();
+  await expect(page.locator('#settings-default-workspace input')).toHaveValue('C:/MockWorkspace');
 });
 
 test('friendly model names and Thinking variants retain exact provider model identities', async () => {
@@ -1432,6 +1776,9 @@ test('friendly model names and Thinking variants retain exact provider model ide
   await page.getByTestId('chat-model-picker-button').click();
   const options = page.locator('[data-testid^="chat-model-picker-option-"]');
   await expect(options).toHaveCount(2); await expect(options.first()).toContainText('Gemini 3.7 Flash');
+  const actions = page.locator('[data-testid^="chat-model-actions-"]').first();
+  expect(await actions.locator('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid')?.split('-').at(2)))).toEqual(['pin', 'edit', 'delete']);
+  await expect(actions).toHaveCSS('gap', '8px');
   await options.first().click();
   expect(mock.sessions).toHaveLength(0);
   await page.getByTestId('chat-thinking-picker-button').click();

@@ -1,6 +1,6 @@
 {
   "name": "pincer",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "author": "ZitZdorovo",
   "license": "MIT",
@@ -14,8 +14,10 @@
   "scripts": {
     "build": "tsc --noEmit && vite build && node scripts/build-electron.mjs",
     "package:win": "electron-builder --win nsis --x64 --publish never",
-    "package:win:publish": "electron-builder --win nsis --x64 --publish always",
+    "package:mac": "electron-builder --mac --x64 --arm64 --publish never",
+    "package:linux": "electron-builder --linux AppImage --x64 --publish never",
     "verify:installer": "node scripts/verify-installer.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
     "start": "node scripts/start.mjs",
     "dev": "npm run build && npm start",
     "typecheck": "tsc --noEmit",

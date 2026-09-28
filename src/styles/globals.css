@@ -1253,11 +1253,34 @@ button:active:not(:disabled),
     @apply fixed inset-0 z-50 bg-black/30 dark:bg-black/60;
   }
 
+  .openx-dialog-overlay.pincer-image-lightbox-overlay {
+    background-color: rgb(0 0 0 / 50%);
+    backdrop-filter: blur(2px);
+  }
+
+  .dark .openx-dialog-overlay.pincer-image-lightbox-overlay {
+    background-color: rgb(0 0 0 / 36%);
+  }
+
   .openx-dialog-content {
     @apply fixed left-1/2 top-1/2 z-50 w-full outline-none;
     transform: translate(-50%, -50%);
     transform-origin: center;
     will-change: opacity, transform;
+  }
+
+  .pincer-image-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    background: transparent;
+    backdrop-filter: none;
+    transform: none;
+    animation: none !important;
   }
 
   .openx-dialog-overlay[data-state='open'] {

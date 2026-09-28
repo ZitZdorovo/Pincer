@@ -54,6 +54,20 @@
   "runError": {
     "title": "Model call failed"
   },
+  "attachments": {
+    "file": "File",
+    "preview": "Preview {{name}}",
+    "download": "Download to computer",
+    "downloadNamed": "Download {{name}}",
+    "closePreview": "Close preview",
+    "previous": "Previous image",
+    "next": "Next image",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "position": "{{current}} / {{total}}",
+    "sizeKb": "{{size}} KB",
+    "sizeMb": "{{size}} MB"
+  },
   "acp": {
     "thought": "Thought",
     "tool": "Tool",
@@ -235,6 +249,11 @@
     "generatedReadyWithMissing": "Generated image is ready. Some images could not be loaded."
   },
   "composer": {
+    "slashCommands": "Chat commands",
+    "slashLoading": "Loading commands…",
+    "slashUnavailable": "Gateway does not provide a command catalog",
+    "slashEmpty": "No commands found",
+    "slashCategory": { "session": "Session", "options": "Options", "status": "Status", "management": "Management", "media": "Media", "tools": "Tools" },
     "attachFiles": "Attach files",
     "pickSkill": "Choose skill",
     "skillButton": "Skills",
@@ -266,6 +285,7 @@
     "presetNamePrompt": "Preset name",
     "editPresetName": "Edit preset name",
     "deletePreset": "Delete preset",
+    "deleteModel": "Delete model and its thinking variants",
     "presetModelUnavailable": "Model is no longer available: {{model}}",
     "requestStats": "Request statistics",
     "contextWindow": "Context window",
@@ -370,7 +390,9 @@
     "unpin": "Unpin chat",
     "rename": "Rename chat",
     "copy": "Copy title",
-    "copied": "Chat title copied"
+    "copied": "Chat title copied",
+    "compact": "Compact context",
+    "compactionStarted": "Context compaction started"
   },
   "questionDirectory": {
     "title": "Question directory",

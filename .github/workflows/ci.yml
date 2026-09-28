@@ -1,4 +1,4 @@
-name: Проверка и сборка Pincer
+name: Проверка Pincer
 
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   windows:
-    name: Тесты и Windows-сборка
+    name: Тесты Windows
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -43,23 +43,6 @@ jobs:
 
       - name: Запустить Electron E2E
         run: npx playwright test
-
-      - name: Собрать установщик Windows
-        run: npm run package:win
-
-      - name: Проверить установщик и его версию
-        run: npm run verify:installer
-
-      - name: Сохранить готовую сборку
-        uses: actions/upload-artifact@v4
-        with:
-          name: Pincer-Windows-${{ github.sha }}
-          if-no-files-found: error
-          retention-days: 14
-          path: |
-            release/Pincer-Setup-*.exe
-            release/Pincer-Setup-*.exe.blockmap
-            release/latest.yml
 
       - name: Сохранить отчёт при ошибке интерфейсных тестов
         if: failure()

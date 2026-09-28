@@ -1,44 +1,106 @@
 name: Release Pincer
+
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Существующий тег вида v0.5.1'
-        required: true
-        type: string
+
 concurrency:
   group: pincer-release-${{ github.ref }}
   cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
-  windows:
-    name: Проверка и публикация Windows-релиза
+  verify:
+    name: Проверка релиза
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
           cache: npm
       - run: npm ci
-      - name: Verify release version
+      - name: Сверить тег и версию
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { $env:GITHUB_REF_NAME }
-          if ($tag -ne "v$version") { throw "Tag $tag and package version $version differ" }
-
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag and package version differ" }
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
       - run: npx playwright test
-      - run: npm run package:win:publish
-      - run: npm run verify:installer
+
+  package:
+    name: Сборка ${{ matrix.target }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            assets: |
+              release/Pincer-Setup-*.exe
+              release/Pincer-Setup-*.exe.blockmap
+              release/latest.yml
+          - os: macos-latest
+            target: mac
+            assets: |
+              release/Pincer-*-mac-*.dmg
+              release/Pincer-*-mac-*.zip
+              release/latest-mac.yml
+          - os: ubuntu-latest
+            target: linux
+            assets: |
+              release/Pincer-*-linux-*.AppImage
+              release/latest-linux.yml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package:${{ matrix.target }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: npm run verify:package -- ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pincer-${{ matrix.target }}-${{ github.ref_name }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ matrix.assets }}
+
+  publish:
+    name: Единый релиз
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Pincer-*-${{ github.ref_name }}
+          path: release
+          merge-multiple: true
+      - name: Опубликовать все платформы в одном релизе
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          awk 'NR > 1 && /^# Pincer / { exit } { print }' RELEASE_NOTES.md > release-notes-current.md
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "Pincer ${GITHUB_REF_NAME#v}" --notes-file release-notes-current.md --latest
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --title "Pincer ${GITHUB_REF_NAME#v}" --notes-file release-notes-current.md --verify-tag --latest
+          fi

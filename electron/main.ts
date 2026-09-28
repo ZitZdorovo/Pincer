@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, session, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GatewayService } from './gateway/service';
 import { Vault } from './gateway/vault';
@@ -9,6 +9,7 @@ import { parseConnection } from './gateway/validation';
 import type { CloseBehavior, Result } from '../shared/contract';
 import { WorkspaceService } from './workspace/service';
 import { RunTiming } from './workspace/run-timing';
+import { SentFiles } from './workspace/sent-files';
 import { QuotaService } from './workspace/quotas';
 import { ManagementService } from './workspace/management';
 import { WorkspaceFilesService } from './workspace/files';
@@ -73,10 +74,11 @@ async function start(): Promise<void> {
   const service = gateway;
   const timing = new RunTiming({ path: join(app.getPath('userData'), 'run-timing.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
   const projects = new ProjectStore({ path: join(app.getPath('userData'), 'projects.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
-  const workspace = new WorkspaceService(service, (message) => vault.redact(message), timing, projects);
+  const sentFiles = new SentFiles({ path: join(app.getPath('userData'), 'sent-files.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
+  const workspace = new WorkspaceService(service, (message) => vault.redact(message), timing, projects, sentFiles);
   const management = new ManagementService(service);
   const quotas = new QuotaService(() => service.operatorRequest('usage.status', {}), () => JSON.stringify(service.snapshot().profile), { path: join(app.getPath('userData'), 'quota-sources.vault'), cipher: { encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) } });
-  const files = new WorkspaceFilesService(service);
+  const files = new WorkspaceFilesService(service, (key) => workspace.localRootForSession(key));
   const configuration = new ConfigurationService(service, new ProviderCredentials(join(app.getPath('userData'), 'provider-credentials.vault'), { encrypt: text => safeStorage.encryptString(text), decrypt: data => safeStorage.decryptString(data) }, () => JSON.stringify([service.snapshot().profile, vault.identity.deviceId, 'operator'])));
   const gatewaySettings = new GatewaySettingsService(service);
   const gatewaySecrets = new GatewaySecretsService(service);
@@ -146,12 +148,34 @@ async function start(): Promise<void> {
   operation('approvals:resolve', (id, token, decision) => approvals.resolve(id, token, decision), true);
   operation('chat:refresh', () => workspace.refresh());
   operation('chat:models-refresh', () => workspace.refreshModels());
+  operation('chat:commands', (agentId) => workspace.commands(agentId));
   operation('chat:select', (key) => workspace.select(key));
   operation('chat:prepare', (location) => workspace.prepare(location));
   operation('chat:create', (agent, location) => workspace.create(agent, location), true);
+  operation('chat:list-directories', (path) => workspace.listDirectories(path));
   operation('chat:project-register', (name, path) => workspace.registerProject(name, path), true);
+  operation('chat:project-path', (id, path) => workspace.updateProjectPath(id, path), true);
   operation('chat:project-remove', (id) => workspace.removeProject(id), true);
   operation('chat:send', (message, key, attachments, target) => workspace.send(message, key, attachments, target), true);
+  operation('chat:artifact-download', (id) => workspace.downloadArtifact(id), true);
+  const saveChatArtifact = async (id: unknown): Promise<string | undefined> => {
+    if (!window) throw new Error('WINDOW_UNAVAILABLE');
+    const artifact = await workspace.downloadArtifact(id);
+    if (artifact.url) { await shell.openExternal(artifact.url); return; }
+    if (!artifact.data) throw new Error('ARTIFACT_DOWNLOAD_UNAVAILABLE');
+    const picked = await dialog.showSaveDialog(window, { defaultPath: basename(artifact.title) || 'artifact' });
+    if (picked.canceled || !picked.filePath) return;
+    writeFileSync(picked.filePath, Buffer.from(artifact.data, 'base64'));
+    return picked.filePath;
+  };
+  operation('chat:artifact-save', async (id) => { await saveChatArtifact(id); }, true);
+  operation('chat:artifact-open', async (id) => {
+    const path = await saveChatArtifact(id);
+    if (!path) return;
+    const error = await shell.openPath(path);
+    if (error) throw new Error('ARTIFACT_OPEN_FAILED');
+  }, true);
+  operation('chat:compact', () => workspace.compact(), true);
   operation('chat:permission', (mode) => workspace.setPermission(mode), true);
   operation('desktop:choose-directory', async () => {
     if (!window) throw new Error('WINDOW_UNAVAILABLE');

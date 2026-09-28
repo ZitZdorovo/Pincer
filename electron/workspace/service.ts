@@ -1,15 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { posix, win32 } from 'node:path';
 import type { EventFrame } from '@openclaw/gateway-protocol';
 import { validateSessionsCreateParams, validateSessionsPatchParams } from '@openclaw/gateway-protocol';
-import type { ChatMessage, MemoryFile, MemoryHealth, MemorySearch, ModelInfo, WorkspaceState } from '../../shared/contract';
+import type { ArtifactDownload, ChatArtifact, ChatMessage, MessageFile, MemoryFile, MemoryHealth, MemorySearch, ModelInfo, SlashCommand, WorkspaceState } from '../../shared/contract';
 import { GatewayService } from '../gateway/service';
 import { isRecord } from '../gateway/validation';
 import { parseAttachments } from './attachments';
-import { messageFiles } from './messages';
 import { projectTranscript, tokenUsage, metric, timestamp, toolInput } from './transcript';
 import { RunTiming } from './run-timing';
+import { SentFiles } from './sent-files';
 import { activityText } from './activity';
 import { ProjectStore } from './projects';
+import { artifactUrl, readGatewayArtifact } from './artifact-http';
+import { sameWorkspacePath } from '../../shared/workspace-path';
 
 const record = (value: unknown): Record<string, unknown> => isRecord(value) ? value : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -32,7 +35,7 @@ const hash = (content: string, missing: boolean) => createHash('sha256').update(
 
 /** Explicit product operations. This class is the only chat/memory RPC adapter. */
 export class WorkspaceService {
-  private state: WorkspaceState = { scope: '', revision: 0, loading: false, agents: [], agentId: '', sessions: [], selected: null, messages: [], activeRun: null, stream: '', tool: null, hasMore: false, error: null, models: [], model: null, thinking: null, projects: [], projectError: null };
+  private state: WorkspaceState = { scope: '', revision: 0, loading: false, agents: [], agentId: '', sessions: [], selected: null, messages: [], artifacts: [], activeRun: null, stream: '', tool: null, hasMore: false, error: null, models: [], model: null, thinking: null, projects: [], projectError: null };
   private modelCatalogGeneration = 0;
   private listeners = new Set<(state: WorkspaceState) => void>();
   private epoch = 0;
@@ -44,8 +47,13 @@ export class WorkspaceService {
   private rawHistory: unknown[] = [];
   private sending = false;
   private runsBySession = new Map<string, { id: string; startedAt?: number; phase: import('../../shared/contract').RunPhase }>();
+  private finishedBySession = new Map<string, import('../../shared/contract').ChatSession['lastRunState']>();
+  private unseenCompletions = new Set<string>();
+  private terminalRuns = new Set<string>();
+  private lastRunProbeAt = 0;
+  private probingRuns = false;
   private historyLoad: { epoch: number; changed: boolean } | null = null;
-  constructor(private gateway: GatewayService, private redact: (message: string) => string, private timing = new RunTiming(), private projects = new ProjectStore()) {
+  constructor(private gateway: GatewayService, private redact: (message: string) => string, private timing = new RunTiming(), private projects = new ProjectStore(), private sentFiles = new SentFiles()) {
     gateway.onOperatorEvent((event) => this.event(event));
     gateway.subscribe((state) => {
       const endpoint = JSON.stringify(state.profile);
@@ -53,8 +61,8 @@ export class WorkspaceService {
         this.endpoint = endpoint;
         this.state.scope = createHash('sha256').update(endpoint).digest('hex');
         ++this.epoch;
-        this.state = { ...this.state, agents: [], agentId: '', sessions: [], selected: null, messages: [], activeRun: null, stream: '', tool: null, error: null, hasMore: false, models: [], model: null, thinking: null, projects: [], projectError: null, draftLocation: undefined };
-        this.sequence.clear(); this.runsBySession.clear(); this.rawHistory = []; this.state.liveTools = []; this.state.runStartedAt = undefined; this.state.permissionMode = 'full'; this.state.effectivePermissionMode = 'full'; this.state.contextTokens = undefined; this.state.contextWindow = undefined; this.state.thinkingOptions = []; this.state.spawnDepth = undefined;
+        this.state = { ...this.state, agents: [], agentId: '', sessions: [], selected: null, messages: [], artifacts: [], activeRun: null, stream: '', tool: null, error: null, hasMore: false, models: [], model: null, thinking: null, projects: [], projectError: null, draftLocation: undefined, serverPlatform: undefined };
+        this.sequence.clear(); this.runsBySession.clear(); this.finishedBySession.clear(); this.unseenCompletions.clear(); this.terminalRuns.clear(); this.lastRunProbeAt = 0; this.rawHistory = []; this.state.liveTools = []; this.state.runStartedAt = undefined; this.state.permissionMode = 'full'; this.state.effectivePermissionMode = 'full'; this.state.contextTokens = undefined; this.state.contextWindow = undefined; this.state.thinkingOptions = []; this.state.spawnDepth = undefined;
         this.timing.clearActive(); this.state.runPhase = undefined; this.state.liveActivity = []; this.state.compaction = undefined;
         this.emit();
       }
@@ -74,8 +82,72 @@ export class WorkspaceService {
     if (record(value).ok === false) throw new Error(string(record(record(value).error).message) || 'OPERATION_FAILED');
     return value;
   }
+  async commands(agentId: unknown): Promise<SlashCommand[]> {
+    if (!this.gateway.operatorMethods().includes('commands.list')) throw new Error('COMMAND_CATALOG_UNAVAILABLE');
+    const response = record(await this.rpc('commands.list', { agentId: bounded(agentId, 200), includeArgs: true }));
+    if (!Array.isArray(response.commands)) throw new Error('INVALID_COMMAND_CATALOG');
+    return list(response.commands).flatMap((value): SlashCommand[] => {
+      const command = record(value);
+      const name = string(command.name).replace(/^\/+/, '');
+      if (!/^[^\s/\\\u0000-\u001f]{1,200}$/u.test(name) || !['text', 'both'].includes(string(command.scope))) return [];
+      const category = string(command.category);
+      const source = string(command.source);
+      if (!['native', 'skill', 'plugin'].includes(source)) return [];
+      return [{
+        name, description: string(command.description).slice(0, 2000),
+        category: (['session', 'options', 'status', 'management', 'media', 'tools'].includes(category) ? category : 'tools') as SlashCommand['category'],
+        source: source as SlashCommand['source'], acceptsArgs: command.acceptsArgs === true,
+        textAliases: list(command.textAliases).filter((alias): alias is string => typeof alias === 'string' && /^\/?[^\s/\\\u0000-\u001f]{1,200}$/u.test(alias)).slice(0, 20),
+        args: list(command.args).flatMap((arg) => { const item = record(arg); return typeof item.name === 'string' && item.name.length <= 100 ? [{ name: item.name, required: item.required === true }] : []; }),
+      }];
+    });
+  }
+  private validateGatewayPath(path: string): void {
+    if (!this.state.serverPlatform) return;
+    const valid = this.state.serverPlatform === 'win32' || this.state.serverPlatform === 'windows' ? win32.isAbsolute(path) : posix.isAbsolute(path);
+    if (!valid) throw new Error('GATEWAY_CWD_MUST_BE_ABSOLUTE');
+  }
+  private isLocalNodePath(path: string): boolean {
+    const localPlatform = process.platform === 'win32' ? 'windows' : process.platform;
+    const serverPlatform = this.state.serverPlatform === 'win32' ? 'windows' : this.state.serverPlatform;
+    const localAbsolute = process.platform === 'win32' ? win32.isAbsolute(path) : posix.isAbsolute(path);
+    if (!localAbsolute || !serverPlatform || serverPlatform === localPlatform) return false;
+    const serverAbsolute = serverPlatform === 'windows' ? win32.isAbsolute(path) : posix.isAbsolute(path);
+    return !serverAbsolute;
+  }
+  private executionNodeForPath(path: string): string | undefined {
+    if (!this.isLocalNodePath(path)) return undefined;
+    const node = this.gateway.snapshot();
+    if (node.node.phase !== 'connected' || !node.deviceId || !node.nodeCommands.includes('system.run')) throw new Error('LOCAL_NODE_UNAVAILABLE');
+    return node.deviceId;
+  }
+  private validateWorkspacePath(path: string): string | undefined {
+    const execNode = this.executionNodeForPath(path);
+    if (!execNode) this.validateGatewayPath(path);
+    return execNode;
+  }
+  private validateProjectPath(path: string): void {
+    if (!this.isLocalNodePath(path)) this.validateGatewayPath(path);
+  }
+  localRootForSession(sessionKey: string): string | undefined {
+    const session = this.state.sessions.find((item) => item.key === sessionKey);
+    const cwd = session?.cwd || this.projects.sessionPath(this.state.scope, sessionKey);
+    if (!cwd) return undefined;
+    return this.isLocalNodePath(cwd) ? cwd : undefined;
+  }
+  async listDirectories(path?: unknown): Promise<{ path: string; home: string; parent?: string; entries: { name: string; path: string }[] }> {
+    if (!this.gateway.operatorMethods().includes('fs.listDir')) throw new Error('GATEWAY_DIRECTORY_BROWSER_UNAVAILABLE');
+    const requested = path === undefined ? undefined : bounded(path, 8192);
+    if (requested) this.validateGatewayPath(requested);
+    const result = record(await this.rpc('fs.listDir', requested ? { path: requested } : {}));
+    const directory = bounded(result.path, 8192);
+    const home = bounded(result.home, 8192);
+    const parent = typeof result.parent === 'string' ? result.parent : undefined;
+    const entries = list(result.entries).map(record).map((entry) => ({ name: string(entry.name), path: string(entry.path) })).filter((entry) => entry.name && entry.path);
+    return { path: directory, home, ...(parent ? { parent } : {}), entries };
+  }
   private async loadModels(agentId: string): Promise<ModelInfo[]> {
-    const catalog = record(await this.rpc('models.list', { agentId, view: 'configured', includeProviderCapabilities: true }));
+    const catalog = record(await this.rpc('models.list', { agentId, view: 'configured', includeProviderCapabilities: true, refresh: true }));
     const models = list(catalog.models).map((entry) => {
       const model = record(entry); const provider = string(model.provider); const rawId = string(model.id) || string(model.key);
       const id = provider && !rawId.startsWith(`${provider}/`) ? `${provider}/${rawId}` : rawId;
@@ -119,14 +191,20 @@ export class WorkspaceService {
       const agents = record(agentsValue);
       if (!Array.isArray(agents.agents) || !Array.isArray(record(sessionsValue).sessions)) throw new Error('INVALID_WORKSPACE_RESPONSE');
       this.state.agents = list(agents.agents).map((entry) => ({ id: string(record(entry).id), name: string(record(entry).name) || string(record(entry).id), thinkingOptions: list(record(entry).thinkingOptions).filter((option): option is string => typeof option === 'string') })).filter((agent) => agent.id);
+      if (this.gateway.operatorMethods().includes('system.info')) {
+        try { const info = record(await this.rpc('system.info')); if (epoch === this.epoch) this.state.serverPlatform = string(info.platform); }
+        catch { this.state.serverPlatform = undefined; }
+      }
       this.state.agentId = string(agents.defaultId) || this.state.agents[0]?.id || '';
       this.state.sessions = list(record(sessionsValue).sessions).map((entry) => {
         const item = record(entry);
-        const key = string(item.key); const known = this.runsBySession.get(key);
-        const serverRun = string(list(item.activeRunIds)[0]) || string(record(item.inFlightRun).runId);
-        if (serverRun) this.runsBySession.set(key, { id: serverRun, startedAt: known?.startedAt ?? timestamp(item.runStartedAt ?? item.startedAt), phase: known?.phase ?? 'starting' });
-        const run = serverRun ? this.runsBySession.get(key) : known;
-        return { key, title: string(item.label) || string(item.derivedTitle) || string(item.displayName) || key, agentId: string(item.agentId) || undefined, pinned: item.pinned === true, updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : undefined, model: string(item.modelOverride) || string(item.model) || undefined, cwd: string(item.execCwd) || string(item.spawnedCwd) || string(item.spawnedWorkspaceDir) || undefined, activeRunId: run?.id, runStartedAt: run?.startedAt, runPhase: run?.phase };
+        const key = string(item.key);
+        const gatewayStatus = this.applyGatewaySessionStatus(key, item);
+        const run = this.runsBySession.get(key);
+        // Pincer's saved choice belongs to this chat. A remote Gateway may
+        // report its own Linux cwd even when execution uses a local node.
+        const cwd = (key ? this.projects.sessionPath(this.state.scope, key) : undefined) || string(item.execCwd) || string(item.cwd) || string(item.spawnedCwd) || string(item.spawnedWorkspaceDir) || this.state.sessions.find((session) => session.key === key)?.cwd;
+        return { key, title: string(item.label) || string(item.derivedTitle) || string(item.displayName) || key, preview: string(item.lastMessagePreview) || undefined, agentId: string(item.agentId) || undefined, pinned: item.pinned === true, unread: item.unread === true || this.unseenCompletions.has(key), updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : undefined, model: string(item.modelOverride) || string(item.model) || undefined, cwd, activeRunId: run?.id, runStartedAt: run?.startedAt, runPhase: run?.phase, gatewayStatus, lastRunState: this.finishedBySession.get(key) };
       }).filter((entry) => entry.key);
       const modelGeneration = ++this.modelCatalogGeneration;
       const models = await this.loadModels(this.state.agentId);
@@ -147,18 +225,26 @@ export class WorkspaceService {
     const previousRun = this.state.activeRun; const previousTools = this.state.liveTools; const previousActivity = this.state.liveActivity; const previousCompaction = this.state.compaction;
     const epoch = ++this.epoch;
     this.state.selected = selected;
+    this.unseenCompletions.delete(selected);
+    const reading = this.state.sessions.find((session) => session.key === selected);
+    if (reading) reading.unread = false;
     this.state.draftLocation = undefined;
     this.historyLoad = { epoch, changed: false };
     this.state.loading = true; this.state.error = null;
-    if (previous !== selected) { this.state.messages = []; this.state.activeRun = null; this.state.stream = ''; this.state.tool = null; this.state.runStartedAt = undefined; this.state.runPhase = undefined; this.state.liveTools = []; this.state.liveActivity = []; this.state.compaction = undefined; }
+    if (previous !== selected) { this.state.messages = []; this.state.artifacts = []; this.state.activeRun = null; this.state.stream = ''; this.state.tool = null; this.state.runStartedAt = undefined; this.state.runPhase = undefined; this.state.liveTools = []; this.state.liveActivity = []; this.state.compaction = undefined; }
     this.emit();
     try {
+      if (previous !== selected && reading) {
+        try { await this.rpc('sessions.patch', { key: selected, unread: false }); }
+        catch { /* Chat selection still works when acknowledgement is unavailable. */ }
+      }
       if (previous && previous !== selected) await this.rpc('sessions.messages.unsubscribe', { key: previous });
       await this.rpc('sessions.messages.subscribe', { key: selected });
       const value = record(await this.rpc('chat.history', { sessionKey: selected, limit: 100 }));
       if (epoch !== this.epoch) return;
       this.rawHistory = list(value.messages);
-      this.state.messages = this.timing.apply(this.state.scope, selected, messages(this.rawHistory));
+      this.state.messages = this.timing.apply(this.state.scope, selected, this.sentFiles.restore(this.state.scope, selected, messages(this.rawHistory)));
+      await this.loadArtifacts(selected, epoch);
       const info = record(value.sessionInfo);
       const session = this.state.sessions.find((item) => item.key === selected);
       // The explicit per-session choice wins over the currently resolved agent
@@ -180,9 +266,10 @@ export class WorkspaceService {
       }
       this.state.contextWindow = metric(info.contextTokens, value.contextTokens, info.contextWindow, value.contextWindow, this.state.models.find((m) => m.id === this.state.model)?.contextWindow);
       const inFlight = record(value.inFlightRun);
-      this.state.activeRun = string(inFlight.runId) || string(list(info.activeRunIds)[0]) || null;
+      const historyRun = string(inFlight.runId) || string(list(info.activeRunIds)[0]);
+      this.state.activeRun = historyRun && !this.terminalRuns.has(historyRun) ? historyRun : null;
       if (this.state.activeRun) this.setSessionRun(selected, this.state.activeRun, this.timing.get(this.state.activeRun)?.phase ?? (inFlight.text ? 'responding' : 'starting'), this.timing.get(this.state.activeRun)?.started ?? timestamp(inFlight.startedAt ?? inFlight.startedAtMs) ?? Date.now());
-      else this.setSessionRun(selected, null);
+      else if (info.hasActiveRun === false || !['running', 'queued'].includes(session?.gatewayStatus ?? '')) this.setSessionRun(selected, null);
       const observed = this.timing.get(this.state.activeRun);
       this.state.runStartedAt = this.state.activeRun ? observed?.started ?? timestamp(inFlight.startedAt ?? inFlight.startedAtMs) ?? this.runsBySession.get(selected)?.startedAt ?? Date.now() : undefined;
       this.state.runPhase = this.state.activeRun ? observed?.phase ?? (inFlight.text ? 'responding' : 'starting') : undefined;
@@ -204,14 +291,85 @@ export class WorkspaceService {
       if (epoch === this.epoch) { this.state.loading = false; this.emit(); }
     }
   }
-  async prepare(location: unknown = {}): Promise<void> {
-    if (!isRecord(location) || Object.keys(location).some((key) => !['projectId', 'cwd'].includes(key))) throw new Error('INVALID_INPUT');
-    const projectId = location.projectId === undefined ? undefined : bounded(location.projectId, 128);
-    const cwd = location.cwd === undefined ? undefined : bounded(location.cwd, 8192);
+  private async loadArtifacts(sessionKey: string, epoch: number): Promise<void> {
+    if (!this.gateway.operatorMethods().includes('artifacts.list')) return;
+    try {
+      const result = record(await this.rpc('artifacts.list', { sessionKey }));
+      if (epoch !== this.epoch) return;
+      this.state.artifacts = list(result.artifacts).map((entry): ChatArtifact | null => {
+        const artifact = record(entry); const id = string(artifact.id); const title = string(artifact.title);
+        const mode = string(record(artifact.download).mode);
+        if (!id || !title || !['bytes', 'url', 'unsupported'].includes(mode)) return null;
+        return { id, title, mimeType: string(artifact.mimeType) || 'application/octet-stream', downloadMode: mode as ChatArtifact['downloadMode'], ...(typeof artifact.sizeBytes === 'number' ? { sizeBytes: artifact.sizeBytes } : {}), ...(typeof artifact.messageSeq === 'number' ? { messageSeq: artifact.messageSeq } : {}), ...(string(artifact.source) ? { source: string(artifact.source) } : {}) };
+      }).filter((item): item is ChatArtifact => item !== null);
+      this.attachArtifactsToMessages();
+      this.emit();
+      await Promise.all(this.state.artifacts.filter((item) => /^image\/(png|jpeg|webp|gif)$/.test(item.mimeType) && item.downloadMode !== 'unsupported' && (item.sizeBytes ?? 0) <= 4 * 1024 * 1024).map(async (item) => {
+        try {
+          const file = await this.downloadArtifact(item.id, sessionKey);
+          if (epoch !== this.epoch || !file.data || Buffer.byteLength(file.data, 'base64') > 4 * 1024 * 1024) return;
+          const current = this.state.artifacts.find((artifact) => artifact.id === item.id);
+          if (current) { current.imageData = `data:${item.mimeType};base64,${file.data}`; this.attachArtifactsToMessages(); this.emit(); }
+        } catch { /* The card remains available for an explicit retry. */ }
+      }));
+    } catch { /* Older Gateways can advertise a method but reject this session. */ }
+  }
+  private attachArtifactsToMessages(): void {
+    for (const artifact of this.state.artifacts) {
+      const name = artifact.title.split(/[\\/]/).at(-1) || artifact.title;
+      const exact = this.state.messages.findIndex((message) => message.files?.some((file) => file.artifactId === artifact.id));
+      const matching = exact >= 0 ? [] : this.state.messages.map((message, index) => ({ message, index })).filter(({ message }) =>
+        message.text.includes(name) || (artifact.source ? message.text.includes(artifact.source) : false) || message.files?.some((file) => file.name === name));
+      const index = exact >= 0 ? exact : matching.at(-1)?.index ?? (artifact.messageSeq && artifact.messageSeq <= this.state.messages.length ? artifact.messageSeq - 1 : -1);
+      if (index < 0) continue;
+      const message = this.state.messages[index];
+      const files = message.files ??= [];
+      const existing = files.find((file) => file.artifactId === artifact.id || file.name === name);
+      if (existing) { existing.name = name; existing.mimeType = artifact.mimeType; existing.sizeBytes = artifact.sizeBytes; existing.artifactId = artifact.id; existing.downloadMode = artifact.downloadMode; existing.imageData ||= artifact.imageData; }
+      else files.push({ name, mimeType: artifact.mimeType, sizeBytes: artifact.sizeBytes, artifactId: artifact.id, downloadMode: artifact.downloadMode, ...(artifact.imageData ? { imageData: artifact.imageData } : {}) });
+    }
+  }
+  async downloadArtifact(id: unknown, sessionKey = this.state.selected): Promise<ArtifactDownload> {
+    const artifactId = bounded(id, 512);
+    if (!sessionKey) throw new Error('NO_SESSION');
+    const profile = this.gateway.snapshot().profile;
+    const value = record(await this.rpc('artifacts.download', { sessionKey, artifactId }));
+    const artifact = record(value.artifact); const mode = string(record(artifact.download).mode);
+    const title = string(artifact.title) || 'artifact'; const mimeType = string(artifact.mimeType) || 'application/octet-stream';
+    if (mode === 'bytes' && value.encoding === 'base64' && typeof value.data === 'string' && value.data.length <= 24 * 1024 * 1024 && /^[A-Za-z0-9+/]*={0,2}$/.test(value.data)) return { title, mimeType, data: value.data };
+    if (mode === 'url' && typeof value.url === 'string') {
+      const current = this.gateway.snapshot().profile;
+      if (!profile || !current || profile.url !== current.url || profile.tlsFingerprint !== current.tlsFingerprint) throw new Error('CONNECTION_CHANGED');
+      const resolved = artifactUrl(profile.url, value.url);
+      if (resolved.sameOrigin) {
+        const bytes = await readGatewayArtifact(resolved.url, profile.tlsFingerprint);
+        return { title, mimeType, data: bytes.toString('base64') };
+      }
+      if (resolved.url.protocol === 'https:') return { title, mimeType, url: resolved.url.href };
+    }
+    throw new Error('ARTIFACT_DOWNLOAD_UNAVAILABLE');
+  }
+  async prepare(location?: unknown): Promise<void> {
+    // An unqualified New Chat keeps the current project. Passing {} explicitly
+    // leaves it and starts in the default workspace instead.
+    const activeCwd = this.state.selected
+      ? this.state.sessions.find((session) => session.key === this.state.selected)?.cwd
+      : this.state.draftLocation?.cwd;
+    const activeProject = location === undefined
+      ? this.state.selected
+        ? this.state.projects.find((project) => sameWorkspacePath(project.path, activeCwd))
+        : this.state.projects.find((project) => project.id === this.state.draftLocation?.projectId)
+      : undefined;
+    const target = location === undefined && activeProject
+      ? { projectId: activeProject.id, cwd: this.state.selected ? activeProject.path : activeCwd || activeProject.path }
+      : location ?? {};
+    if (!isRecord(target) || Object.keys(target).some((key) => !['projectId', 'cwd'].includes(key))) throw new Error('INVALID_INPUT');
+    const projectId = target.projectId === undefined ? undefined : bounded(target.projectId, 128);
+    const cwd = target.cwd === undefined ? undefined : bounded(target.cwd, 8192);
     const previous = this.state.selected;
     ++this.epoch;
     this.state.selected = null; this.state.draftLocation = { ...(projectId ? { projectId } : {}), ...(cwd ? { cwd } : {}) };
-    this.state.messages = []; this.state.activeRun = null; this.state.stream = ''; this.state.tool = null; this.state.hasMore = false; this.state.error = null;
+    this.state.messages = []; this.state.artifacts = []; this.state.activeRun = null; this.state.stream = ''; this.state.tool = null; this.state.hasMore = false; this.state.error = null;
     this.state.model = null; this.state.thinking = null; this.state.runStartedAt = undefined; this.state.runPhase = undefined; this.state.liveTools = []; this.state.liveActivity = []; this.state.compaction = undefined;
     this.rawHistory = []; this.historyLoad = null; this.emit();
     if (previous) {
@@ -226,7 +384,8 @@ export class WorkspaceService {
       const value = record(await this.rpc('chat.history', { sessionKey: this.state.selected, limit: 100, offset: this.nextOffset }));
       if (epoch !== this.epoch) return;
       this.rawHistory = [...list(value.messages), ...this.rawHistory];
-      this.state.messages = this.timing.apply(this.state.scope, this.state.selected!, messages(this.rawHistory));
+      this.state.messages = this.timing.apply(this.state.scope, this.state.selected!, this.sentFiles.restore(this.state.scope, this.state.selected!, messages(this.rawHistory)));
+      this.attachArtifactsToMessages();
       this.state.hasMore = value.hasMore === true;
       this.nextOffset = typeof value.nextOffset === 'number' ? value.nextOffset : this.nextOffset + list(value.messages).length;
     } finally { if (epoch === this.epoch) { this.state.loading = false; this.emit(); } }
@@ -237,25 +396,42 @@ export class WorkspaceService {
     const projectId = location.projectId === undefined ? undefined : bounded(location.projectId, 128);
     const requestedCwd = location.cwd === undefined ? undefined : bounded(location.cwd, 8192);
     const cwd = requestedCwd || this.state.projects.find((project) => project.id === projectId)?.path;
+    const execNode = cwd ? this.validateWorkspacePath(cwd) : undefined;
     const chosenMode = this.state.selected || this.state.permissionMode === undefined ? 'full' : this.state.permissionMode;
     // Pincer project ids organize the local sidebar. Gateway sessions receive
     // the resolved working directory, never projectId together with cwd.
-    const params = { agentId: agent, ...(cwd ? { cwd } : {}), ...(chosenMode ? { permissionMode: chosenMode } : {}), idempotencyKey: randomUUID() };
+    const params = { agentId: agent, ...(cwd ? { cwd } : {}), ...(execNode ? { execNode } : {}), ...(chosenMode ? { permissionMode: chosenMode } : {}), idempotencyKey: randomUUID() };
     if (!validateSessionsCreateParams(params)) throw new Error('INVALID_INPUT');
     const value = record(await this.rpc('sessions.create', params));
     const key = bounded(value.key);
+    if (cwd) { try { this.projects.rememberSessionPath(this.state.scope, key, cwd); } catch (error) { this.state.projectError = this.redact(error instanceof Error ? error.message : 'PROJECTS_UNAVAILABLE'); } }
     await this.select(key);
-    // Keep the new session immediately visible even before the broadcast/list catches up.
-    if (!this.state.sessions.some((session) => session.key === key)) this.state.sessions.unshift({ key, title: key, agentId: agent, cwd });
+    // Keep the chosen folder visible even if sessions.list raced this create.
+    const session = this.state.sessions.find((item) => item.key === key);
+    if (session && cwd) session.cwd = cwd;
+    else if (!session) this.state.sessions.unshift({ key, title: key, agentId: agent, cwd });
     this.emit();
   }
   async registerProject(name: unknown, path: unknown): Promise<void> {
+    this.validateProjectPath(bounded(path, 8192));
     this.projects.add(this.state.scope, name, path);
     this.state.projects = this.projects.list(this.state.scope); this.state.projectError = null; this.emit();
   }
   async removeProject(id: unknown): Promise<void> {
     this.projects.remove(this.state.scope, id);
     this.state.projects = this.projects.list(this.state.scope); this.state.projectError = null; this.emit();
+  }
+  async updateProjectPath(id: unknown, path: unknown): Promise<void> {
+    this.validateProjectPath(bounded(path, 8192));
+    this.projects.updatePath(this.state.scope, id, path);
+    this.state.projects = this.projects.list(this.state.scope); this.state.projectError = null; this.emit();
+  }
+  async compact(): Promise<void> {
+    if (!this.state.selected) throw new Error('SELECT_CHAT');
+    if (this.state.activeRun) throw new Error('RUN_ACTIVE');
+    if (!this.gateway.operatorMethods().includes('sessions.compact')) throw new Error('COMPACTION_UNAVAILABLE');
+    await this.rpc('sessions.compact', { key: this.state.selected });
+    this.scheduleReload();
   }
   async send(text: unknown, idempotencyKey: unknown, attachments?: unknown, targetAgentId?: unknown): Promise<void> {
     const message = bounded(text, 100000, true);
@@ -283,19 +459,21 @@ export class WorkspaceService {
     }
     const params = { sessionKey: key, message, idempotencyKey: id, ...(files.length ? { attachments: files } : {}) };
     if (Buffer.byteLength(JSON.stringify({ type: 'req', id: randomUUID(), method: 'chat.send', params }), 'utf8') > limits.maxPayload) throw new Error('MESSAGE_TOO_LARGE');
+    const sentMessageFiles: MessageFile[] = files.map((file) => ({ name: file.fileName, mimeType: file.mimeType, sizeBytes: file.sizeBytes, data: file.content, ...(/^(image\/png|image\/jpeg|image\/webp|image\/gif)$/i.test(file.mimeType) ? { imageData: `data:${file.mimeType};base64,${file.content}` } : {}) }));
     this.sending = true; this.state.error = null;
     const started = Date.now();
-    this.timing.begin(id, this.state.scope, key, { role: 'user', text: message, files: files.length ? messageFiles({ attachments: files }) : undefined }, this.state.messages, started);
+    this.timing.begin(id, this.state.scope, key, { role: 'user', text: message, files: sentMessageFiles.length ? sentMessageFiles : undefined }, this.state.messages, started);
     this.state.runStartedAt = started; this.state.runPhase = 'starting'; this.setSessionRun(key, id, 'starting', started); this.state.liveTools = []; this.state.liveActivity = []; this.state.compaction = undefined;
     try {
       const reply = record(await this.rpc('chat.send', params));
       this.timing.rename(id, string(reply.runId) || id);
       if (epoch !== this.epoch) return;
+      if (sentMessageFiles.length) this.sentFiles.remember(this.state.scope, key, message, sentMessageFiles, this.state.messages.filter((item) => item.role === 'user').length);
       this.state.activeRun = string(reply.runId) || this.state.activeRun;
       this.setSessionRun(key, this.state.activeRun || id, 'starting', started);
       const observed = this.timing.get(this.state.activeRun);
       this.state.runStartedAt = observed?.started ?? started; this.state.runPhase = observed?.phase ?? 'starting';
-      this.state.messages.push({ role: 'user', text: message, ...(files.length ? { files: messageFiles({ attachments: files }) } : {}) });
+      this.state.messages.push({ role: 'user', text: message, ...(sentMessageFiles.length ? { files: sentMessageFiles } : {}) });
       const session = this.state.sessions.find((entry) => entry.key === key);
       if (session?.title === key) session.title = message.split('\n')[0].slice(0, 100) || files[0]?.fileName || key;
       this.emit();
@@ -308,7 +486,7 @@ export class WorkspaceService {
   async abort(): Promise<void> {
     if (!this.state.activeRun || !this.state.selected) return;
     await this.rpc('sessions.abort', { key: this.state.selected, runId: this.state.activeRun });
-    this.setSessionRun(this.state.selected, null);
+    this.setSessionRun(this.state.selected, null, 'aborted');
     if (this.state.selected) await this.select(this.state.selected);
   }
   async setPermission(mode: unknown): Promise<void> {
@@ -409,21 +587,35 @@ export class WorkspaceService {
   }
   private event(event: EventFrame): void {
     const payload = record(event.payload);
+    if (event.event === 'tick') {
+      if ((this.runsBySession.size || this.state.sessions.some((session) => session.gatewayStatus === 'running' || session.gatewayStatus === 'queued')) && Date.now() - this.lastRunProbeAt >= 10_000) {
+        this.lastRunProbeAt = Date.now();
+        void this.reconcileRuns();
+      }
+      return;
+    }
     const runId = string(payload.runId);
     const sessionKey = string(payload.sessionKey) || string(payload.key);
     const terminal = event.event === 'chat' && ['final', 'aborted', 'error'].includes(string(payload.state));
     // Observe timing even while another chat is selected or history is in flight.
     const observed = this.timing.get(runId);
-    if (observed?.scope === this.state.scope && observed.session === payload.sessionKey) {
-      if (terminal) this.timing.finish(runId);
+    if (observed?.scope === this.state.scope && observed.session === sessionKey) {
+      if (terminal) this.timing.finish(runId, Date.now(), payload.state === 'final');
       if (event.event === 'agent' && payload.stream === 'tool') this.timing.phase(runId, 'working');
       else if ((event.event === 'chat' && payload.state === 'delta') || (event.event === 'agent' && ['assistant', 'reasoning'].includes(string(payload.stream)))) this.timing.phase(runId, 'responding');
     }
     if (event.event === 'pincer.gap') { this.scheduleReload(); return; }
     if (event.event === 'session.message' || event.event === 'sessions.messages') { if (payload.key === this.state.selected || payload.sessionKey === this.state.selected) this.scheduleReload(); return; }
+    // Gateway can deliver a late agent/lifecycle event after chat.final. It must
+    // never resurrect a run that has already reached a terminal chat state.
+    if (!terminal && runId && this.terminalRuns.has(runId)) return;
+    if (terminal && runId) {
+      this.terminalRuns.add(runId);
+      if (this.terminalRuns.size > 200) this.terminalRuns.delete(this.terminalRuns.values().next().value!);
+    }
     const trackedSessionRun = Boolean(sessionKey && runId);
     if (trackedSessionRun) {
-      if (terminal) this.setSessionRun(sessionKey, null);
+      if (terminal) this.setSessionRun(sessionKey, null, payload.state === 'final' ? 'completed' : payload.state === 'aborted' ? 'aborted' : 'error');
       else {
         const phase = event.event === 'agent' && payload.stream === 'tool'
           ? 'working'
@@ -433,7 +625,7 @@ export class WorkspaceService {
         this.setSessionRun(sessionKey, runId, phase, observed?.started);
       }
     }
-    if (payload.sessionKey !== this.state.selected) {
+    if (sessionKey !== this.state.selected) {
       // A terminal event for a background session must immediately refresh its
       // sidebar badge even though that chat is not currently rendered.
       if (trackedSessionRun) this.emit();
@@ -507,7 +699,7 @@ export class WorkspaceService {
     else if (['final', 'aborted', 'error'].includes(string(payload.state))) {
       const finalText = messageText(payload.message) || this.state.stream;
       activityText(this.state.liveActivity ??= [], finalText);
-      if (finalText || this.state.liveTools?.length || this.state.liveActivity?.length) this.state.messages.push({ role: 'assistant', text: this.state.liveActivity.filter(b => b.kind === 'text').map(b => b.text).join('\n\n') || finalText, tools: this.state.liveTools, activity: this.state.liveActivity, usage: tokenUsage(record(payload.message).usage), runId, durationMs: observed?.duration ?? (this.state.runStartedAt !== undefined ? Math.max(0, Date.now() - this.state.runStartedAt) : undefined) });
+      if (finalText || this.state.liveTools?.length || this.state.liveActivity?.length) this.state.messages.push({ role: 'assistant', text: this.state.liveActivity.filter(b => b.kind === 'text').map(b => b.text).join('\n\n') || finalText, tools: this.state.liveTools, activity: this.state.liveActivity, usage: tokenUsage(record(payload.message).usage), runId, runCompleted: payload.state === 'final', durationMs: observed?.duration ?? (this.state.runStartedAt !== undefined ? Math.max(0, Date.now() - this.state.runStartedAt) : undefined) });
       this.state.activeRun = null; this.state.stream = ''; this.state.tool = null;
       this.state.runStartedAt = undefined; this.state.runPhase = undefined; this.state.liveTools = []; this.state.liveActivity = [];
       if (payload.state === 'error') this.fail(new Error(string(payload.errorMessage) || 'CHAT_FAILED'));
@@ -515,13 +707,86 @@ export class WorkspaceService {
     }
     this.emit();
   }
-  private setSessionRun(key: string, runId: string | null, phase: import('../../shared/contract').RunPhase = 'starting', startedAt?: number): void {
+  private async reconcileRuns(): Promise<void> {
+    if (this.probingRuns) return;
+    this.probingRuns = true;
+    const scope = this.state.scope;
+    try {
+      // SessionRow.status is the Gateway's durable lifecycle state. It also
+      // covers runs whose terminal chat event was missed while disconnected.
+      try {
+        const rows = list(record(await this.rpc('sessions.list', { limit: 100, includeDerivedTitles: true, includeLastMessage: true })).sessions);
+        if (scope !== this.state.scope) return;
+        for (const entry of rows) {
+          const row = record(entry); const key = string(row.key);
+          const session = this.state.sessions.find((item) => item.key === key);
+          if (session) { session.gatewayStatus = this.applyGatewaySessionStatus(key, row); session.unread = row.unread === true || this.unseenCompletions.has(key); }
+        }
+        this.emit();
+      } catch { /* A failed status check must not erase the last known state. */ }
+      for (const [key, run] of [...this.runsBySession].slice(0, 20)) {
+        try {
+          const result = record(await this.rpc('chat.history', { sessionKey: key, limit: 1 }));
+          if (scope !== this.state.scope || this.runsBySession.get(key)?.id !== run.id) continue;
+          const info = record(result.sessionInfo);
+          const activeId = string(record(result.inFlightRun).runId) || string(list(info.activeRunIds)[0]);
+          if (activeId) { if (activeId !== run.id && !this.terminalRuns.has(activeId)) { this.setSessionRun(key, activeId); this.emit(); } continue; }
+          if (info.hasActiveRun === true) continue;
+          if (info.hasActiveRun !== false && !Object.hasOwn(result, 'inFlightRun') && !Array.isArray(info.activeRunIds)) continue;
+          const latest = record(list(result.messages).at(-1));
+          const answered = latest.role === 'assistant' && (!run.startedAt || (timestamp(latest.timestamp) ?? 0) >= run.startedAt - 2000);
+          this.setSessionRun(key, null, answered ? 'completed' : undefined);
+          if (this.state.selected === key) {
+            this.state.activeRun = null; this.state.runStartedAt = undefined; this.state.runPhase = undefined;
+            this.scheduleReload();
+          }
+          this.emit();
+        } catch { /* Keep the running status until the Gateway can confirm the session. */ }
+      }
+    } finally { this.probingRuns = false; }
+  }
+  private applyGatewaySessionStatus(key: string, item: Record<string, unknown>): import('../../shared/contract').ChatSession['gatewayStatus'] {
+    const status = string(item.status);
+    const known = this.runsBySession.get(key);
+    const lastRunId = string(item.lastRunId);
+    const activeRunId = string(list(item.activeRunIds)[0]) || string(record(item.inFlightRun).runId);
+    const reportedRun = activeRunId || lastRunId;
+    if (status === 'done' || status === 'failed' || status === 'killed' || status === 'timeout') {
+      // A list snapshot can lag behind a run that was started locally.
+      if (known && (!lastRunId || known.id !== lastRunId)) return 'running';
+      if (lastRunId) this.terminalRuns.add(lastRunId);
+      if (status === 'done' && key !== this.state.selected && this.state.sessions.find((session) => session.key === key)?.gatewayStatus === 'running') this.unseenCompletions.add(key);
+      this.setSessionRun(key, null, status === 'done' ? 'completed' : status === 'killed' ? 'aborted' : 'error');
+      if (this.state.selected === key && this.state.activeRun && (!lastRunId || this.state.activeRun === lastRunId)) {
+        this.state.activeRun = null; this.state.runStartedAt = undefined; this.state.runPhase = undefined;
+        this.scheduleReload();
+      }
+      return status;
+    }
+    if (status === 'running' || status === 'queued') {
+      if (reportedRun && this.terminalRuns.has(reportedRun)) return this.finishedBySession.get(key) === 'completed' ? 'done' : undefined;
+      if (!reportedRun && this.finishedBySession.has(key)) return this.finishedBySession.get(key) === 'completed' ? 'done' : undefined;
+      if (reportedRun) this.setSessionRun(key, reportedRun, known?.phase ?? 'starting', known?.id === reportedRun ? known.startedAt : timestamp(item.runStartedAt ?? item.startedAt));
+      return status;
+    }
+    if (activeRunId && !this.terminalRuns.has(activeRunId)) this.setSessionRun(key, activeRunId, known?.phase ?? 'starting', known?.startedAt ?? timestamp(item.runStartedAt ?? item.startedAt));
+    return this.runsBySession.has(key) ? 'running' : this.finishedBySession.get(key) === 'completed' ? 'done' : undefined;
+  }
+  private setSessionRun(key: string, runId: string | null, outcome?: import('../../shared/contract').ChatSession['lastRunState']): void;
+  private setSessionRun(key: string, runId: string | null, phase: import('../../shared/contract').RunPhase, startedAt?: number): void;
+  private setSessionRun(key: string, runId: string | null, phaseOrOutcome: import('../../shared/contract').RunPhase | import('../../shared/contract').ChatSession['lastRunState'] = 'starting', startedAt?: number): void {
     if (runId) {
       const previous = this.runsBySession.get(key);
-      this.runsBySession.set(key, { id: runId, phase: previous?.id === runId && previous.phase === 'working' ? 'working' : phase, startedAt: previous?.id === runId ? previous.startedAt ?? startedAt : startedAt });
-    } else this.runsBySession.delete(key);
+      this.finishedBySession.delete(key);
+      if (!previous || previous.id !== runId) this.unseenCompletions.delete(key);
+      this.runsBySession.set(key, { id: runId, phase: previous?.id === runId && previous.phase === 'working' ? 'working' : phaseOrOutcome as import('../../shared/contract').RunPhase, startedAt: previous?.id === runId ? previous.startedAt ?? startedAt : startedAt });
+    } else {
+      if (phaseOrOutcome === 'completed' && this.runsBySession.has(key) && key !== this.state.selected) this.unseenCompletions.add(key);
+      this.runsBySession.delete(key);
+      if (phaseOrOutcome === 'completed' || phaseOrOutcome === 'aborted' || phaseOrOutcome === 'error') this.finishedBySession.set(key, phaseOrOutcome);
+    }
     const run = this.runsBySession.get(key); const session = this.state.sessions.find((entry) => entry.key === key);
-    if (session) { session.activeRunId = run?.id; session.runStartedAt = run?.startedAt; session.runPhase = run?.phase; }
+    if (session) { session.activeRunId = run?.id; session.runStartedAt = run?.startedAt; session.runPhase = run?.phase; session.lastRunState = this.finishedBySession.get(key); session.gatewayStatus = run ? 'running' : phaseOrOutcome === 'completed' ? 'done' : phaseOrOutcome === 'aborted' ? 'killed' : phaseOrOutcome === 'error' ? 'failed' : session.gatewayStatus === 'running' || session.gatewayStatus === 'queued' ? undefined : session.gatewayStatus; if (this.unseenCompletions.has(key)) session.unread = true; }
   }
   private scheduleReload(): void {
     if (this.refreshTimer) return;

@@ -2,14 +2,18 @@ import { expect, it } from 'vitest';
 import { messageFiles } from '../../electron/workspace/messages';
 import { parseAttachments } from '../../electron/workspace/attachments';
 it('preserves attachment-only messages and inline raster previews', () => {
-  expect(messageFiles({ attachments: [{ type: 'file', fileName: 'notes.txt', mimeType: 'text/plain', content: 'aGk=' }] })).toEqual([{ name: 'notes.txt', mimeType: 'text/plain' }]);
-  expect(messageFiles({ attachments: [{ fileName: 'gateway.txt', mimeType: 'text/plain', content: 'aGk=' }] })).toEqual([{ name: 'gateway.txt', mimeType: 'text/plain' }]);
-  expect(messageFiles({ content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGk=' } }] })).toEqual([{ name: 'Image', mimeType: 'image/png', imageData: 'data:image/png;base64,aGk=' }]);
+  expect(messageFiles({ attachments: [{ type: 'file', fileName: 'notes.txt', mimeType: 'text/plain', content: 'aGk=' }] })).toEqual([{ name: 'notes.txt', mimeType: 'text/plain', data: 'aGk=' }]);
+  expect(messageFiles({ attachments: [{ fileName: 'gateway.txt', mimeType: 'text/plain', content: 'aGk=' }] })).toEqual([{ name: 'gateway.txt', mimeType: 'text/plain', data: 'aGk=' }]);
+  expect(messageFiles({ content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGk=' } }] })).toEqual([{ name: 'Image', mimeType: 'image/png', imageData: 'data:image/png;base64,aGk=', data: 'aGk=' }]);
 });
 it('accepts safe image data URLs and nested base64 content from Gateway history', () => {
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB';
-  expect(messageFiles({ attachments: [{ type: 'image', fileName: 'pixel.png', mimeType: 'image/png', content: `data:image/png;base64,${png}` }] })).toEqual([{ name: 'pixel.png', mimeType: 'image/png', imageData: `data:image/png;base64,${png}` }]);
-  expect(messageFiles({ content: [{ type: 'input_image', name: 'nested.png', mimeType: 'image/png', content: { base64: png } }] })).toEqual([{ name: 'nested.png', mimeType: 'image/png', imageData: `data:image/png;base64,${png}` }]);
+  expect(messageFiles({ attachments: [{ type: 'image', fileName: 'pixel.png', mimeType: 'image/png', content: `data:image/png;base64,${png}` }] })).toEqual([{ name: 'pixel.png', mimeType: 'image/png', imageData: `data:image/png;base64,${png}`, data: png }]);
+  expect(messageFiles({ content: [{ type: 'input_image', name: 'nested.png', mimeType: 'image/png', content: { base64: png } }] })).toEqual([{ name: 'nested.png', mimeType: 'image/png', imageData: `data:image/png;base64,${png}`, data: png }]);
+});
+it('keeps the Gateway artifact ID on URL-backed images without loading the transcript URL', () => {
+  expect(messageFiles({ content: [{ type: 'image', artifactId: 'image-42', url: '/signed/media', mimeType: 'image/jpeg' }] }))
+    .toEqual([{ name: 'Image', mimeType: 'image/jpeg', artifactId: 'image-42' }]);
 });
 it('never promotes external URLs, executable SVG or filesystem references to image sources', () => {
   const items = messageFiles({ content: [{ type: 'image', mimeType: 'image/png', url: 'https://tracker.example/secret' }, { type: 'image', mimeType: 'image/svg+xml', data: 'aGk=' }, { type: 'file', fileName: 'local', path: 'C:/private.txt' }] });

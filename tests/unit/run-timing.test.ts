@@ -11,6 +11,7 @@ it('keeps an observed 16 seconds when Gateway timestamps coincide; phases do not
   expect(timer.get('run')).toMatchObject({ started: 1000, phase: 'working' });
   timer.finish('run', 17000); timer.finish('run', 90000);
   for (let i = 0; i < 3; i++) expect(timer.apply('scope', 'chat', transcript())[1].durationMs).toBe(16000);
+  expect(timer.apply('scope', 'chat', transcript())[1].runCompleted).toBe(true);
   expect(timer.apply('other-scope', 'chat', transcript())[1].durationMs).toBeUndefined();
   expect(timer.apply('scope', 'other-chat', transcript())[1].durationMs).toBeUndefined();
 });
@@ -24,13 +25,20 @@ it('keeps completion duration by run id even when Gateway omits a usable user ti
   const messages = projectTranscript([{ role: 'user', content: 'Question' }, { role: 'assistant', runId: 'run-with-id', content: 'Answer' }]);
   expect(timer.apply('scope', 'chat', messages)[1].durationMs).toBe(4500);
 });
+it('does not label an aborted run as completed', () => {
+  const timer = new RunTiming(); timer.begin('aborted', 'scope', 'chat', { role: 'user', text: 'Question' }, [], 1000);
+  timer.finish('aborted', 3000, false);
+  const message = timer.apply('scope', 'chat', projectTranscript([{ role: 'user', content: 'Question' }, { role: 'assistant', runId: 'aborted', content: 'Partial answer' }]))[1];
+  expect(message.durationMs).toBe(2000);
+  expect(message.runCompleted).toBeUndefined();
+});
 it('excludes previous identical requests and persists only hashed identity and duration', () => {
   const directory = mkdtempSync(join(tmpdir(), 'pincer-timing-')); const path = join(directory, 'timing');
   const storage = { path, cipher: { encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() } };
   try {
     const timer = new RunTiming(storage); const old = transcript('Question', 500);
     timer.begin('run', 'scope', 'chat', { role: 'user', text: 'Question' }, old, 1000); timer.apply('scope', 'chat', [...old, ...transcript()]); timer.finish('run', 17000);
-    expect(new RunTiming(storage).apply('scope', 'chat', transcript())[1].durationMs).toBe(16000);
+    expect(new RunTiming(storage).apply('scope', 'chat', transcript())[1]).toMatchObject({ durationMs: 16000, runCompleted: true });
     const saved = readFileSync(path, 'utf8'); expect(saved).not.toMatch(/Question|Answer|chat|scope|run/);
     writeFileSync(path, 'CORRUPT'); const broken = new RunTiming(storage); broken.begin('r', 's', 'c', { role: 'user', text: 'Question' }, [], 1000); broken.finish('r', 3000); broken.apply('s', 'c', transcript()); expect(readFileSync(path, 'utf8')).toBe('CORRUPT');
   } finally { rmSync(directory, { recursive: true, force: true }); }

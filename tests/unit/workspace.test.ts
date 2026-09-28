@@ -55,6 +55,106 @@ it('keeps a new chat local until the first send and stores non-Git project folde
   expect(create).toMatchObject({ agentId: 'main', cwd: project.path });
   expect(create).not.toHaveProperty('projectId');
 });
+it('inherits the active project for a new chat and returns to the default workspace after leaving it', async () => {
+  await workspace.registerProject('Research', 'C:\\Research');
+  const project = workspace.snapshot().projects[0];
+  await workspace.prepare({ projectId: project.id, cwd: 'C:\\Research\\Notes' });
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({ projectId: project.id, cwd: 'C:\\Research\\Notes' });
+  await workspace.prepare({ projectId: project.id, cwd: project.path });
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({ projectId: project.id, cwd: project.path });
+
+  await workspace.create('main', workspace.snapshot().draftLocation);
+  const projectChat = workspace.snapshot().selected!;
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({ projectId: project.id, cwd: project.path });
+
+  mock.sessions.find((session) => session.key === projectChat)!.execCwd = '/root/openclaw/workspace';
+  await workspace.refresh();
+  expect(workspace.snapshot().sessions.find((session) => session.key === projectChat)?.cwd).toBe(project.path);
+  await workspace.select(projectChat);
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({ projectId: project.id, cwd: project.path });
+
+  await workspace.prepare({});
+  expect(workspace.snapshot().draftLocation).toEqual({});
+  await workspace.create('main');
+  const defaultChat = workspace.snapshot().selected!;
+  expect(mock.responses.findLast((request) => request.method === 'sessions.create')?.params).not.toHaveProperty('cwd');
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({});
+
+  await workspace.select(projectChat);
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({ projectId: project.id, cwd: project.path });
+  await workspace.select(defaultChat);
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({});
+});
+it('binds a Windows project on a Linux Gateway to the Pincer node', async () => {
+  mock.platform = 'linux';
+  await workspace.refresh();
+  await expect.poll(() => gateway.snapshot().node.phase).toBe('connected');
+  const localPath = 'C:\\Users\\zdawn\\Desktop\\project';
+  await workspace.registerProject('Local project', localPath);
+  await workspace.create('main', { cwd: localPath });
+  expect(mock.responses.findLast((request) => request.method === 'sessions.create')?.params).toMatchObject({ cwd: localPath, execNode: gateway.snapshot().deviceId });
+});
+it('retains a separate chosen workspace for every chat when Gateway reports one shared cwd', async () => {
+  await workspace.create('main', { cwd: 'C:\\First' });
+  const first = workspace.snapshot().selected!;
+  await workspace.create('main', { cwd: 'C:\\Second' });
+  const second = workspace.snapshot().selected!;
+  for (const session of mock.sessions) session.execCwd = 'C:\\Gateway';
+  await workspace.refresh();
+  expect(workspace.snapshot().sessions.find((session) => session.key === first)?.cwd).toBe('C:\\First');
+  expect(workspace.snapshot().sessions.find((session) => session.key === second)?.cwd).toBe('C:\\Second');
+  await workspace.select(first);
+  await workspace.prepare();
+  expect(workspace.snapshot().draftLocation).toEqual({});
+});
+it('keeps a local project available when the node is offline', async () => {
+  mock.platform = 'linux';
+  await workspace.refresh();
+  await gateway.disconnect();
+  const localPath = 'C:\\Users\\zdawn\\Desktop\\offline-project';
+  await workspace.registerProject('Offline project', localPath);
+  expect(workspace.snapshot().projects[0]).toMatchObject({ name: 'Offline project', path: localPath });
+  await expect(workspace.create('main', { cwd: localPath })).rejects.toThrow('LOCAL_NODE_UNAVAILABLE');
+});
+it('lists downloadable Gateway artifacts and previews images', async () => {
+  await workspace.create('main');
+  const key = workspace.snapshot().selected!;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64').toString('base64');
+  mock.artifacts.set(key, [{ id: 'image-1', title: 'picture.png', mimeType: 'image/png', data: png }, { id: 'document-1', title: 'sample.pdf', mimeType: 'application/pdf', data: Buffer.from('PDF').toString('base64') }]);
+  await workspace.select(key);
+  expect(workspace.snapshot().artifacts).toMatchObject([{ title: 'picture.png', imageData: `data:image/png;base64,${png}` }, { title: 'sample.pdf' }]);
+  expect(await workspace.downloadArtifact('document-1')).toMatchObject({ title: 'sample.pdf', data: Buffer.from('PDF').toString('base64') });
+});
+it('attaches equal-named images to the response identified by each artifact ID', async () => {
+  await workspace.create('main'); const key = workspace.snapshot().selected!;
+  mock.histories.set(key, [
+    { role: 'user', content: 'First' },
+    { role: 'assistant', content: [{ type: 'image', artifactId: 'first', url: '/signed/first', mimeType: 'image/png' }] },
+    { role: 'user', content: 'Again' },
+    { role: 'assistant', content: [{ type: 'image', artifactId: 'second', url: '/signed/second', mimeType: 'image/png' }] },
+  ]);
+  const png = Buffer.from('small-image').toString('base64');
+  mock.artifacts.set(key, [
+    { id: 'first', title: 'same.png', mimeType: 'image/png', data: png },
+    { id: 'second', title: 'same.png', mimeType: 'image/png', data: png },
+  ]);
+  await workspace.select(key);
+  const answers = workspace.snapshot().messages.filter((message) => message.role === 'assistant');
+  expect(answers[0].files).toMatchObject([{ name: 'same.png', artifactId: 'first' }]);
+  expect(answers[1].files).toMatchObject([{ name: 'same.png', artifactId: 'second' }]);
+});
+it('requests real Gateway context compaction for the selected session', async () => {
+  await workspace.create('main'); const key = workspace.snapshot().selected;
+  await workspace.compact();
+  expect(mock.responses.findLast((item) => item.method === 'sessions.compact')?.params).toEqual({ key });
+});
 it('preserves 16-second measured duration through a racing history reload with identical timestamps', async () => {
   mock.holdRun = true; mock.deltaDelayMs = 60000; await workspace.create('main');
   const start = Date.now(); const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
@@ -96,11 +196,56 @@ it('keeps run state on its own session while another chat is selected', async ()
   expect(workspace.snapshot().sessions.find((session) => session.key === running)?.activeRunId).toBe('background-run');
   mock.activeRuns.delete(running); mock.broadcast('chat', { sessionKey: running, runId: 'background-run', seq: 2, state: 'final' });
   await expect.poll(() => workspace.snapshot().sessions.find((session) => session.key === running)?.activeRunId).toBeUndefined();
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)?.lastRunState).toBe('completed');
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)?.unread).toBe(true);
+  mock.broadcast('agent', { sessionKey: running, runId: 'background-run', stream: 'lifecycle', data: { phase: 'end' } });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)).toMatchObject({ lastRunState: 'completed' });
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)?.activeRunId).toBeUndefined();
+  await workspace.refresh();
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)?.lastRunState).toBe('completed');
+  await workspace.select(running);
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)?.unread).toBe(false);
+  expect(mock.responses.findLast((request) => request.method === 'sessions.patch')?.params).toMatchObject({ key: running, unread: false });
+  await workspace.send('Another turn', 'next-run');
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)).toMatchObject({ activeRunId: 'next-run' });
+  expect(workspace.snapshot().sessions.find((session) => session.key === running)?.lastRunState).toBeUndefined();
+});
+it('reconciles a missed final event against Gateway history', async () => {
+  mock.holdRun = true; mock.deltaDelayMs = 60000; await workspace.create('main');
+  const key = workspace.snapshot().selected!; await workspace.send('Check background status', 'missed-final');
+  mock.activeRuns.delete(key);
+  mock.histories.get(key)!.push({ role: 'assistant', content: 'Done', timestamp: Date.now() });
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31_000);
+  try {
+    mock.broadcast('tick', { ts: Date.now() });
+    await expect.poll(() => workspace.snapshot().sessions.find((session) => session.key === key)?.lastRunState).toBe('completed');
+    expect(workspace.snapshot().sessions.find((session) => session.key === key)?.activeRunId).toBeUndefined();
+  } finally { clock.mockRestore(); }
+});
+it('uses Gateway session status for an already finished chat and a missed final event', async () => {
+  mock.sessions.push({ key: 'agent:main:finished', label: 'Earlier task', agentId: 'main', status: 'done', lastRunId: 'earlier-run', unread: true });
+  await workspace.refresh();
+  expect(workspace.snapshot().sessions.find((session) => session.key === 'agent:main:finished')).toMatchObject({ gatewayStatus: 'done', lastRunState: 'completed', unread: true });
+  await workspace.select('agent:main:finished');
+  expect(workspace.snapshot().sessions.find((session) => session.key === 'agent:main:finished')?.unread).toBe(false);
+
+  mock.holdRun = true; await workspace.create('main');
+  const key = workspace.snapshot().selected!;
+  await workspace.send('Long task', 'status-run');
+  expect(workspace.snapshot().sessions.find((session) => session.key === key)?.gatewayStatus).toBe('running');
+  mock.activeRuns.delete(key);
+  const row = mock.sessions.find((session) => session.key === key)!;
+  row.status = 'done';
+  mock.broadcast('tick', { ts: Date.now() + 31_000 });
+  await expect.poll(() => workspace.snapshot().sessions.find((session) => session.key === key)?.gatewayStatus).toBe('done');
+  expect(workspace.snapshot().sessions.find((session) => session.key === key)).toMatchObject({ lastRunState: 'completed' });
+  expect(workspace.snapshot().sessions.find((session) => session.key === key)?.activeRunId).toBeUndefined();
 });
 it('shows compaction only from real Gateway events and waits for retry completion', async () => {
   mock.holdRun = true; mock.deltaDelayMs = 60000; await workspace.create('main'); const key = workspace.snapshot().selected!;
   await workspace.send('compact', 'compact-run');
-  mock.broadcast('agent', { sessionKey: key, runId: 'compact-run', stream: 'compaction', data: { phase: 'start' } });
+  mock.broadcast('agent', { key, runId: 'compact-run', stream: 'compaction', data: { phase: 'start' } });
   await expect.poll(() => workspace.snapshot().compaction?.phase).toBe('running');
   mock.broadcast('agent', { sessionKey: key, runId: 'compact-run', stream: 'compaction', data: { phase: 'end', completed: true, willRetry: true } });
   await expect.poll(() => workspace.snapshot().compaction?.phase).toBe('running');

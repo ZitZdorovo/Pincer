@@ -92,7 +92,19 @@ it('deletes a provider with an RFC 7396 null tombstone', async () => {
   await new ConfigurationService({ operatorRequest: request }).deleteProvider('v1', 'first');
   const [, params] = (request.mock.calls as unknown as Array<[string, { raw: string; replacePaths?: string[] }]>).find(([method]) => method === 'config.patch')!;
   expect(JSON.parse(params.raw)).toEqual({ models: { providers: { first: null } } });
-  expect(params.replacePaths).toEqual(['models.providers.first.models']);
+  expect(params.replacePaths).toBeUndefined();
+});
+it('does not replace descendant arrays of a provider being removed', async () => {
+  const request = vi.fn(async (method: string, params?: unknown): Promise<unknown> => {
+    if (method === 'config.get') return { hash: 'v1', config: { models: { providers: { custom: { models: [{ id: 'one' }], headers: ['x'] } } } } };
+    if (method === 'config.patch') {
+      const patch = params as { replacePaths?: string[] };
+      if (patch.replacePaths?.some((path) => path.startsWith('models.providers.custom.'))) throw new Error('invalid replace path');
+      return { ok: true };
+    }
+    return {};
+  });
+  await expect(new ConfigurationService({ operatorRequest: request }).deleteProvider('v1', 'custom')).resolves.toBeUndefined();
 });
 it('removes deleted provider model references from defaults and agents', async () => {
   const request = vi.fn(async (method: string): Promise<unknown> => method === 'config.get'
@@ -101,7 +113,7 @@ it('removes deleted provider model references from defaults and agents', async (
   await new ConfigurationService({ operatorRequest: request }).deleteProvider('v1', 'custom');
   const [, params] = (request.mock.calls as unknown as Array<[string, { raw: string; replacePaths?: string[] }]>).find(([method]) => method === 'config.patch')!;
   expect(JSON.parse(params.raw)).toEqual({ models: { providers: { custom: null } }, agents: { defaults: { model: { primary: null, fallbacks: ['other/model'] } }, list: [{ id: 'main', model: {} }, { id: 'other', model: 'other/model' }] } });
-  expect(params.replacePaths).toEqual(['agents.defaults.model.fallbacks', 'agents.list', 'models.providers.custom.models']);
+  expect(params.replacePaths).toEqual(['agents.defaults.model.fallbacks', 'agents.list']);
 });
 it('removes provider ids from the agent model allowlist before deleting OAuth providers', async () => {
   const request = vi.fn(async (method: string): Promise<unknown> => method === 'config.get'

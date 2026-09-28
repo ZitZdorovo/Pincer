@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { GatewayService } from '../../electron/gateway/service';
 import { fixtureVault } from '../helpers/vault';
 import { MockGateway } from '../helpers/gateway';
@@ -14,7 +15,7 @@ async function setup() {
   cleanup.push(() => mock.close());
   cleanup.push(async () => { await service.disconnect(); });
   const url = await mock.url();
-  return { mock, vault, service, connect: () => service.configure({ url, authMode: 'token', credential: 'TEST_BOOTSTRAP_SECRET' }) };
+  return { mock, vault, dir, service, connect: () => service.configure({ url, authMode: 'token', credential: 'TEST_BOOTSTRAP_SECRET' }) };
 }
 describe('real WebSocket transport through the pinned official SDK', () => {
   it('performs signed handshakes for both roles and serves declared node commands', async () => {
@@ -26,6 +27,29 @@ describe('real WebSocket transport through the pinned official SDK', () => {
     mock.invoke('device.info');
     await expect.poll(() => mock.responses.length).toBeGreaterThan(0);
     expect(mock.responses[0]).toMatchObject({ method: 'node.invoke.result', params: { ok: true, payload: { appVersion: '0.1.0-test' } } });
+  });
+  it('runs a bounded command on the local node and returns its output through the Gateway', async () => {
+    const { mock, service, connect, vault } = await setup();
+    await connect();
+    await expect.poll(() => service.snapshot().node.phase).toBe('connected');
+    const cwd = process.cwd();
+    mock.invoke('system.run', undefined, { command: [process.execPath, '-e', 'process.stdout.write("PINCER_NODE_OK")'], cwd });
+    await expect.poll(() => mock.responses.find((item) => item.method === 'node.invoke.result' && typeof (item.params as { payloadJSON?: string }).payloadJSON === 'string')).toBeDefined();
+    const response = mock.responses.find((item) => item.method === 'node.invoke.result' && typeof (item.params as { payloadJSON?: string }).payloadJSON === 'string');
+    const payload = JSON.parse((response?.params as { payloadJSON: string }).payloadJSON) as { stdout: string; exitCode: number };
+    expect(payload).toMatchObject({ stdout: 'PINCER_NODE_OK', exitCode: 0 });
+    expect(response?.params).toMatchObject({ nodeId: vault.identity.deviceId, ok: true });
+  });
+  it('serves local file bytes through the declared node command', async () => {
+    const { mock, service, connect, dir } = await setup();
+    const file = join(dir, 'project.txt'); writeFileSync(file, 'PINCER_LOCAL_FILE');
+    await connect();
+    await expect.poll(() => service.snapshot().node.phase).toBe('connected');
+    mock.invoke('file.fetch', undefined, { path: file, rootPath: dir });
+    await expect.poll(() => mock.responses.find((item) => item.method === 'node.invoke.result' && typeof (item.params as { payloadJSON?: string }).payloadJSON === 'string')).toBeDefined();
+    const response = mock.responses.find((item) => item.method === 'node.invoke.result' && typeof (item.params as { payloadJSON?: string }).payloadJSON === 'string');
+    const payload = JSON.parse((response?.params as { payloadJSON: string }).payloadJSON) as { ok: boolean; base64: string };
+    expect(payload).toMatchObject({ ok: true, base64: Buffer.from('PINCER_LOCAL_FILE').toString('base64') });
   });
   it('reconnects both roles after a Gateway restart without changing identity', async () => {
     const { mock, service, connect } = await setup();

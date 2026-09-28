@@ -337,11 +337,9 @@ export class ConfigurationService {
     const patchValue = runtimeOnly
       ? cleanup.patch
       : { models: { providers: { [id]: null } }, ...cleanup.patch };
-    // Gateway protects arrays even when their containing provider is deleted.
-    const arrays = (value: unknown, path: string): string[] => Array.isArray(value)
-      ? [path]
-      : Object.entries(rec(value)).flatMap(([key, child]) => arrays(child, `${path}.${key}`));
-    const result = await this.patch(current, patchValue, [...cleanup.replacePaths, ...(!runtimeOnly ? arrays(providers[id], `models.providers.${id}`) : [])]);
+    // A null tombstone removes the whole provider. Replacing paths inside that
+    // deleted object makes current Gateways reject the patch during validation.
+    const result = await this.patch(current, patchValue, cleanup.replacePaths);
     const returnedConfig = rec(result.config);
     if (!runtimeOnly && Object.keys(returnedConfig).length && Object.hasOwn(rec(rec(returnedConfig.models).providers), id)) {
       throw new Error('CONFIG_UPDATE_FAILED');

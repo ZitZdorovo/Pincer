@@ -1,7 +1,7 @@
 // Original OpenX chat title/menu markup. Session operations use Pincer's typed API.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, MoreHorizontal, Pin, Pencil, Copy } from 'lucide-react';
+import { Folder, MoreHorizontal, Pin, Pencil, Copy, FoldVertical } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { ChatToolbar } from './ChatToolbar';
@@ -118,6 +118,7 @@ export function ChatHeader({ session, agents, agentId, targetAgentId, connected,
                     <Copy className="h-4 w-4" />
                     {t('titleMenu.copy')}
                   </button>
+                  <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-foreground/85 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10" onClick={() => { setTitleMenuOpen(false); void window.pincer.chat.compact().then((result) => { if (!result.ok) toast.error(result.error.message); else toast.success(t('titleMenu.compactionStarted')); }); }}><FoldVertical className="h-4 w-4" />{t('titleMenu.compact')}</button>
                 </div>
               )}
             </div>

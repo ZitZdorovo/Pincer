@@ -17,7 +17,12 @@ it('persists arbitrary non-Git folders encrypted and isolated by Gateway scope',
   const scope = 'a'.repeat(64); const other = 'b'.repeat(64);
   const store = new ProjectStore({ path, cipher });
   store.add(scope, 'Far Cry 4', 'C:\\Users\\zdawn\\Documents\\My Games\\Far Cry 4');
+  const project = store.list(scope)[0];
+  store.updatePath(scope, project.id, '/home/user/far-cry-4');
+  store.rememberSessionPath(scope, 'agent:main:pincer:chat', '/srv/projects/example');
   expect(readFileSync(path, 'utf8')).not.toContain('Far Cry 4');
-  expect(new ProjectStore({ path, cipher }).list(scope)).toMatchObject([{ name: 'Far Cry 4', path: 'C:\\Users\\zdawn\\Documents\\My Games\\Far Cry 4' }]);
+  expect(new ProjectStore({ path, cipher }).list(scope)).toMatchObject([{ name: 'Far Cry 4', path: '/home/user/far-cry-4' }]);
+  expect(new ProjectStore({ path, cipher }).sessionPath(scope, 'agent:main:pincer:chat')).toBe('/srv/projects/example');
+  expect(new ProjectStore({ path, cipher }).sessionPath(other, 'agent:main:pincer:chat')).toBeUndefined();
   expect(new ProjectStore({ path, cipher }).list(other)).toEqual([]);
 });

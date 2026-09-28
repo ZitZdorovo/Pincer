@@ -5,13 +5,16 @@ import {
   Bot, ChevronDown, ChevronRight, Clock, Cpu, Folder, FolderOpen,
   FolderPlus, MoreHorizontal, Network, Pencil, Pin, Plus, Puzzle, Search,
   CircleArrowUp, Settings, SquareTerminal, Trash2,
+  LoaderCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { hostApi } from './adapter';
+import { GatewayDirectoryBrowser } from './GatewayDirectoryBrowser';
 import { useChatStore } from './adapter';
 import { useChatOrganizationStore } from './adapter';
 import { useGatewayStore } from './adapter';
@@ -35,9 +38,10 @@ import {
 } from './types';
 
 type DropTarget = { projectId: string; folderId: string | null; beforeChatKey?: string };
-function SidebarActivity() {
+function SidebarActivity({ completed = false }: { completed?: boolean }) {
   const preferences = usePreferences();
-  return preferences.showAgentActivity ? <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />{preferences.language === 'ru' ? 'В работе' : 'Running'}</span> : null;
+  const label = completed ? preferences.language === 'ru' ? 'Выполнено' : 'Completed' : preferences.language === 'ru' ? 'В работе' : 'Running';
+  return preferences.showAgentActivity ? <span data-testid="sidebar-session-activity" data-state={completed ? 'completed' : 'running'} aria-label={label} title={label} className="flex h-6 w-6 shrink-0 items-center justify-center transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">{completed ? <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> : <LoaderCircle className="h-3 w-3 animate-spin text-muted-foreground" strokeWidth={2} />}</span> : null;
 }
 type NodeContextMenu = { kind: 'project' | 'folder'; id: string; x: number; y: number };
 type DeleteTarget =
@@ -180,7 +184,6 @@ export function Sidebar({ active = true }: { active?: boolean }) {
   const organization = useChatOrganizationStore();
   const loadOrganization = organization.load;
   const workspaceLabels = useSettingsStore((state) => state.workspaceLabels);
-  const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
@@ -195,6 +198,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [projectPath, setProjectPath] = useState('');
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [savingProject, setSavingProject] = useState(false);
   const [editingChatKey, setEditingChatKey] = useState<string | null>(null);
   const [editingChatValue, setEditingChatValue] = useState('');
@@ -401,10 +405,10 @@ export function Sidebar({ active = true }: { active?: boolean }) {
     visibleSessions.filter((session) => !placementByKey.has(session.key) && !organization.pinnedChatKeys.includes(session.key)),
     sessionLastActivity,
     t('defaultWorkspace'),
-    chatWorkspacePath,
+    undefined,
     workspaceLabels,
     organization.projects.map((project) => project.path),
-  ), [chatWorkspacePath, organization.pinnedChatKeys, organization.projects, placementByKey, sessionLastActivity, t, visibleSessions, workspaceLabels]);
+  ), [organization.pinnedChatKeys, organization.projects, placementByKey, sessionLastActivity, t, visibleSessions, workspaceLabels]);
   const sessionsForNode = (project: ChatProject, folderId: string | null) => visibleSessions
     .filter((session) => {
       const placement = placementByKey.get(session.key);
@@ -510,11 +514,19 @@ export function Sidebar({ active = true }: { active?: boolean }) {
     if (!projectPath.trim()) return;
     setSavingProject(true);
     try {
-      await organization.createProject(projectName, projectPath);
+      if (editingProjectId) {
+        const result = await window.pincer.chat.updateProjectPath(editingProjectId, projectPath);
+        if (!result.ok) throw new Error(result.error.message);
+      } else await organization.createProject(projectName, projectPath);
       setProjectDialogOpen(false);
       setProjectName('');
       setProjectPath('');
-    } catch (error) { toast.error(String(error)); } finally { setSavingProject(false); }
+      setEditingProjectId(null);
+    } catch (error) {
+      const message = String(error);
+      toast.error(message.includes('LOCAL_NODE_UNAVAILABLE') ? t('chat:pincer.localNodeUnavailable')
+        : message.includes('GATEWAY_CWD_MUST_BE_ABSOLUTE') ? t('chat:pincer.absoluteWorkspace') : message);
+    } finally { setSavingProject(false); }
   };
 
   const createFolder = async (projectId: string, parentId?: string | null) => {
@@ -591,10 +603,14 @@ export function Sidebar({ active = true }: { active?: boolean }) {
   };
 
   const ChatRow = ({ session, project, folderId, sessionList = false }: { session: ChatSession; project?: ChatProject; folderId?: string | null; sessionList?: boolean }) => {
-    const busy = projectSessionRunState(session) === 'busy';
+    const runState = projectSessionRunState(session);
+    const busy = runState === 'busy';
+    const completed = runState === 'completed';
     const unread = attention[session.key]?.unread;
     const pinned = organization.pinnedChatKeys.includes(session.key);
     return (
+      <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>
       <div
         role="button"
         tabIndex={0}
@@ -689,9 +705,10 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         )}
         {sessionList && getAgentDisplayName(session.key) && <span draggable={false} className="mr-1 max-w-24 shrink-0 select-none truncate rounded bg-black/[0.06] px-1.5 py-0.5 text-2xs font-semibold text-foreground/70 dark:bg-white/[0.08]" title={agentById.get(getSessionAgentId(session.key))?.name}>{getAgentDisplayName(session.key)}</span>}
         <OverflowMarqueeText fadeTail>{getSessionDisplayTitle(session, labels)}</OverflowMarqueeText>
-        {busy && <SidebarActivity />}
-        {!busy && unread && <span className="h-1.5 w-1.5 shrink-0 bg-primary" title={t('newMessage')} />}
-        {sessionList && !busy && !unread && (
+        {busy && currentKey !== session.key && <SidebarActivity />}
+        {completed && currentKey !== session.key && <SidebarActivity completed />}
+        {!busy && !completed && unread && currentKey !== session.key && <span className="h-1.5 w-1.5 shrink-0 bg-primary" title={t('newMessage')} />}
+        {sessionList && !busy && !completed && !unread && (
           <span
             draggable={false}
             className="shrink-0 select-none tabular-nums text-2xs text-muted-foreground/75 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
@@ -713,6 +730,16 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           <Pin className="h-3 w-3" />
         </button>
       </div>
+      </TooltipTrigger>
+      <TooltipContent side="right" align="start" sideOffset={10} className="w-[280px] max-w-[calc(100vw-24px)] rounded-xl p-3 text-xs leading-relaxed shadow-xl" data-testid="sidebar-chat-preview">
+        <p className="line-clamp-2 font-semibold text-foreground">{getSessionDisplayTitle(session, labels)}</p>
+        {session.preview && <p className="mt-1 line-clamp-2 text-muted-foreground">{session.preview}</p>}
+        {session.workspacePath && <p className="mt-2 flex items-start gap-1.5 break-all text-muted-foreground"><Folder className="mt-0.5 h-3 w-3 shrink-0" />{session.workspacePath}</p>}
+        {session.agentId && <p className="mt-1 text-muted-foreground">{i18n.language.startsWith('ru') ? 'Агент' : 'Agent'}: {agentById.get(session.agentId)?.name || session.agentId}</p>}
+        {busy && <p className="mt-1 text-muted-foreground">{i18n.language.startsWith('ru') ? 'Выполняется' : 'Running'}</p>}
+        {completed && <p className="mt-1 text-muted-foreground">{i18n.language.startsWith('ru') ? 'Ответ готов' : 'Response ready'}</p>}
+      </TooltipContent>
+      </Tooltip>
     );
   };
 
@@ -756,7 +783,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           onDrop={(event) => { event.stopPropagation(); void dropChat(event, { projectId: project.id, folderId: folder.id }); }}
         >
           {dropTargetId === `folder:${folder.id}` && <DropInsertionIndicator testId="sidebar-folder-drop-indicator" />}
-          {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
           {isCollapsed ? <Folder className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}
           <OverflowMarqueeText>{folder.name}</OverflowMarqueeText>
           <button
@@ -775,7 +802,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         <AnimatedSectionContent collapsed={isCollapsed}>
           <div>
             {children.map((child) => <FolderNode key={child.id} folder={child} project={project} depth={depth + 1} />)}
-            <div className="pl-5">{rows.map((session) => <ChatRow key={session.key} session={session} project={project} folderId={folder.id} />)}</div>
+            <div className="pl-8">{rows.map((session) => <ChatRow key={session.key} session={session} project={project} folderId={folder.id} />)}</div>
           </div>
         </AnimatedSectionContent>
       </div>
@@ -816,7 +843,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           }}
         >
           {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+          <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <OverflowMarqueeText>{project.name}</OverflowMarqueeText>
           <button
             type="button"
@@ -833,7 +860,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         <AnimatedSectionContent collapsed={isCollapsed}>
           <div>
             {folders.map((folder) => <FolderNode key={folder.id} folder={folder} project={project} depth={0} />)}
-            <div className="pl-5">{rows.map((session) => <ChatRow key={session.key} session={session} project={project} folderId={null} />)}</div>
+            <div className="pl-8">{rows.map((session) => <ChatRow key={session.key} session={session} project={project} folderId={null} />)}</div>
           </div>
         </AnimatedSectionContent>
       </section>
@@ -1158,7 +1185,14 @@ export function Sidebar({ active = true }: { active?: boolean }) {
             onContextMenu={(event) => event.preventDefault()}
           >
             <div className="truncate px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground" title={node.path}>{node.name}</div>
-            <button type="button" className={menuItemClass} onClick={() => { createNewChat({ projectId: project.id, cwd: node.path }); closeMenu(); }}><Plus className="h-3.5 w-3.5" />{t('newChat')}</button>
+            <button type="button" className={menuItemClass} onClick={() => {
+              const remotePosix = !organization.canBrowseProjectDirectory;
+              if (remotePosix && !node.path.startsWith('/')) {
+                setEditingProjectId(project.id); setProjectName(project.name); setProjectPath(''); setProjectDialogOpen(true);
+              } else createNewChat({ projectId: project.id, cwd: node.path });
+              closeMenu();
+            }}><Plus className="h-3.5 w-3.5" />{t('newChat')}</button>
+            {nodeContextMenu.kind === 'project' && <button type="button" className={menuItemClass} onClick={() => { setEditingProjectId(project.id); setProjectName(project.name); setProjectPath(project.path); setProjectDialogOpen(true); closeMenu(); }}><Pencil className="h-3.5 w-3.5" />{t('chat:pincer.changeProjectPath')}</button>}
             <button type="button" className={menuItemClass} onClick={() => { void organization.pinNode(nodeContextMenu.kind, node.id, !pinned); closeMenu(); }}>
               <Pin className="h-3.5 w-3.5" />{nodeContextMenu.kind === 'project'
                 ? (pinned ? t('unpinProject') : t('pinProject'))
@@ -1230,7 +1264,6 @@ export function Sidebar({ active = true }: { active?: boolean }) {
                     event.preventDefault();
                     setSearchOpen(false);
                     setProjectDialogOpen(true);
-                    void chooseProjectPath();
                     return;
                   }
                 }
@@ -1266,7 +1299,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
                 <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground/80 hover:bg-black/5 dark:hover:bg-white/10" onClick={() => { createNewChat(); setSearchOpen(false); }}>
                   <Pencil className="h-4 w-4 text-muted-foreground" /><span className="flex-1">{t('newChat')}</span><kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-sans text-[10px] text-muted-foreground dark:bg-white/[0.08]">Ctrl+N</kbd>
                 </button>
-                <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground/80 hover:bg-black/5 dark:hover:bg-white/10" onClick={() => { setSearchOpen(false); setProjectDialogOpen(true); void chooseProjectPath(); }}>
+                <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground/80 hover:bg-black/5 dark:hover:bg-white/10" onClick={() => { setSearchOpen(false); setProjectDialogOpen(true); }}>
                   <FolderOpen className="h-4 w-4 text-muted-foreground" /><span className="flex-1">{t('openFolder')}</span><kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-sans text-[10px] text-muted-foreground dark:bg-white/[0.08]">Ctrl+O</kbd>
                 </button>
 
@@ -1279,15 +1312,17 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
+      <Dialog open={projectDialogOpen} onOpenChange={(open) => { setProjectDialogOpen(open); if (!open) { setEditingProjectId(null); setProjectName(''); setProjectPath(''); } }}>
         <DialogContent className="max-w-md rounded-2xl border border-border bg-surface-modal p-6 shadow-2xl">
-          <DialogTitle className="font-sans text-2xl font-semibold tracking-tight">{t('createTitle')}</DialogTitle>
+          <DialogTitle className="font-sans text-2xl font-semibold tracking-tight">{editingProjectId ? t('chat:pincer.changeProjectPath') : t('createTitle')}</DialogTitle>
           <DialogDescription className="mt-1 text-sm text-muted-foreground">{t('createDescription')}</DialogDescription>
           <div className="mt-4 space-y-3">
             <label className="block text-xs">{t('name')}<Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="mt-1 h-9 rounded-lg" /></label>
-            <label className="block text-xs">{t('workingFolder')}<div className="mt-1 flex gap-2"><Input data-testid="project-path" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder={t('choosePlaceholder')} className="h-9 rounded-lg font-mono text-xs" /><Button variant="outline" size="sm" className="h-9 rounded-lg" onClick={() => void chooseProjectPath()}>{t('browse')}</Button></div></label>
+            <div className="block text-xs"><span>{t('workingFolder')}</span>{organization.canBrowseProjectDirectory ? <div className="mt-1 flex gap-2"><Input data-testid="project-path" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder={t('choosePlaceholder')} className="h-9 rounded-lg font-mono text-xs" /><Button variant="outline" size="sm" className="h-9 rounded-lg" onClick={() => void chooseProjectPath()}>{t('browse')}</Button></div> : <div className="mt-1"><GatewayDirectoryBrowser value={projectPath} onChange={setProjectPath} /></div>}</div>
+            {!organization.canBrowseProjectDirectory && <p className="text-xs text-muted-foreground">{t('chat:pincer.remoteWorkspace')}</p>}
+            {editingProjectId && <p className="text-xs text-muted-foreground">{t('chat:pincer.newChatsUsePath')}</p>}
           </div>
-          <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setProjectDialogOpen(false)}>{t('cancel')}</Button><Button size="sm" onClick={() => void createProject()} disabled={!projectPath || savingProject}>{savingProject ? t('creating') : t('create')}</Button></div>
+          <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setProjectDialogOpen(false)}>{t('cancel')}</Button><Button size="sm" onClick={() => void createProject()} disabled={!projectPath || savingProject}>{savingProject ? t('creating') : editingProjectId ? t('chat:pincer.savePath') : t('create')}</Button></div>
         </DialogContent>
       </Dialog>
 

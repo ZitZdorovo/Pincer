@@ -24,20 +24,27 @@ export type GatewayState = {
   appVersion: string;
   nodeVersion: string;
 };
-export type ChatSession = { key: string; title: string; agentId?: string; pinned?: boolean; updatedAt?: number; model?: string; cwd?: string; activeRunId?: string; runStartedAt?: number; runPhase?: RunPhase };
+export type ChatSession = { key: string; title: string; preview?: string; agentId?: string; pinned?: boolean; unread?: boolean; updatedAt?: number; model?: string; cwd?: string; activeRunId?: string; runStartedAt?: number; runPhase?: RunPhase; gatewayStatus?: 'queued' | 'running' | 'done' | 'failed' | 'killed' | 'timeout'; lastRunState?: 'completed' | 'aborted' | 'error' };
 export type Project = { id: string; name: string; path: string };
 export type ChatLocation = { projectId?: string; cwd?: string };
+export type SlashCommand = {
+  name: string; description: string; category: 'session' | 'options' | 'status' | 'management' | 'media' | 'tools';
+  source: 'native' | 'skill' | 'plugin'; acceptsArgs: boolean;
+  textAliases: string[]; args: { name: string; required: boolean }[];
+};
 export type ModelInfo = {
   id: string; name: string; provider: string; contextWindow?: number; reasoning?: boolean;
   thinkingLevels?: { id: string; label: string }[];
   thinkingDefault?: string;
 };
-export type MessageFile = { name: string; mimeType: string; imageData?: string };
+export type MessageFile = { name: string; mimeType: string; sizeBytes?: number; imageData?: string; data?: string; artifactId?: string; downloadMode?: 'bytes' | 'url' | 'unsupported' };
+export type ChatArtifact = { id: string; title: string; mimeType: string; sizeBytes?: number; messageSeq?: number; source?: string; downloadMode: 'bytes' | 'url' | 'unsupported'; imageData?: string };
+export type ArtifactDownload = { title: string; mimeType: string; data?: string; url?: string };
 export type PermissionMode = 'read-only' | 'guarded' | 'workspace' | 'full';
 export type TokenUsage = { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number };
 export type ToolCall = { id: string; name: string; input: string; output: string; status: 'running' | 'completed' | 'failed' };
 export type ActivityBlock = { kind: 'text'; text: string } | { kind: 'tool'; toolId: string } | { kind: 'compaction'; id: string; phase: 'running' | 'completed' | 'failed' };
-export type ChatMessage = { role: string; text: string; files?: MessageFile[]; tools?: ToolCall[]; activity?: ActivityBlock[]; usage?: TokenUsage; model?: string; timestamp?: number; durationMs?: number; turnKey?: string; runId?: string };
+export type ChatMessage = { role: string; text: string; files?: MessageFile[]; tools?: ToolCall[]; activity?: ActivityBlock[]; usage?: TokenUsage; model?: string; timestamp?: number; durationMs?: number; runCompleted?: boolean; turnKey?: string; runId?: string };
 export type RunPhase = 'starting' | 'responding' | 'working';
 export type ChatAttachment = { fileName: string; mimeType: string; content: string };
 export type WorkspaceState = {
@@ -47,6 +54,8 @@ export type WorkspaceState = {
   activeRun: string | null; stream: string; tool: string | null; hasMore: boolean; error: Failure | null;
   models: ModelInfo[]; model: string | null; thinking: string | null;
   projects: Project[]; projectError: string | null;
+  artifacts: ChatArtifact[];
+  serverPlatform?: string;
   draftLocation?: ChatLocation;
   permissionMode?: PermissionMode | null; effectivePermissionMode?: PermissionMode;
   thinkingOptions?: string[]; spawnDepth?: number;
@@ -87,12 +96,19 @@ export type PincerApi = {
     snapshot(): Promise<WorkspaceState>;
     refresh(): Promise<Result<void>>;
     refreshModels(): Promise<Result<void>>;
+    commands(agentId: string): Promise<Result<SlashCommand[]>>;
     select(key: string): Promise<Result<void>>;
     prepare(location?: ChatLocation): Promise<Result<void>>;
     create(agentId: string, location?: ChatLocation): Promise<Result<void>>;
+    listDirectories(path?: string): Promise<Result<{ path: string; home: string; parent?: string; entries: { name: string; path: string }[] }>>;
     registerProject(name: string, path: string): Promise<Result<void>>;
+    updateProjectPath(id: string, path: string): Promise<Result<void>>;
     removeProject(id: string): Promise<Result<void>>;
     send(message: string, idempotencyKey: string, attachments?: ChatAttachment[], targetAgentId?: string): Promise<Result<void>>;
+    downloadArtifact(id: string): Promise<Result<ArtifactDownload>>;
+    saveArtifact(id: string): Promise<Result<void>>;
+    openArtifact(id: string): Promise<Result<void>>;
+    compact(): Promise<Result<void>>;
     setPermission(mode: PermissionMode | null): Promise<Result<void>>;
     abort(): Promise<Result<void>>;
     more(): Promise<Result<void>>;

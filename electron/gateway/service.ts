@@ -6,13 +6,15 @@ import type { ConnectionInput, GatewayState, LinkState, Role } from '../../share
 import { connectionFailure } from './errors';
 import { isRecord, parseConnection, sameProfile } from './validation';
 import { Vault } from './vault';
+import { listNodeDirectories, prepareNodeRun, runNodeCommand, whichNodeCommands } from './node-commands';
+import { fetchNodeFile, listNodeFiles, statNodeFile } from './node-files';
 
 // Full operator authority is requested, but actual grants remain Gateway-owned.
 export const OPERATOR_SCOPES = [
   'operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing', 'operator.questions',
 ];
 // Capabilities describe implemented code, not wishes or permission levels.
-export const NODE_COMMANDS = ['device.info', 'device.status'];
+export const NODE_COMMANDS = ['device.info', 'device.status', 'fs.listDir', 'system.which', 'system.run.prepare', 'system.run', 'file.fetch', 'file.stat', 'dir.list'];
 // Version of the actual standalone transport shipped in this build, never copied from hello.
 export const NODE_VERSION = '2026.8.2';
 
@@ -28,6 +30,7 @@ const terminal = (state: LinkState) => ['pairing-required', 'auth-error', 'incom
 /** Fresh connection coordinator. No OpenX runtime, ACP, CLI or local Gateway. */
 export class GatewayService {
   private clients: Partial<Record<Role, Client>> = {};
+  private nodeRuns = new Map<string, AbortController>();
   private generation = 0;
   private listeners = new Set<(state: GatewayState) => void>();
   private eventListeners = new Set<(event: EventFrame) => void>();
@@ -97,7 +100,7 @@ export class GatewayService {
         deviceFamily: process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'Mac' : 'Linux',
         mode: role === 'node' ? 'node' : 'ui', role,
         scopes: role === 'operator' ? [...OPERATOR_SCOPES] : [],
-        caps: role === 'node' ? ['device'] : ['tool-events', 'approvals'],
+        caps: role === 'node' ? ['device', 'system', 'file'] : ['tool-events', 'approvals'],
         commands: role === 'node' ? [...NODE_COMMANDS] : undefined,
         minProtocol: role === 'node' ? MIN_NODE_PROTOCOL_VERSION : PROTOCOL_VERSION,
         maxProtocol: PROTOCOL_VERSION,
@@ -159,6 +162,8 @@ export class GatewayService {
 
   async disconnect(): Promise<GatewayState> {
     ++this.generation; // Stale callbacks cannot mutate the next endpoint's state.
+    for (const controller of this.nodeRuns.values()) controller.abort();
+    this.nodeRuns.clear();
     const clients = Object.values(this.clients);
     this.clients = {};
     for (const client of clients) client.stop();
@@ -170,6 +175,11 @@ export class GatewayService {
   }
 
   private async handleNodeEvent(event: EventFrame, generation: number): Promise<void> {
+    if (event.event === 'node.invoke.cancel' && isRecord(event.payload)) {
+      const { invokeId, nodeId } = event.payload;
+      if (nodeId === this.vault.identity.deviceId && typeof invokeId === 'string') this.nodeRuns.get(invokeId)?.abort();
+      return;
+    }
     if (event.event !== 'node.invoke.request' || !isRecord(event.payload)) return;
     const { id, nodeId, command } = event.payload;
     if (typeof id !== 'string' || id.length === 0 || id.length > 256
@@ -177,7 +187,7 @@ export class GatewayService {
     const client = this.clients.node;
     if (!client || generation !== this.generation) return;
     let result: Record<string, unknown>;
-    // No shell, files, notifications or other features are silently implemented here.
+    // Gateway pairing and command approvals gate delivery to this node.
     if (command === 'device.info') {
       result = { id, nodeId, ok: true, payload: {
         name: os.hostname(), platform: process.platform, arch: os.arch(),
@@ -187,6 +197,27 @@ export class GatewayService {
       result = { id, nodeId, ok: true, payload: {
         uptimeSeconds: os.uptime(), totalMemoryBytes: os.totalmem(), freeMemoryBytes: os.freemem(),
       } };
+    } else if (NODE_COMMANDS.includes(command)) {
+      try {
+        const params: unknown = typeof event.payload.paramsJSON === 'string' ? JSON.parse(event.payload.paramsJSON) : {};
+        if (!isRecord(params)) throw new Error('INVALID_INPUT');
+        let payload: Record<string, unknown>;
+        if (command === 'fs.listDir') payload = await listNodeDirectories(params);
+        else if (command === 'system.which') payload = await whichNodeCommands(params);
+        else if (command === 'system.run.prepare') payload = await prepareNodeRun(params);
+        else if (command === 'file.fetch') payload = await fetchNodeFile(params);
+        else if (command === 'file.stat') payload = await statNodeFile(params);
+        else if (command === 'dir.list') payload = await listNodeFiles(params);
+        else {
+          const controller = new AbortController();
+          this.nodeRuns.set(id, controller);
+          try { payload = await runNodeCommand(params, controller.signal); }
+          finally { this.nodeRuns.delete(id); }
+        }
+        result = { id, nodeId, ok: true, payloadJSON: JSON.stringify(payload) };
+      } catch (error) {
+        result = { id, nodeId, ok: false, error: { code: 'INVALID_REQUEST', message: error instanceof Error ? error.message : String(error) } };
+      }
     } else {
       result = { id, nodeId, ok: false, error: { code: 'NOT_IMPLEMENTED', message: 'This command is not implemented in Pincer stage 1.' } };
     }

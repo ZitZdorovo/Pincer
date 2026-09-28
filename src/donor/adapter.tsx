@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from 're
 import { toast } from 'sonner';
 import type { GatewayState, WorkspaceState, UpdateState, Result, ChatLocation } from '../../shared/contract';
 import type { ChatFolder, ChatSession } from './types';
+import { sameWorkspacePath } from '../../shared/workspace-path';
 export { useSettingsStore } from './settings-adapter';
 
 function unavailable() {
@@ -27,8 +28,10 @@ function useViewModel({ workspace, gateway, updates, newChat }: Omit<Props, 'chi
   const [pinnedProjectIds, pinProjects] = useState<string[]>([]);
   const [pinnedCollapsed, collapsePinned] = useState(false);
   const sessions = useMemo<ChatSession[]>(() => (workspace?.sessions || []).map((session) => ({
-    key: session.key, label: session.title, workspacePath: session.cwd, updatedAt: session.updatedAt,
-    busy: Boolean(session.activeRunId),
+    key: session.key, label: session.title, preview: session.preview, agentId: session.agentId, workspacePath: session.cwd, updatedAt: session.updatedAt,
+    busy: Boolean(session.activeRunId) || session.gatewayStatus === 'running' || session.gatewayStatus === 'queued',
+    completed: !session.activeRunId && session.unread === true && (session.lastRunState === 'completed' || session.gatewayStatus === 'done'),
+    unread: session.unread === true,
   })), [workspace?.sessions]);
   const projects = useMemo(() => (workspace?.projects || []).map((project, order) => ({ ...project, order })), [workspace?.projects]);
   const phase = gateway.operator.phase;
@@ -49,11 +52,12 @@ function useViewModel({ workspace, gateway, updates, newChat }: Omit<Props, 'chi
       error: gateway.operator.failure?.message, errorCode: gateway.operator.failure?.code, reconnectAttempts: 1,
     } },
     update: { status: (updates?.phase || 'idle') as string, updateInfo: updates?.version ? { version: updates.version } : undefined },
-    attention: { bySessionKey: {} as Record<string, { unread: boolean }>, markRead: (_key: string) => {} },
+    attention: { bySessionKey: Object.fromEntries(sessions.filter((session) => session.unread).map((session) => [session.key, { unread: true }])), markRead: (_key: string) => {} },
     organization: {
       projects, folders: emptyFolders,
+      canBrowseProjectDirectory: true,
       placements: sessions.flatMap((session, order) => {
-        const project = projects.find((candidate) => candidate.path === session.workspacePath);
+        const project = projects.find((candidate) => sameWorkspacePath(candidate.path, session.workspacePath));
         return project ? [{ chatKey: session.key, projectId: project.id, folderId: null as string | null, order }] : [];
       }),
       workspacePaths: {} as Record<string, string>, pinnedChatKeys: (workspace?.sessions || []).filter((session) => session.pinned).map((session) => session.key),

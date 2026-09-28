@@ -1,9 +1,10 @@
 import { RunStatus, ToolActivity } from '../donor/ToolActivity';
 import { DonorMarkdown, DonorMessage, ActivityStream } from '../donor/Message';
 import { toast } from 'sonner';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowDown, ChevronDown, ChevronUp, X } from 'lucide-react';
-import type { ChatAttachment, WorkspaceState } from '../../shared/contract';
+import type { ChatAttachment, SlashCommand, WorkspaceState } from '../../shared/contract';
 import type { Language } from '../i18n';
 import { featureText } from './text';
 import { uiText } from '../ui-text';
@@ -13,6 +14,7 @@ import { DonorComposer } from '../donor/Composer';
 import { ChatHeader } from '../donor/ChatHeader';
 import { usePreferences } from '../preferences';
 import { ChatScrollNavigator, type ChatScrollNavigatorItem } from '../donor/ChatScrollNavigator';
+import { sameWorkspacePath } from '../../shared/workspace-path';
 
 function navigatorPreview(text: string, fallback: string): string {
   const value = text.replace(/\s+/g, ' ').trim() || fallback;
@@ -31,10 +33,20 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
   }, [state?.compaction?.id, state?.compaction?.phase, active, ru]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [attachments, setAttachments] = useState<Record<string, ChatAttachment[]>>({});
+  const [dropActive, setDropActive] = useState(false);
+  const attachFiles = useRef<(files: File[]) => void>(() => {});
   const [draftScope, setDraftScope] = useState(''); const savedDrafts = useRef<Record<string, string>>({});
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const preferences = usePreferences();
   const [targetAgent, setTargetAgent] = useState<string | undefined>(); const [workspacePath, setWorkspacePath] = useState(preferences.chatWorkspacePath);
+  const repairWorkspace = false;
+  const chooseWorkspace = (path: string) => {
+    const selectedPath = path === '@gateway-default' ? '' : path;
+    const project = state?.projects.find((entry) => sameWorkspacePath(entry.path, selectedPath));
+    setWorkspacePath(selectedPath || preferences.chatWorkspacePath);
+    const location = selectedPath ? { ...(project ? { projectId: project.id } : {}), cwd: selectedPath } : {};
+    void window.pincer.chat.prepare(location).then((result) => { if (!result.ok) setError(result.error.message); });
+  };
   const [draftModel, setDraftModel] = useState<string | undefined>(); const [draftThinking, setDraftThinking] = useState<string | undefined>();
   const draftSelection = useRef<{ model?: string; thinking?: string }>({});
   const [find, setFind] = useState(false); const [query, setQuery] = useState(''); const [match, setMatch] = useState(0);
@@ -84,8 +96,41 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
   const key = state?.selected ?? 'new'; const session = state?.sessions.find((item) => item.key === key);
   const draft = drafts[key] ?? '';
   const files = attachments[key];
+  const completedToolIds = new Set((state?.messages || []).flatMap((message) => message.tools?.map((tool) => tool.id) || []));
+  const visibleLiveTools = (state?.liveTools || []).filter((tool) => !completedToolIds.has(tool.id));
+  const visibleLiveActivity = (state?.liveActivity || []).filter((block) => block.kind !== 'tool' || !completedToolIds.has(block.toolId));
+  const historyMessages = state?.messages || [];
+  const lastUserIndex = historyMessages.findLastIndex((message) => message.role === 'user');
+  const completedMessageIndex = state?.activeRun ? -1 : historyMessages.findLastIndex((message, index) => index > lastUserIndex && message.role === 'assistant' && message.runCompleted === true);
+  const liveToolIds = new Set((state?.liveTools || []).map((tool) => tool.id));
+  const activeMessageIndex = state?.activeRun ? historyMessages.findIndex((message, index) => index > lastUserIndex && message.role === 'assistant' && (
+    message.runId === state.activeRun || message.tools?.some((tool) => liveToolIds.has(tool.id)) ||
+    (message.timestamp !== undefined && state.runStartedAt !== undefined && message.timestamp >= state.runStartedAt - 2000)
+  )) : -1;
+  const lastUserTime = lastUserIndex >= 0 ? historyMessages[lastUserIndex].timestamp : undefined;
+  const recentUserIndex = state?.activeRun && lastUserIndex >= 0 && (
+    lastUserTime === undefined || state.runStartedAt === undefined || lastUserTime >= state.runStartedAt - 30_000
+  ) ? lastUserIndex + 1 : -1;
+  const statusBeforeIndex = activeMessageIndex >= 0 ? activeMessageIndex : recentUserIndex >= 0 ? recentUserIndex : historyMessages.length;
   const pending = useRef<{ key: string; text: string; id: string; files?: ChatAttachment[] } | null>(null);
   const agentId = !state?.selected ? targetAgent || state?.agentId || '' : session?.agentId || state.selected.split(':')[1] || state.agentId || '';
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [commandsLoading, setCommandsLoading] = useState(false);
+  const [commandsError, setCommandsError] = useState('');
+  useEffect(() => {
+    setCommands([]);
+    setCommandsError('');
+    if (!connected || !agentId) { setCommandsLoading(false); return; }
+    let current = true;
+    setCommandsLoading(true);
+    void window.pincer.chat.commands(agentId).then((result) => {
+      if (!current) return;
+      if (result.ok) setCommands(result.value);
+      else setCommandsError(result.error.message);
+    }).catch((error) => { if (current) setCommandsError(String(error)); })
+      .finally(() => { if (current) setCommandsLoading(false); });
+    return () => { current = false; };
+  }, [agentId, connected, state?.scope]);
   const composerState = useMemo(() => !state?.selected && state ? { ...state, model: draftModel ?? state.model, thinking: draftThinking ?? state.thinking } : state, [draftModel, draftThinking, state]);
   const navigatorItems = useMemo<ChatScrollNavigatorItem[]>(() => {
     const messages = state?.messages || [];
@@ -126,7 +171,7 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     }
   }, [drafts, draftScope, state?.scope]);
   useEffect(() => { onDirty(Object.values(drafts).some((value) => value.length > 0) || Object.values(attachments).some((value) => value.length > 0)); }, [drafts, attachments, onDirty]);
-  useEffect(() => { if (atBottom && !find) scrollToBottom(false); }, [atBottom, find, scrollToBottom, state?.stream, state?.messages.length]);
+  useEffect(() => { if (atBottom && !find) scrollToBottom(false); }, [atBottom, find, scrollToBottom, state?.revision]);
   useEffect(() => { setMatch(0); scrollToBottom(false); }, [key, scrollToBottom]);
   useEffect(() => { if (input.current) { input.current.style.height = '48px'; input.current.style.height = Math.min(240, input.current.scrollHeight) + 'px'; } }, [draft]);
   useEffect(() => {
@@ -174,9 +219,16 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     setBusy(true); setError('');
     try {
       if (!state?.selected) {
-        const location = { ...state?.draftLocation, ...(workspacePath && workspacePath !== '@gateway-default' ? { cwd: workspacePath } : {}) };
+        const location = workspacePath && workspacePath !== '@gateway-default' ? { ...state?.draftLocation, cwd: workspacePath } : {};
         const created = await window.pincer.chat.create(agentId, Object.keys(location).length ? location : undefined);
-        if (!created.ok) { setError(created.error.message); return; }
+        if (!created.ok) {
+          setError(created.error.code === 'LOCAL_NODE_UNAVAILABLE'
+            ? ru ? 'Локальная нода Pincer не подключена к Gateway. Проверьте подключение и подтверждение ноды.' : 'The local Pincer node is not connected to the Gateway. Check its connection and approval.'
+            : created.error.code === 'GATEWAY_CWD_MUST_BE_ABSOLUTE'
+              ? ru ? 'Укажите абсолютный путь к рабочей папке.' : 'Enter an absolute workspace path.'
+              : created.error.message);
+          return;
+        }
         if (draftSelection.current.model) {
           const configured = await window.pincer.chat.setModel(draftSelection.current.model, draftSelection.current.thinking);
           if (!configured.ok) { setError(configured.error.message); return; }
@@ -201,6 +253,16 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     } catch { setError(ru ? 'Не удалось прочитать файл.' : 'Could not read the file.'); }
     finally { setBusy(false); }
   };
+  attachFiles.current = (incoming) => { void attach(incoming); };
+  useEffect(() => {
+    if (!active || !connected) return;
+    const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') === true;
+    const over = (event: DragEvent) => { if (!hasFiles(event)) return; event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; setDropActive(true); };
+    const leave = (event: DragEvent) => { if (!event.relatedTarget) setDropActive(false); };
+    const drop = (event: DragEvent) => { if (!hasFiles(event)) return; event.preventDefault(); setDropActive(false); attachFiles.current(Array.from(event.dataTransfer?.files || [])); };
+    window.addEventListener('dragover', over); window.addEventListener('dragleave', leave); window.addEventListener('drop', drop);
+    return () => { window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop); };
+  }, [active, connected]);
   const selectModel = async (model: string, thinking?: string) => {
     if (!state?.selected) { draftSelection.current = { model, thinking }; setDraftModel(model); setDraftThinking(thinking); return; }
     setBusy(true); setError('');
@@ -210,16 +272,22 @@ export function Chat({ state, language, connected, onDirty, active, openFiles, f
     } finally { setBusy(false); }
   };
   return <div ref={chatPage} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface-chat transition-colors duration-500" data-testid="chat-page" data-chat-compact={compactControls ? 'true' : 'false'}>
+    {dropActive && createPortal(<div data-testid="chat-drop-overlay" className="pointer-events-none fixed inset-3 z-[10000] grid place-items-center rounded-3xl border border-dashed border-primary/55 bg-background/80 text-foreground shadow-2xl backdrop-blur-sm"><div className="flex items-center gap-3 rounded-2xl bg-surface-modal px-5 py-4 text-sm font-medium shadow-lg">{ru ? 'Отпустите файлы, чтобы прикрепить' : 'Drop files to attach'}</div></div>, document.body)}
     <ChatHeader session={session} agents={state?.agents || []} agentId={agentId} targetAgentId={targetAgent} onAgent={(id) => setTargetAgent(id || undefined)} connected={connected} filesOpen={filesOpen} openFiles={openFiles}>
     {find && <div className="absolute right-4 top-12 z-30 flex w-[min(400px,90%)] items-center gap-1 rounded-xl border border-border bg-surface-modal p-2 shadow-lg"><Input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setMatch(0); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); setMatch((value) => value + (event.shiftKey ? -1 : 1)); } }} placeholder={c('find.placeholder')} className="h-8" /><span className="whitespace-nowrap px-1 text-xs text-muted-foreground">{matchCount ? ((match % matchCount) + matchCount) % matchCount + 1 : 0}/{matchCount}</span><button type="button" className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10" aria-label={c('find.previous')} disabled={!matchCount} onClick={() => setMatch((value) => value - 1)}><ChevronUp size={16} /></button><button type="button" className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10" aria-label={c('find.next')} disabled={!matchCount} onClick={() => setMatch((value) => value + 1)}><ChevronDown size={16} /></button><button type="button" className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10" aria-label={c('find.close')} onClick={() => setFind(false)}><X size={16} /></button></div>}
     </ChatHeader>
     <div className="relative min-h-0 flex-1 overflow-hidden"><div ref={attachScroller} onScroll={() => { const el = scroller.current; if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 100); }} className="openx-copy-surface h-full min-h-0 overflow-y-scroll px-4 py-4" data-testid="chat-scroll-container"><div className="mx-auto w-full space-y-7 pl-[4px]" style={{ maxWidth: 'var(--pincer-chat-width, 736px)', paddingBottom: composerHeight + 16 }}>
       {state?.hasMore && <Button variant="ghost" disabled={state.loading} onClick={() => void window.pincer.chat.more()}>{t('more')}</Button>}
       {!state?.messages.length && !state?.activeRun && <div data-testid="acp-chat-empty-state" className="flex h-[60vh] flex-col items-center justify-center text-center"><h1 className="text-4xl font-sans font-semibold tracking-tight text-foreground/80 md:text-5xl">{c('welcome.subtitle')}</h1></div>}
-      {state?.messages.map((message, index) => <article id={message.role === 'user' ? `pincer-chat-turn-${index}` : undefined} ref={(element) => { if (element) articles.current.set(index, element); else articles.current.delete(index); }} key={`${state.selected}-${index}`} className="relative scroll-mt-20 text-[14px] leading-[1.55]"><DonorMessage message={message} /></article>)}
-      {state?.activeRun && <article className="chat-markdown text-sm leading-7" aria-live="polite"><RunStatus startedAt={state.runStartedAt} phase={state.runPhase} />{state.liveActivity?.length ? <ActivityStream blocks={state.liveActivity} tools={state.liveTools} live /> : <>{!!state.liveTools?.length && <ToolActivity tools={state.liveTools} live />}{state.stream && <DonorMarkdown text={state.stream} isAnimating />}</>}</article>}
+      {historyMessages.map((message, index) => <Fragment key={`${state?.selected}-${index}`}>
+        {state?.activeRun && statusBeforeIndex === index && <article className="chat-markdown text-sm leading-7" aria-live="polite"><RunStatus startedAt={state.runStartedAt} phase={state.runPhase} /></article>}
+        {completedMessageIndex === index && <article className="chat-markdown text-sm leading-7"><RunStatus completed /></article>}
+        <article id={message.role === 'user' ? `pincer-chat-turn-${index}` : undefined} ref={(element) => { if (element) articles.current.set(index, element); else articles.current.delete(index); }} className="relative scroll-mt-20 text-[14px] leading-[1.55]"><DonorMessage message={message} suppressStats={Boolean(state?.activeRun && index >= statusBeforeIndex && message.role === 'assistant')} /></article>
+      </Fragment>)}
+      {state?.activeRun && statusBeforeIndex === historyMessages.length && <article className="chat-markdown text-sm leading-7" aria-live="polite"><RunStatus startedAt={state.runStartedAt} phase={state.runPhase} /></article>}
+      {state?.activeRun && (visibleLiveActivity.length > 0 || visibleLiveTools.length > 0 || Boolean(state.stream)) && <article className="chat-markdown text-sm leading-7" aria-live="polite">{visibleLiveActivity.length ? <ActivityStream blocks={visibleLiveActivity} tools={visibleLiveTools} live /> : <>{!!visibleLiveTools.length && <ToolActivity tools={visibleLiveTools} live />}{state.stream && <DonorMarkdown text={state.stream} isAnimating />}</>}</article>}
       {(error || state?.error) && <p role="alert" className="whitespace-pre-wrap break-words rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{error || state?.error?.message}</p>}<div ref={end} />
     </div></div><ChatScrollNavigator items={navigatorItems} scrollElement={scrollElement} label={ru ? 'Навигация по вопросам и ответам' : 'Question and answer navigation'} concealed={filesOpen} /></div>
-    <div ref={composerOverlay} data-testid="chat-composer-overlay" className="pointer-events-none absolute bottom-0 left-0 right-[12px] z-30 translate-x-[2px]"><div className="relative"><div className="pointer-events-auto"><DonorComposer input={draft} setInput={(text) => setDrafts((previous) => ({ ...previous, [key]: text }))} files={files || []} attach={(incoming) => void attach(incoming)} removeFile={(index) => setAttachments((previous) => ({ ...previous, [key]: (previous[key] || []).filter((_, position) => position !== index) }))} send={() => void act()} stop={() => void window.pincer.chat.abort().then((result) => { if (!result.ok) setError(result.error.message); })} disabled={!connected || busy || draftScope !== state?.scope} sending={Boolean(state?.activeRun)} state={composerState} agentId={agentId} targetAgentId={targetAgent} onAgent={(id) => setTargetAgent(id || undefined)} onModel={selectModel} workspacePath={session?.cwd || workspacePath} onWorkspace={setWorkspacePath} scrollToLatestAction={!atBottom ? <button onClick={() => scrollToBottom(true)} aria-label={c('scrollToLatest')} className="rounded-lg border border-border bg-surface-modal p-2 shadow transition-[transform,background-color] duration-150 hover:bg-black/5 active:scale-90 dark:hover:bg-white/10"><ArrowDown size={16} /></button> : undefined} /></div></div></div>
+    <div ref={composerOverlay} data-testid="chat-composer-overlay" className="pointer-events-none absolute bottom-0 left-0 right-[12px] z-30 translate-x-[2px]"><div className="relative"><div className="pointer-events-auto"><DonorComposer commands={commands} commandsLoading={commandsLoading} commandsError={commandsError} input={draft} setInput={(text) => setDrafts((previous) => ({ ...previous, [key]: text }))} files={files || []} attach={(incoming) => void attach(incoming)} removeFile={(index) => setAttachments((previous) => ({ ...previous, [key]: (previous[key] || []).filter((_, position) => position !== index) }))} send={() => void act()} stop={() => void window.pincer.chat.abort().then((result) => { if (!result.ok) setError(result.error.message); })} disabled={!connected || busy || draftScope !== state?.scope} sending={Boolean(state?.activeRun)} state={composerState} agentId={agentId} targetAgentId={targetAgent} onAgent={(id) => setTargetAgent(id || undefined)} onModel={selectModel} workspacePath={state?.selected ? session?.cwd || '@gateway-default' : workspacePath} onWorkspace={chooseWorkspace} repairWorkspace={repairWorkspace} scrollToLatestAction={!atBottom ? <button onClick={() => scrollToBottom(true)} aria-label={c('scrollToLatest')} className="rounded-lg border border-border bg-surface-modal p-2 shadow transition-[transform,background-color] duration-150 hover:bg-black/5 active:scale-90 dark:hover:bg-white/10"><ArrowDown size={16} /></button> : undefined} /></div></div></div>
   </div>;
 }

@@ -37,7 +37,8 @@ export function projectTranscript(value: unknown): ChatMessage[] {
       flush();
       const files = messageFiles(raw); const text = contentText(raw);
       const id = str(row.id) || str(raw.id);
-      turnKey = (id || at !== undefined) ? createHash('sha256').update(JSON.stringify([id, at, text, files])).digest('hex') : undefined;
+      // File metadata can vanish or change shape between Gateway history reads.
+      turnKey = (id || at !== undefined) ? createHash('sha256').update(JSON.stringify([id, at, text, []])).digest('hex') : undefined;
       result.push({ role, text, ...(files.length ? { files } : {}), timestamp: at, turnKey }); continue;
     }
     const compaction = (role === 'custom' && raw.customType === 'openclaw.context-compaction') || rec(raw.__openclaw).runtimeActivityKind === 'context_compaction' || rec(raw.__openclaw).kind === 'compaction';

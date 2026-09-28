@@ -1,16 +1,16 @@
 // Original OpenX composer JSX and presentation helpers; transport/state are Pincer's.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { createPortal } from 'react-dom';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Search, ChevronDown, Check, Pencil, Pin, Plus, Trash2, Puzzle, Cpu, Brain } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FolderOpen, Loader2, Search, ChevronDown, Check, Pencil, Pin, Plus, Trash2, Puzzle, Cpu, Brain, Terminal } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { InlineNameEditor } from '../components/ui/InlineNameEditor';
 import { Textarea } from '../components/ui/textarea';
+import { Input } from '../components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/utils';
+import { MaterialFileIcon } from './MaterialFileIcon';
 import { resolveModelDisplayName, thinkingLevelLabel, modelRouteLabel } from './model-display';
 import { AccessPicker, RequestStats } from './RequestControls';
 import { Approvals } from '../features/Approvals';
@@ -22,38 +22,35 @@ const needsLeadingSkillSpace = (value: string, position: number) => position > 0
 const isDefaultWorkspacePath = (path: string) => !path || path === '@gateway-default';
 const normalizeWorkspacePath = (path: string) => path.trim();
 const isConfiguredModelRefAvailable = (id: string, options: { modelRef: string }[]) => options.some((option) => option.modelRef === id);
-function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
-  if (mimeType === DIRECTORY_MIME_TYPE) return <FolderOpen className={className} />;
-  if (mimeType.startsWith('video/')) return <Film className={className} />;
-  if (mimeType.startsWith('audio/')) return <Music className={className} />;
-  if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/xml') return <FileText className={className} />;
-  if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive') || mimeType.includes('tar') || mimeType.includes('rar') || mimeType.includes('7z')) return <FileArchive className={className} />;
-  if (mimeType === 'application/pdf') return <FileText className={className} />;
-  return <File className={className} />;
-}
-
-
-export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: ReactNode }) {
+export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: ReactNode; repairWorkspace?: boolean }) {
   const {
-    t, input, setInput, sending, inputDisabled, textareaRef, fileRef, skillPickerRef, modelPickerRef, thinkingPickerRef, workspaceMenuRef, isComposingRef,
+    t, input, setInput, sending, inputDisabled, textareaRef, fileRef, slashMenuRef, skillPickerRef, modelPickerRef, thinkingPickerRef, workspaceMenuRef, isComposingRef,
     setPickerOpen, skillPickerOpen, setSkillPickerOpen, modelPickerOpen, setModelPickerOpen, thinkingPickerOpen, setThinkingPickerOpen, workspaceMenuOpen, setWorkspaceMenuOpen,
     skillQuery, setSkillQuery, skillsLoading, skillsError, filteredQuickSkills, currentAgentName, selectedSkill, setSelectedSkill,
     modelOptions, modelGroups, effectiveModelRef, effectiveModelVariant, currentModelGroup, currentModelLabel, switchingModelRef, modelCatalogRefreshing, handleModelPickerButtonClick, currentThinkingLevel, thinkingLevels, displayThinkingLevel, showModelPicker, showThinkingPicker,
-    modelPresets, modelAliases, pinnedModelGroups, isModelPinned, togglePinnedModel, editingPresetId, setEditingPresetId, editingModelKey, setEditingModelKey, editingModelName, renameModelPreset, deleteModelPreset, handleCreatePreset, handleSelectPreset, startEditingModelName, finishEditingModelName, resetModelAlias, handleSelectModelGroup, handleSelectThinkingLevel,
-    attachments, removeAttachment, pickFiles, handleInputChange, handleKeyDown, handlePaste, canSubmit, canStop, handleSend, handleStop, workspaceLabel, workspacePath, workspaceSelectorDisabled, workspaceOptions, handleWorkspaceKeyDown, handleWorkspaceButtonClick, handleSelectDefaultWorkspace, handleSelectWorkspace
+    modelPresets, modelAliases, pinnedModelGroups, isModelPinned, togglePinnedModel, editingPresetId, setEditingPresetId, editingModelKey, setEditingModelKey, editingModelName, renameModelPreset, deleteModelPreset, deleteModelGroup, handleCreatePreset, handleSelectPreset, startEditingModelName, finishEditingModelName, resetModelAlias, handleSelectModelGroup, handleSelectThinkingLevel,
+    attachments, removeAttachment, pickFiles, handleInputFocus, handleInputPointerDown, handleInputChange, handleKeyDown, handlePaste, canSubmit, canStop, handleSend, handleStop, workspaceLabel, workspacePath, workspaceSelectorDisabled, workspaceOptions, handleWorkspaceKeyDown, handleWorkspaceButtonClick, handleSelectDefaultWorkspace, handleSelectWorkspace,
+    slashOpen, filteredCommands, slashIndex, selectSlashCommand, dismissSlash
   } = useComposer(props);
-  const [dragOver, setDragOver] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<number | null>(null);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [workspaceDraft, setWorkspaceDraft] = useState('');
+  useEffect(() => {
+    if (slashOpen && slashMenuRef.current) slashMenuRef.current.scrollTop = 0;
+  }, [slashOpen, input, props.commands]);
+  useEffect(() => {
+    if (slashOpen) slashMenuRef.current?.querySelector(`#slash-option-${slashIndex}`)?.scrollIntoView({ block: 'nearest' });
+  }, [slashOpen, slashIndex]);
+  useEffect(() => {
+    if (props.repairWorkspace && !workspaceSelectorDisabled) { setWorkspaceDraft(''); setWorkspaceDialogOpen(true); }
+  }, [props.repairWorkspace, workspaceSelectorDisabled]);
   const reduceMotion = useReducedMotion();
   const queueTray: ReactNode = null;
   const scrollToLatestAction = props.scrollToLatestAction;
+  const selectedPreview = props.files[previewAttachment ?? -1];
   return (
     <div
       data-testid="chat-composer"
-      onDragOver={(event) => { if (!inputDisabled && event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDragOver(true); } }}
-      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragOver(false); }}
-      onDrop={(event) => { event.preventDefault(); setDragOver(false); props.attach(Array.from(event.dataTransfer.files)); }}
         style={{ maxWidth: 'calc(var(--pincer-chat-width, 736px) + 32px)' }}
         className={cn(
           'relative mx-auto w-full shrink-0 px-4 pb-[15px] pt-[15px]',
@@ -61,19 +58,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
     >
       <div className="relative z-40 mb-2 flex justify-end"><Approvals updateBusy={false} /></div>
       <input ref={fileRef} type="file" multiple hidden onChange={(event) => { props.attach(Array.from(event.target.files || [])); event.target.value = ''; }} />
-      <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}><DialogContent className="max-w-md rounded-2xl border border-border bg-surface-modal p-6 shadow-2xl"><DialogTitle className="text-xl font-semibold">{t('composer.chooseOtherWorkspaceOption')}</DialogTitle><DialogDescription className="mt-2 text-sm text-muted-foreground">{t('pincer.remoteWorkspace')}</DialogDescription><Input className="mt-4 font-mono" value={workspaceDraft} onChange={(event) => setWorkspaceDraft(event.target.value)} /><div className="mt-4 flex justify-end gap-2"><Button variant="ghost" onClick={() => setWorkspaceDialogOpen(false)}>{t('common:actions.cancel')}</Button><Button disabled={!workspaceDraft.trim()} onClick={() => { handleSelectWorkspace(workspaceDraft.trim()); setWorkspaceDialogOpen(false); }}>{t('common:actions.save')}</Button></div></DialogContent></Dialog>
-      {dragOver && createPortal(
-        <div
-          data-testid="chat-drop-overlay"
-          className="pointer-events-none fixed inset-3 z-[10000] grid place-items-center rounded-3xl border border-dashed border-primary/55 bg-background/80 text-foreground shadow-2xl backdrop-blur-sm"
-        >
-          <div className="flex items-center gap-3 rounded-2xl bg-surface-modal px-5 py-4 text-sm font-medium shadow-lg">
-            <Paperclip className="h-5 w-5 text-primary" aria-hidden="true" />
-            {t('composer.dropOverlay')}
-          </div>
-        </div>,
-        document.body,
-      )}
+      <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}><DialogContent className="max-w-md rounded-2xl border border-border bg-surface-modal p-6 shadow-2xl"><DialogTitle className="text-xl font-semibold">{t('composer.chooseOtherWorkspaceOption')}</DialogTitle><DialogDescription className="mt-2 text-sm text-muted-foreground">{t('pincer.localWorkspace')}</DialogDescription><div className="mt-4 flex gap-2"><Input value={workspaceDraft} onChange={(event) => setWorkspaceDraft(event.target.value)} className="min-w-0 flex-1 font-mono text-xs" /><Button variant="outline" onClick={() => void window.pincer.desktop.chooseDirectory().then((result) => { if (result.ok && result.value) setWorkspaceDraft(result.value); })}>{t('pincer.browseLocal')}</Button></div><div className="mt-4 flex justify-end gap-2"><Button variant="ghost" onClick={() => setWorkspaceDialogOpen(false)}>{t('common:actions.cancel')}</Button><Button disabled={!workspaceDraft.trim()} onClick={() => { handleSelectWorkspace(workspaceDraft.trim()); setWorkspaceDialogOpen(false); }}>{t('common:actions.save')}</Button></div></DialogContent></Dialog>
       <div
         aria-hidden="true"
         data-testid="chat-composer-backdrop"
@@ -88,16 +73,18 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
 
         {/* Attachment Previews */}
         {attachments.length > 0 && (
-          <div className="flex gap-2 mb-3 flex-wrap">
-            {attachments.map((att) => (
+          <div className="mb-3 flex max-h-56 flex-wrap content-start items-start gap-2 overflow-y-auto py-1 pr-2" data-testid="composer-attachment-list">
+            {attachments.map((att, index) => (
               <AttachmentPreview
                 key={att.id}
                 attachment={att}
                 onRemove={() => removeAttachment(att.id)}
+                onPreview={() => setPreviewAttachment(index)}
               />
             ))}
           </div>
         )}
+        <Dialog open={Boolean(selectedPreview)} onOpenChange={(open) => { if (!open) setPreviewAttachment(null); }}><DialogContent className="max-h-[85vh] max-w-[min(720px,90vw)] overflow-hidden rounded-2xl border border-border bg-surface-modal p-5 shadow-2xl"><DialogTitle className="truncate pr-10 text-sm font-semibold">{selectedPreview?.fileName}</DialogTitle><button type="button" aria-label={t('attachments.closePreview')} onClick={() => setPreviewAttachment(null)} className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-background hover:text-foreground"><X className="h-4 w-4" /></button>{selectedPreview && <StagedAttachmentPreview file={selectedPreview} />}</DialogContent></Dialog>
 
         {queueTray && (
           <div
@@ -114,8 +101,25 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
         {/* Input Container */}
         <div
           data-testid="chat-composer-surface"
-          className={`relative z-10 bg-surface-input rounded-2xl shadow-sm border px-3 pt-2.5 pb-[10px] transition-all focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}
+          className="relative z-10 rounded-2xl border border-black/10 bg-surface-input px-3 pb-[10px] pt-2.5 shadow-sm transition-all focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 dark:border-white/10"
         >
+          {slashOpen && <div ref={slashMenuRef} data-testid="chat-slash-menu" id="chat-slash-menu" role="listbox" aria-label={t('composer.slashCommands')} className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-[350px] overflow-y-auto rounded-2xl border border-border bg-surface-modal p-1.5 shadow-2xl">
+            {props.commandsLoading ? <div className="px-3 py-4 text-sm text-muted-foreground">{t('composer.slashLoading')}</div>
+              : props.commandsError ? <div className="px-3 py-4 text-sm text-muted-foreground">{t('composer.slashUnavailable')}</div>
+              : filteredCommands.length === 0 ? <div className="px-3 py-4 text-sm text-muted-foreground">{t('composer.slashEmpty')}</div>
+              : (['session', 'options', 'status', 'management', 'media', 'tools'] as const).map((category) => {
+                const rows = filteredCommands.map((command, index) => ({ command, index })).filter(({ command }) => command.category === category);
+                if (!rows.length) return null;
+                return <div key={category} role="group" aria-label={t(`composer.slashCategory.${category}`)}>
+                  <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{t(`composer.slashCategory.${category}`)}</div>
+                  {rows.map(({ command, index }) => <button key={`${command.name}:${index}`} type="button" role="option" id={`slash-option-${index}`} aria-selected={slashIndex === index} data-testid={`chat-slash-option-${command.name}`} onMouseDown={(event) => event.preventDefault()} onClick={() => selectSlashCommand(command)} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors', slashIndex === index ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60')}>
+                    <Terminal className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate font-medium">/{command.name}{command.args.map((arg) => <span key={arg.name} className="ml-1 text-xs font-normal text-muted-foreground">[{arg.name}]</span>)}</span>
+                    <span className="hidden max-w-[45%] truncate text-xs text-muted-foreground sm:block">{command.description}</span>
+                  </button>)}
+                </div>;
+              })}
+          </div>}
           {scrollToLatestAction && (
             <div
               data-testid="chat-composer-scroll-action"
@@ -130,6 +134,8 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
             <Textarea
               ref={textareaRef}
               value={input}
+              onFocus={handleInputFocus}
+              onPointerDown={handleInputPointerDown}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
               onCompositionStart={() => {
@@ -142,6 +148,9 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
               placeholder={inputDisabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
               disabled={inputDisabled}
               data-testid="chat-composer-input"
+              aria-controls={slashOpen ? 'chat-slash-menu' : undefined}
+              aria-expanded={slashOpen}
+              aria-activedescendant={slashOpen && filteredCommands.length ? `slash-option-${slashIndex}` : undefined}
               className={cn(
                 'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:normal] placeholder:text-muted-foreground/60',
               )}
@@ -173,6 +182,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                   (skillPickerOpen || selectedSkill) && 'text-foreground',
                 )}
                 onClick={() => {
+                  dismissSlash();
                   setPickerOpen(false);
                   setModelPickerOpen(false);
                   setThinkingPickerOpen(false);
@@ -380,6 +390,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                                   <span className="min-w-0"><span className="block truncate">{displayName}</span><span className="block truncate text-[10px] font-normal text-muted-foreground">{modelRouteLabel(group.original.modelRef)}</span></span>
                                   {isActive && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
                                 </button>
+                                <div data-testid={`chat-model-actions-${group.baseKey}`} className="flex shrink-0 items-center gap-2 pr-2">
                                 <button
                                   type="button"
                                   data-testid={`chat-model-pin-${group.baseKey}`}
@@ -392,13 +403,16 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                                 </button>
                                 <button
                                   type="button"
-                                  className="mr-2 flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-black/5 hover:text-foreground group-hover/model:opacity-100 group-focus-within/model:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+                                  data-testid={`chat-model-edit-${group.baseKey}`}
+                                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-black/5 hover:text-foreground group-hover/model:opacity-100 group-focus-within/model:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
                                   title={t('composer.editModelName')}
                                   aria-label={t('composer.editModelNameFor', { model: displayName })}
                                   onClick={() => startEditingModelName(group)}
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </button>
+                                <button type="button" data-testid={`chat-model-delete-${group.baseKey}`} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:text-destructive group-hover/model:opacity-100 group-focus-within/model:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title={t('composer.deleteModel')} aria-label={t('composer.deleteModel')} onClick={() => void deleteModelGroup(group)}><Trash2 className="h-3.5 w-3.5" /></button>
+                                </div>
                               </>
                             )}
                           </div>
@@ -421,6 +435,7 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
                   )}
                   disabled={inputDisabled || sending || !!switchingModelRef}
                   onClick={() => {
+                    dismissSlash();
                     setPickerOpen(false);
                     setSkillPickerOpen(false);
                     setModelPickerOpen(false);
@@ -590,43 +605,39 @@ export function DonorComposer(props: ComposerProps & { scrollToLatestAction?: Re
 
 // ── Attachment Preview ───────────────────────────────────────────
 
+function StagedAttachmentPreview({ file }: { file: ComposerProps['files'][number] }) {
+  const source = `data:${file.mimeType};base64,${file.content}`;
+  if (file.mimeType.startsWith('image/')) return <img src={source} alt={file.fileName} className="mx-auto mt-4 max-h-[70vh] max-w-full object-contain" />;
+  if (file.mimeType === 'application/pdf') return <iframe title={file.fileName} src={source} className="mt-4 h-[65vh] w-full rounded-lg bg-white" />;
+  if ((file.mimeType.startsWith('text/') || ['application/json', 'application/xml'].includes(file.mimeType)) && file.content.length <= 300_000) {
+    try {
+      const bytes = Uint8Array.from(atob(file.content), (character) => character.charCodeAt(0));
+      return <pre className="mt-4 max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-background/70 p-4 text-xs">{new TextDecoder().decode(bytes)}</pre>;
+    } catch { /* Show file details when the text cannot be decoded. */ }
+  }
+  return <div className="mt-4 flex min-h-40 flex-col items-center justify-center gap-3 rounded-xl border border-border bg-background/50"><MaterialFileIcon filename={file.fileName} className="h-16 w-16" /><span className="max-w-full truncate px-4 text-sm">{file.fileName}</span><span className="text-xs text-muted-foreground">{formatFileSize(Math.floor(file.content.length * 0.75))}</span></div>;
+}
+
 function AttachmentPreview({
   attachment,
   onRemove,
+  onPreview,
 }: {
   attachment: FileAttachment;
   onRemove: () => void;
+  onPreview: () => void;
 }) {
   const { t } = useTranslation('chat');
   const isImage = attachment.mimeType.startsWith('image/') && attachment.preview;
 
   return (
-    <div data-testid="chat-attachment-preview" className="relative group rounded-lg overflow-hidden border border-border">
-      {isImage ? (
-        // Image thumbnail
-        <div className="w-16 h-16">
-          <img
-            src={attachment.preview!}
-            alt={attachment.fileName}
-            className="w-full h-full object-cover"
-          />
-        </div>
-      ) : (
-        // Generic file card
-        <div className="flex items-center gap-2 px-3 py-2 bg-surface-input/50 max-w-[200px]">
-          <FileIcon mimeType={attachment.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 overflow-hidden">
-            <p className="text-xs font-medium truncate">{attachment.fileName}</p>
-            <p className="text-2xs text-muted-foreground">
-              {attachment.mimeType === DIRECTORY_MIME_TYPE
-                ? t('composer.folderAttachment')
-                : attachment.fileSize > 0
-                  ? formatFileSize(attachment.fileSize)
-                  : '...'}
-            </p>
-          </div>
-        </div>
-      )}
+    <div data-testid="chat-attachment-preview" className="relative group h-24 w-24 shrink-0 overflow-visible rounded-xl border border-border bg-surface-input/50 sm:h-28 sm:w-28">
+      <button type="button" onClick={onPreview} aria-label={t('attachments.preview', { name: attachment.fileName })} className="flex h-full w-full flex-col overflow-hidden rounded-xl text-left hover:bg-black/5 dark:hover:bg-white/5">
+        <span className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-background/40">
+          {isImage ? <img src={attachment.preview!} alt="" className="h-full w-full object-cover" /> : <MaterialFileIcon filename={attachment.fileName} className="h-9 w-9" />}
+        </span>
+        <span className="w-full min-w-0 px-1.5 py-1"><span className="block truncate text-2xs font-medium" title={attachment.fileName}>{attachment.fileName}</span><span className="block text-2xs text-muted-foreground">{attachment.mimeType === DIRECTORY_MIME_TYPE ? t('composer.folderAttachment') : attachment.fileSize > 0 ? formatFileSize(attachment.fileSize) : '...'}</span></span>
+      </button>
 
       {/* Staging overlay */}
       {attachment.status === 'staging' && (
@@ -645,7 +656,7 @@ function AttachmentPreview({
       {/* Remove button */}
       <button
         onClick={onRemove}
-        className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`${t('common:actions.delete')}: ${attachment.fileName}`}
       >
         <X className="h-3 w-3" />

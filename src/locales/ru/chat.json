@@ -54,6 +54,20 @@
   "runError": {
     "title": "Ошибка вызова модели"
   },
+  "attachments": {
+    "file": "Файл",
+    "preview": "Предпросмотр {{name}}",
+    "download": "Скачать на компьютер",
+    "downloadNamed": "Скачать {{name}}",
+    "closePreview": "Закрыть просмотр",
+    "previous": "Предыдущее изображение",
+    "next": "Следующее изображение",
+    "zoomIn": "Увеличить",
+    "zoomOut": "Уменьшить",
+    "position": "{{current}} / {{total}}",
+    "sizeKb": "{{size}} КБ",
+    "sizeMb": "{{size}} МБ"
+  },
   "acp": {
     "thought": "Размышление",
     "tool": "Инструмент",
@@ -235,6 +249,11 @@
     "generatedReadyWithMissing": "Сгенерированное изображение готово, но некоторые изображения не удалось загрузить."
   },
   "composer": {
+    "slashCommands": "Команды чата",
+    "slashLoading": "Загрузка команд…",
+    "slashUnavailable": "Gateway не предоставляет список команд",
+    "slashEmpty": "Команды не найдены",
+    "slashCategory": { "session": "Сеанс", "options": "Настройки", "status": "Состояние", "management": "Управление", "media": "Медиа", "tools": "Инструменты" },
     "attachFiles": "Прикрепить файлы",
     "pickSkill": "Выбрать Skill",
     "skillButton": "Навыки",
@@ -263,6 +282,7 @@
     "presetNamePrompt": "Название пресета",
     "editPresetName": "Изменить название пресета",
     "deletePreset": "Удалить пресет",
+    "deleteModel": "Удалить модель и её варианты thinking",
     "presetModelUnavailable": "Модель больше недоступна: {{model}}",
     "requestStats": "Статистика запроса",
     "contextWindow": "Окно контекста",
@@ -370,7 +390,9 @@
     "unpin": "Открепить чат",
     "rename": "Переименовать чат",
     "copy": "Копировать название",
-    "copied": "Название чата скопировано"
+    "copied": "Название чата скопировано",
+    "compact": "Сжать контекст",
+    "compactionStarted": "Сжатие контекста запущено"
   },
   "questionDirectory": {
     "title": "Список вопросов",

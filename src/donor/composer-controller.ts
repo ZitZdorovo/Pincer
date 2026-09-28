@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ClipboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { ChatAttachment, WorkspaceState } from '../../shared/contract';
+import type { ChatAttachment, SlashCommand, WorkspaceState } from '../../shared/contract';
 import { usePreferences } from '../preferences';
 import { groupConfiguredModels, parseModelVariant, resolveModelDisplayName, resolveGroupVariant, availableThinkingLevels, thinkingLevelLabel, type ConfiguredModelGroup } from './model-display';
 
@@ -10,6 +10,7 @@ export type ComposerProps = {
   send(): void; stop(): void; disabled: boolean; sending: boolean; state: WorkspaceState | null;
   agentId: string; targetAgentId?: string; onAgent(id: string | null): void; onModel(id: string, thinking?: string): Promise<void>;
   workspacePath: string; onWorkspace(path: string): void;
+  commands: SlashCommand[]; commandsLoading: boolean; commandsError: string;
 };
 export type AgentSummary = { id: string; name: string; modelDisplay?: string };
 export type QuickAccessSkill = { name: string; source: string; sourceLabel: string; description: string };
@@ -28,6 +29,7 @@ function readPinnedModels(): string[] {
 export function useComposer(props: ComposerProps) {
   const { t } = useTranslation('chat'); const prefs = usePreferences();
   const textareaRef = useRef<HTMLTextAreaElement>(null); const fileRef = useRef<HTMLInputElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null); const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null); const thinkingPickerRef = useRef<HTMLDivElement>(null); const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
@@ -41,6 +43,21 @@ export function useComposer(props: ComposerProps) {
   const [editingModelKey, setEditingModelKey] = useState<string | null>(null); const [editingModelName, setEditingModelName] = useState('');
   const [modelAliases, setAliases] = useState(readAliases); const [modelPresets, setPresets] = useState(readPresets);
   const [pinnedModelKeys, setPinnedModelKeys] = useState(readPinnedModels);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const slashMatch = /^\/([^\s/]*)$/.exec(props.input);
+  const slashQuery = slashMatch?.[1].toLocaleLowerCase() || '';
+  const slashOpen = Boolean(slashMatch && !slashDismissed && !props.disabled && !props.sending);
+  const slashCategories: SlashCommand['category'][] = ['session', 'options', 'status', 'management', 'media', 'tools'];
+  const filteredCommands = slashOpen ? props.commands.filter((command) =>
+    command.name.toLocaleLowerCase().startsWith(slashQuery) || command.textAliases.some((alias) => alias.replace(/^\//, '').toLocaleLowerCase().startsWith(slashQuery)))
+    .sort((left, right) => slashCategories.indexOf(left.category) - slashCategories.indexOf(right.category)) : [];
+  useEffect(() => { setSlashIndex(0); }, [slashQuery, props.commands]);
+  const selectSlashCommand = (command: SlashCommand) => {
+    props.setInput(`/${command.name} `);
+    setSlashDismissed(true);
+    textareaRef.current?.focus();
+  };
   const currentAgent = props.state?.agents.find((agent) => agent.id === props.agentId);
   const currentAgentName = currentAgent?.name || props.agentId || 'main';
   const modelOptions = (props.state?.models || []).map((model) => ({ modelRef: model.id, label: model.name }));
@@ -69,9 +86,12 @@ export function useComposer(props: ComposerProps) {
       : thinkingLevels[0] || reportedThinkingLevel;
   const currentModelLabel = effectiveModelRef ? resolveModelDisplayName(effectiveModelRef, modelAliases[effectiveModelVariant.baseKey] || modelAliases[effectiveModelRef], modelOptions.find((option) => option.modelRef === effectiveModelRef)?.label) : t('composer.pickModel');
   const close = () => { setPickerOpen(false); setSkillPickerOpen(false); setModelPickerOpen(false); setThinkingPickerOpen(false); setWorkspaceMenuOpen(false); };
+  const dismissSlash = () => setSlashDismissed(true);
   useEffect(() => {
     const dismiss = (event: globalThis.PointerEvent) => {
-      if ([pickerRef, skillPickerRef, modelPickerRef, thinkingPickerRef, workspaceMenuRef].some((ref) => ref.current?.contains(event.target as Node))) return;
+      const target = event.target as Node;
+      if (!textareaRef.current?.contains(target) && !slashMenuRef.current?.contains(target)) setSlashDismissed(true);
+      if ([pickerRef, skillPickerRef, modelPickerRef, thinkingPickerRef, workspaceMenuRef].some((ref) => ref.current?.contains(target))) return;
       close();
     };
     const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); close(); } };
@@ -99,6 +119,7 @@ export function useComposer(props: ComposerProps) {
     try { await props.onModel(modelRef, thinking); setModelPickerOpen(false); setThinkingPickerOpen(false); } finally { setSwitchingModelRef(''); }
   };
   const handleModelPickerButtonClick = () => {
+    dismissSlash();
     setPickerOpen(false); setSkillPickerOpen(false); setThinkingPickerOpen(false); setWorkspaceMenuOpen(false);
     if (modelPickerOpen) { setModelPickerOpen(false); return; }
     setModelPickerOpen(true);
@@ -109,9 +130,28 @@ export function useComposer(props: ComposerProps) {
   };
   const displayThinkingLevel = (level: string) => level === 'default' ? (prefs.language === 'ru' ? 'По умолчанию' : 'Default') : (!idThinkingLevels.length && catalogThinkingLevels?.find((entry) => entry.id === level)?.label) || thinkingLevelLabel(level);
   const handleSelectWorkspace = (path: string) => { props.onWorkspace(path); setWorkspaceMenuOpen(false); };
+  const deleteModelGroup = async (group: ModelGroup) => {
+    const refs = [...new Set([group.original.modelRef, ...Object.values(group.variants).map((variant) => variant?.modelRef).filter((value): value is string => Boolean(value))])];
+    const first = refs[0]?.indexOf('/') ?? -1;
+    if (first < 1) throw new Error('INVALID_MODEL');
+    const provider = refs[0].slice(0, first);
+    for (const ref of refs) {
+      const snapshot = await window.pincer.configuration.providers();
+      if (!snapshot.ok) throw new Error(snapshot.error.message);
+      const modelId = ref.slice(provider.length + 1);
+      if (!snapshot.value.providers.find((entry) => entry.id === provider)?.models.includes(modelId)) throw new Error('MODEL_DELETE_UNAVAILABLE');
+      const result = await window.pincer.configuration.deleteProviderModel(snapshot.value.hash, provider, modelId);
+      if (!result.ok) throw new Error(result.error.message);
+    }
+    const refreshed = await window.pincer.chat.refreshModels();
+    if (!refreshed.ok) throw new Error(refreshed.error.message);
+    setPinnedModelKeys((current) => current.filter((key) => key !== group.baseKey));
+    setPresets((current) => current.filter((preset) => !refs.includes(preset.modelRef)));
+    setAliases((current) => { const next = { ...current }; delete next[group.baseKey]; return next; });
+  };
   return {
     t, input: props.input, setInput: props.setInput, sending: props.sending, inputDisabled: props.disabled,
-    textareaRef, fileRef, pickerRef, skillPickerRef, modelPickerRef, thinkingPickerRef, workspaceMenuRef, isComposingRef,
+    textareaRef, fileRef, slashMenuRef, pickerRef, skillPickerRef, modelPickerRef, thinkingPickerRef, workspaceMenuRef, isComposingRef,
     pickerOpen, setPickerOpen, skillPickerOpen, setSkillPickerOpen, modelPickerOpen, setModelPickerOpen, thinkingPickerOpen, setThinkingPickerOpen, workspaceMenuOpen, setWorkspaceMenuOpen,
     skillQuery, setSkillQuery, skillsLoading, skillsError, filteredQuickSkills: skills.filter((skill) => (skill.name + ' ' + skill.description).toLowerCase().includes(skillQuery.toLowerCase())),
     currentAgent, currentAgentName, targetAgentId: props.targetAgentId, selectedTarget: props.state?.agents.find((agent) => agent.id === props.targetAgentId) || null,
@@ -129,20 +169,36 @@ export function useComposer(props: ComposerProps) {
     startEditingModelName: (group: ModelGroup) => { setEditingModelKey(group.baseKey); setEditingModelName(resolveModelDisplayName(group.original.modelRef, modelAliases[group.baseKey], group.original.label)); },
     finishEditingModelName: (name: string) => { if (editingModelKey) setAliases((all) => ({ ...all, [editingModelKey]: name })); setEditingModelKey(null); },
     resetModelAlias: (id: string) => setAliases((all) => { const next = { ...all }; delete next[id]; return next; }),
+    deleteModelGroup: async (group: ModelGroup) => { try { await deleteModelGroup(group); toast.success(prefs.language === 'ru' ? 'Модель удалена' : 'Model deleted'); } catch (error) { toast.error(`${prefs.language === 'ru' ? 'Не удалось удалить модель' : 'Could not delete model'}: ${String(error)}`); } },
     handleSelectModelGroup: (group: ModelGroup) => void chooseModel(resolveGroupVariant(group, currentThinkingLevel).modelRef),
     handleSelectThinkingLevel: async (level: string) => { if (idThinkingLevels.length && currentModelGroup) { await chooseModel(resolveGroupVariant(currentModelGroup, level).modelRef); return; } if (effectiveModelRef) { await chooseModel(effectiveModelRef, level); return; } const result = await window.pincer.chat.setThinking(level); if (!result.ok) toast.error(result.error.message); else setThinkingPickerOpen(false); },
     attachments: props.files.map((file, index): FileAttachment => ({ id: String(index), fileName: file.fileName, mimeType: file.mimeType, fileSize: Math.floor(file.content.length * 0.75), preview: file.mimeType.startsWith('image/') ? `data:${file.mimeType};base64,${file.content}` : null, status: 'ready' })),
     removeAttachment: (id: string) => props.removeFile(Number(id)), pickFiles: () => fileRef.current?.click(),
-    handleInputChange: props.setInput,
-    handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => { const submit = prefs.sendShortcut === 'ctrl-enter' ? event.ctrlKey || event.metaKey : !event.ctrlKey && !event.metaKey; if (event.key === 'Enter' && submit && !event.shiftKey && !event.nativeEvent.isComposing && !isComposingRef.current) { event.preventDefault(); props.send(); } },
+    slashOpen, filteredCommands, slashIndex: Math.min(slashIndex, Math.max(filteredCommands.length - 1, 0)), selectSlashCommand, dismissSlash,
+    handleInputFocus: () => { close(); if (slashMatch) setSlashDismissed(false); },
+    handleInputPointerDown: () => { if (slashMatch) setSlashDismissed(false); },
+    handleInputChange: (value: string) => { if (/^\/[^\s/]*$/.test(value)) close(); setSlashDismissed(false); props.setInput(value); },
+    handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (slashOpen && !event.nativeEvent.isComposing && !isComposingRef.current) {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSlashDismissed(true); return; }
+        if (filteredCommands.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+          event.preventDefault(); setSlashIndex((index) => (index + (event.key === 'ArrowDown' ? 1 : -1) + filteredCommands.length) % filteredCommands.length); return;
+        }
+        if (filteredCommands.length && (event.key === 'Tab' || event.key === 'Enter') && !event.shiftKey) {
+          event.preventDefault(); selectSlashCommand(filteredCommands[Math.min(slashIndex, filteredCommands.length - 1)]); return;
+        }
+      }
+      const submit = prefs.sendShortcut === 'ctrl-enter' ? event.ctrlKey || event.metaKey : !event.ctrlKey && !event.metaKey;
+      if (event.key === 'Enter' && submit && !event.shiftKey && !event.nativeEvent.isComposing && !isComposingRef.current) { event.preventDefault(); props.send(); }
+    },
     handlePaste: (event: ClipboardEvent<HTMLTextAreaElement>) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); props.attach(files); } },
     canSubmit: !props.disabled && !props.sending && Boolean(props.input.trim() || props.files.length), canStop: !props.disabled && props.sending,
     handleSend: props.send, handleStop: props.stop,
-    workspaceLabel: props.workspacePath ? props.workspacePath.split(/[\\/]/).filter(Boolean).at(-1) || props.workspacePath : t('composer.defaultWorkspaceOption'),
+    workspaceLabel: !props.workspacePath || props.workspacePath === '@gateway-default' ? t('composer.defaultWorkspaceOption') : props.workspacePath.split(/[\\/]/).filter(Boolean).at(-1) || props.workspacePath,
     workspacePath: props.workspacePath || '@gateway-default', workspaceSelectorDisabled: Boolean(props.state?.selected),
     workspaceOptions: (props.state?.projects || []).map((project) => ({ path: project.path, label: project.name })),
     handleWorkspaceKeyDown: (event: KeyboardEvent) => { if (event.key === 'Escape') setWorkspaceMenuOpen(false); },
-    handleWorkspaceButtonClick: () => { setPickerOpen(false); setSkillPickerOpen(false); setModelPickerOpen(false); setThinkingPickerOpen(false); setWorkspaceMenuOpen((open) => !open); },
+    handleWorkspaceButtonClick: () => { dismissSlash(); setPickerOpen(false); setSkillPickerOpen(false); setModelPickerOpen(false); setThinkingPickerOpen(false); setWorkspaceMenuOpen((open) => !open); },
     handleSelectDefaultWorkspace: () => handleSelectWorkspace(''), handleSelectWorkspace,
     handleChooseOtherWorkspace: () => { setWorkspaceMenuOpen(false); return true; },
   };

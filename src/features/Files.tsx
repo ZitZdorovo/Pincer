@@ -4,6 +4,7 @@ import { ChevronRight, Eye, FileEdit, Folder, FolderOpen, FolderTree, RefreshCw,
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { WorkspaceEntry, WorkspaceFile, WorkspaceFiles } from '../../shared/files';
+import type { ChatArtifact } from '../../shared/contract';
 import { setPreferences, usePreferences } from '../preferences';
 import { Button } from '../components/ui/button';
 import { PanelTabButton } from '../donor/PanelTabButton';
@@ -19,7 +20,7 @@ const PANEL_EXPAND_THRESHOLD = 85;
 const PANEL_FULL_WIDTH = 100;
 const PANEL_CLOSE_THRESHOLD_PX = 24;
 
-export function Files({ sessionKey, close, onDirty }: { sessionKey: string; close(): void; onDirty(value: boolean): void }) {
+export function Files({ sessionKey, artifacts, close, onDirty }: { sessionKey: string; artifacts: ChatArtifact[]; close(): void; onDirty(value: boolean): void }) {
  const { t } = useTranslation('chat'); const preferences = usePreferences(); const ru = preferences.language === 'ru';
  const [listing, setListing] = useState<WorkspaceFiles | null>(null);
  const [branches, setBranches] = useState<Record<string, WorkspaceEntry[]>>({});
@@ -128,7 +129,7 @@ export function Files({ sessionKey, close, onDirty }: { sessionKey: string; clos
    {tab === 'changes' ? <p className="p-6 text-sm text-muted-foreground">{ru ? 'Gateway пока не предоставляет историю изменений файлов для этой панели.' : 'The Gateway does not expose file change history for this panel yet.'}</p> : <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden">
      <header className="flex items-center justify-between gap-3 border-b border-black/5 px-3 py-1.5 dark:border-white/10"><h2 data-testid="workspace-header-title" title={listing?.root} className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden text-sm font-medium"><span className="min-w-0 truncate">{listing?.root?.split(/[\\/]/).filter(Boolean).at(-1) || t('artifactPanel.tabs.browser')}</span></h2><div className="flex shrink-0 items-center gap-1"><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => requestDiscard(() => setRefresh((value) => value + 1))} aria-label={t('workspace.actions.refresh')}><RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => toast.info(t('skills:pincer.remoteFolders'))} aria-label={t('workspace.actions.openRootInFinder')}><FolderOpen className="h-3.5 w-3.5 pointer-events-none" /></Button></div></header>
     <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: tab === 'browser' ? 'minmax(100px, 220px) minmax(0, 1fr)' : 'minmax(0, 1fr)' }}>
-     {tab === 'browser' && <aside className="min-h-0 overflow-hidden border-r border-black/5 dark:border-white/10"><div className="h-full overflow-y-auto py-2 text-sm">{listing && rows(listing.entries)}{listing?.truncated && <p className="p-2 text-xs text-muted-foreground">{ru ? 'Список сокращён сервером.' : 'The server truncated this list.'}</p>}</div></aside>}
+     {tab === 'browser' && <aside className="min-h-0 overflow-hidden border-r border-black/5 dark:border-white/10"><div className="h-full overflow-y-auto py-2 text-sm">{!!artifacts.length && <div data-testid="chat-artifacts" className="mb-2 border-b border-border pb-2"><h3 className="px-2 pb-1 text-xs font-semibold">{ru ? 'Файлы чата' : 'Chat files'}</h3>{artifacts.map((artifact) => <button key={artifact.id} type="button" disabled={artifact.downloadMode === 'unsupported'} title={artifact.title} onClick={() => void window.pincer.chat.openArtifact(artifact.id).then((result) => { if (!result.ok) toast.error(result.error.message); })} className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-xs hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"><MaterialFileIcon filename={artifact.title} className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{artifact.title}</span></button>)}</div>}{listing && rows(listing.entries)}{listing?.truncated && <p className="p-2 text-xs text-muted-foreground">{ru ? 'Список сокращён сервером.' : 'The server truncated this list.'}</p>}</div></aside>}
      <section className="flex min-h-0 flex-col overflow-hidden">{file && <div className="flex items-center justify-between gap-2 border-b border-black/5 px-4 py-1.5 text-xs text-muted-foreground dark:border-white/10"><div className="flex min-w-0 items-center gap-2"><MaterialFileIcon filename={file.name} className="h-4 w-4" /><span className="truncate font-mono" title={file.path}>{file.path}</span></div>{file.previewKind === 'text' && (editing ? <Button size="sm" className="h-7" disabled={busy || !dirty || !file.hash} onClick={() => void save()}><Save className="mr-1 h-3.5 w-3.5" />{ru ? 'Сохранить' : 'Save'}</Button> : <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(true)}>{ru ? 'Редактировать' : 'Edit'}</Button>)}</div>}<div data-testid="file-preview-content" className="min-h-0 flex-1 overflow-hidden">{preview}</div></section>
     </div>
    </div>}

@@ -18,7 +18,7 @@ export function hello(role: string, protocol = 4): HelloOk {
   return {
     type: 'hello-ok', protocol,
     server: { version: '2026.8.1-test', connId: randomUUID() },
-    features: { methods: ['node.invoke.result', 'approval.get', 'approval.resolve', 'approval.history', 'exec.approval.list', 'plugin.approval.list'], events: ['tick', 'node.invoke.request', 'exec.approval.requested'] },
+    features: { methods: ['node.invoke.result', 'approval.get', 'approval.resolve', 'approval.history', 'exec.approval.list', 'plugin.approval.list', 'system.info', 'fs.listDir', 'artifacts.list', 'artifacts.download', 'sessions.compact', 'commands.list'], events: ['tick', 'node.invoke.request', 'exec.approval.requested'] },
     snapshot: { presence: [], health: {}, stateVersion: { presence: 1, health: 1 }, uptimeMs: 1 },
     auth: { deviceToken: `device-token-${role}`, role, scopes: role === 'operator' ? ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing', 'operator.questions'] : [] },
     policy: { maxPayload: 1048576, maxBufferedBytes: 1048576, tickIntervalMs: 30000 },
@@ -33,7 +33,7 @@ export class MockGateway {
   readonly signatureChecks: boolean[] = [];
   readonly nodes = new Map<WebSocket, string>();
   mode: MockMode = 'ready';
-  readonly sessions: Array<{ key: string; label: string; agentId: string; pinned?: boolean; model?: string; thinkingLevel?: string; permissionMode?: string | null; spawnDepth?: number; execCwd?: string }> = [];
+  readonly sessions: Array<{ key: string; label: string; agentId: string; pinned?: boolean; unread?: boolean; model?: string; thinkingLevel?: string; permissionMode?: string | null; spawnDepth?: number; execCwd?: string; status?: 'queued' | 'running' | 'done' | 'failed' | 'killed' | 'timeout'; lastRunId?: string }> = [];
   readonly tasks: Array<Record<string, unknown>> = [];
   usageData: Record<string, unknown> = { sessions: [] };
   quotaData: Record<string, unknown> = { providers: [{ provider: 'test', displayName: 'Test provider', windows: [{ label: '5h', usedPercent: 25 }] }] };
@@ -58,10 +58,13 @@ export class MockGateway {
   readonly secretEntries: Array<Record<string, unknown>> = [];
   readonly agents: Array<Record<string, unknown>> = [{ id: 'main', name: 'Assistant', workspace: 'C:/MockWorkspace', model: { primary: 'test/test-model' } }];
   readonly skills = [{ name: 'test-skill', skillKey: 'test-skill', description: 'Test skill', disabled: false, eligible: true, source: 'workspace' }];
+  readonly extraCommands: Array<Record<string, unknown>> = [];
   readonly plugins: Array<Record<string, unknown>> = [{ id: 'obsidian', name: 'Obsidian', description: 'Obsidian workspace integration', kind: ['integration'], origin: 'official', installed: true, enabled: true, state: 'enabled', removable: true, version: '1.0.0' }];
   readonly jobs: Array<Record<string, unknown>> = [];
   readonly files = new Map<string, string>();
   readonly histories = new Map<string, unknown[]>();
+  platform = 'win32';
+  readonly artifacts = new Map<string, Array<{ id: string; title: string; mimeType: string; data: string }>>();
   readonly approvals = new Map<string, protocol.ApprovalSnapshot>();
   memoryContent = '# Memory\nTest note';
   embeddingReady = true;
@@ -212,6 +215,21 @@ export class MockGateway {
     if (method === 'agents.update') { const agent = this.agents.find((item) => item.id === params.agentId); if (agent) Object.assign(agent, params); return { ok: true }; }
     if (method === 'agents.delete') { const index = this.agents.findIndex((item) => item.id === params.agentId); if (index >= 0) this.agents.splice(index, 1); return { ok: true }; }
     if (method === 'models.list') return { models: this.models };
+    if (method === 'commands.list') return { commands: [
+      { name: 'stop', description: 'Stop the current run.', source: 'native', scope: 'text', category: 'session', acceptsArgs: false },
+      { name: 'reset', description: 'Reset the current session.', source: 'native', scope: 'text', category: 'session', acceptsArgs: false },
+      { name: 'new', description: 'Start a new session.', source: 'native', scope: 'text', category: 'session', acceptsArgs: false },
+      { name: 'compact', description: 'Compact the session context.', source: 'native', scope: 'text', category: 'session', acceptsArgs: true, args: [{ name: 'instructions', description: 'Instructions', type: 'string', required: false }] },
+      { name: 'context', description: 'Explain how context is built and used.', source: 'native', scope: 'text', category: 'tools', acceptsArgs: false },
+      { name: 'commands', description: 'List all slash commands.', source: 'native', scope: 'text', category: 'tools', acceptsArgs: false },
+      { name: 'config', description: 'Show or set config values.', source: 'native', scope: 'text', category: 'management', acceptsArgs: true },
+      { name: 'native-only', description: 'Desktop action.', source: 'native', scope: 'native', category: 'tools', acceptsArgs: false },
+      ...this.extraCommands,
+    ] };
+    if (method === 'system.info') return { platform: this.platform };
+    if (method === 'fs.listDir') { const path = typeof params.path === 'string' ? params.path : '/home/mock'; return { path, home: '/home/mock', ...(path === '/' ? {} : { parent: path === '/home/mock' ? '/home' : '/' }), entries: path === '/home/mock' ? [{ name: 'project', path: '/home/mock/project' }] : [] }; }
+    if (method === 'artifacts.list') return { artifacts: (this.artifacts.get(params.sessionKey as string) || []).map(({ id, title, mimeType, data }) => ({ id, type: mimeType.startsWith('image/') ? 'image' : 'file', title, mimeType, sizeBytes: Buffer.byteLength(data, 'base64'), sessionKey: params.sessionKey, download: { mode: 'bytes' } })) };
+    if (method === 'artifacts.download') { const file = (this.artifacts.get(params.sessionKey as string) || []).find((item) => item.id === params.artifactId); return file ? { artifact: { id: file.id, type: 'file', title: file.title, mimeType: file.mimeType, download: { mode: 'bytes' } }, encoding: 'base64', data: file.data } : { ok: false, error: { message: 'ARTIFACT_NOT_FOUND' } }; }
     if (method === 'tasks.list') return { tasks: this.tasks };
     if (method === 'tasks.cancel') { const task = this.tasks.find((t) => t.id === params.taskId); if (task) task.status = 'cancelled'; return { found: Boolean(task), cancelled: Boolean(task) }; }
     if (method === 'sessions.usage') return this.usageData;
@@ -236,6 +254,7 @@ export class MockGateway {
     if (method === 'cron.run') return { ok: true, ran: true };
     if (method === 'cron.runs') return { entries: [{ jobId: params.id, status: 'ok', summary: 'Completed' }] };
     if (method === 'sessions.list') return { sessions: this.sessions };
+    if (method === 'sessions.compact') return { ok: true, key: params.key, compacted: true };
     if (method === 'projects.list') return { projects: this.projects };
     if (method === 'projects.register') { const project = { id: `project-${this.projects.length}`, displayName: params.name as string, repoRoot: params.path as string, source: 'registered' }; this.projects.push(project); return project; }
     if (method === 'sessions.files.list') return { sessionKey: params.sessionKey, root: 'C:/MockWorkspace', files: [], browser: { path: '', entries: [{ path: 'README.md', name: 'README.md', kind: 'file', size: 24 }] } };
@@ -251,24 +270,27 @@ export class MockGateway {
     if (method === 'chat.history') return { messages: this.histories.get(params.sessionKey as string) ?? [], hasMore: false, sessionInfo: { ...this.sessions.find((s) => s.key === params.sessionKey), modelProvider: 'test', thinkingOptions: this.sessionThinkingOptions, contextTokens: 200000, totalTokens: 12345, hasActiveRun: this.activeRuns.has(params.sessionKey as string), activeRunIds: this.activeRuns.has(params.sessionKey as string) ? [this.activeRuns.get(params.sessionKey as string)] : [] }, ...(this.activeRuns.has(params.sessionKey as string) ? { inFlightRun: { runId: this.activeRuns.get(params.sessionKey as string), text: 'Answer in progress' } } : {}) };
     if (method === 'chat.send') {
       const key = params.sessionKey as string; const runId = params.idempotencyKey as string;
+      const session = this.sessions.find((item) => item.key === key);
+      if (session) { session.status = 'running'; session.lastRunId = runId; }
       const history = this.histories.get(key) ?? []; history.push({ role: 'user', content: params.message, attachments: params.attachments, timestamp: Date.now() }); this.histories.set(key, history);
       this.activeRuns.set(key, runId);
       setTimeout(() => this.broadcast('chat', { sessionKey: key, runId, seq: 1, state: 'delta', deltaText: this.assistantText }), this.deltaDelayMs).unref();
       if (!this.holdRun) setTimeout(() => {
         history.push({ role: 'assistant', timestamp: Date.now(), model: 'test-model', provider: 'test', usage: { input: 52, output: 151, cacheRead: 10, cacheWrite: 0, totalTokens: 213 }, content: [{ type: 'text', text: this.assistantText }] });
         this.activeRuns.delete(key); this.broadcast('chat', { sessionKey: key, runId, seq: 2, state: 'final' });
+        if (session) session.status = 'done';
       }, 300).unref();
       return { runId, status: 'started' };
     }
-    if (method === 'sessions.abort') { this.activeRuns.delete(params.key as string); return { ok: true }; }
+    if (method === 'sessions.abort') { this.activeRuns.delete(params.key as string); const session = this.sessions.find((item) => item.key === params.key); if (session) session.status = 'killed'; return { ok: true }; }
     if (method === 'agents.files.get') return { agentId: params.agentId, file: { missing: false, content: params.name === 'MEMORY.md' ? this.memoryContent : this.files.get(`${params.agentId}/${params.name}`) || '' } };
     if (method === 'agents.files.set') { if (params.name === 'MEMORY.md') this.memoryContent = params.content as string; else this.files.set(`${params.agentId}/${params.name}`, params.content as string); return { ok: true }; }
     if (method === 'doctor.memory.status') return { provider: this.embeddingReady ? 'openai' : 'none', embedding: { ok: this.embeddingReady, checked: true, ...(this.embeddingReady ? {} : { error: 'No embedding provider configured' }) } };
     if (method === 'tools.invoke') return this.toolDenied ? { ok: false, error: { message: 'Memory tool denied by policy' } } : { ok: true, output: { content: [{ type: 'text', text: JSON.stringify({ results: [{ path: 'MEMORY.md', snippet: this.memoryContent }], provider: this.embeddingReady ? 'openai' : 'none' }) }] } };
     return {};
   }
-  invoke(command: string, overrideNodeId?: string): void {
-    for (const [socket, nodeId] of this.nodes) socket.send(JSON.stringify({ type: 'event', event: 'node.invoke.request', payload: { id: randomUUID(), nodeId: overrideNodeId ?? nodeId, command, paramsJSON: '{}' } }));
+  invoke(command: string, overrideNodeId?: string, params: Record<string, unknown> = {}): void {
+    for (const [socket, nodeId] of this.nodes) socket.send(JSON.stringify({ type: 'event', event: 'node.invoke.request', payload: { id: randomUUID(), nodeId: overrideNodeId ?? nodeId, command, paramsJSON: JSON.stringify(params) } }));
   }
   drop(): void { for (const socket of this.server.clients) socket.close(1012, 'Gateway restarting'); }
   async close(): Promise<void> {

@@ -25,8 +25,9 @@ export function messageFiles(message: unknown): MessageFile[] {
     const mimeType = typeof part.mimeType === 'string' ? part.mimeType : typeof source.media_type === 'string' ? source.media_type : '';
     const name = typeof part.fileName === 'string' ? part.fileName : typeof part.name === 'string' ? part.name : mimeType.startsWith('image/') || part.type === 'image' ? 'Image' : 'File';
     const data = inlineBase64(part.data, mimeType) || (source.type === 'base64' ? inlineBase64(source.data, mimeType) : '') || inlineBase64(part.content, mimeType);
-    const validImage = raster.has(mimeType) && data.length > 0 && data.length <= 8 * 1024 * 1024 && data.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(data);
-    files.push({ name: name.slice(0, 256), mimeType: mimeType.slice(0, 128), ...(validImage ? { imageData: `data:${mimeType};base64,${data}` } : {}) });
+    const validData = data.length > 0 && data.length <= 16 * 1024 * 1024 && data.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(data);
+    const validImage = raster.has(mimeType) && validData && data.length <= 8 * 1024 * 1024;
+    files.push({ name: name.slice(0, 256), mimeType: mimeType.slice(0, 128), ...(typeof part.sizeBytes === 'number' && Number.isFinite(part.sizeBytes) && part.sizeBytes >= 0 ? { sizeBytes: part.sizeBytes } : {}), ...(typeof part.artifactId === 'string' && part.artifactId.length <= 512 ? { artifactId: part.artifactId } : {}), ...(validImage ? { imageData: `data:${mimeType};base64,${data}` } : {}), ...(validData ? { data } : {}) });
   }
   return files;
 }

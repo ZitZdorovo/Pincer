@@ -75,11 +75,11 @@ describe('independent operator and node connections', () => {
     options[1].onEvent!({ type: 'event', event: 'node.invoke.request', payload: { id: 'req', nodeId: 'wrong-device', command: 'device.info' } });
     expect(clients[1].request).not.toHaveBeenCalled();
   });
-  it('rejects commands that have not been implemented instead of inventing success', async () => {
+  it('rejects malformed node execution requests', async () => {
     const { service, options, clients, vault } = setup();
     await service.configure(input);
     options[1].onHelloOk!(hello('node'));
     options[1].onEvent!({ type: 'event', event: 'node.invoke.request', payload: { id: 'req', nodeId: vault.identity.deviceId, command: 'system.run' } });
-    expect(clients[1].request).toHaveBeenCalledWith('node.invoke.result', expect.objectContaining({ ok: false, error: expect.objectContaining({ code: 'NOT_IMPLEMENTED' }) }));
+    await vi.waitFor(() => expect(clients[1].request).toHaveBeenCalledWith('node.invoke.result', expect.objectContaining({ ok: false, error: expect.objectContaining({ code: 'INVALID_REQUEST' }) })));
   });
 });

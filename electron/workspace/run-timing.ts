@@ -5,20 +5,21 @@ import type { ChatMessage, RunPhase } from '../../shared/contract';
 import type { Cipher } from '../gateway/vault';
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const fingerprint = (message: ChatMessage) => hash([message.text, message.files ?? []]);
-type Run = { scope: string; session: string; started: number; phase: RunPhase; fingerprint: string; known: Set<string>; turnKey?: string; duration?: number };
+const fingerprint = (message: ChatMessage) => hash([message.text]);
+type Run = { scope: string; session: string; started: number; phase: RunPhase; fingerprint: string; known: Set<string>; turnKey?: string; duration?: number; completed?: boolean };
+type Timing = { duration: number; completed: boolean };
 
 /** Only observed send-to-terminal durations. No transcript text or secrets on disk. */
 export class RunTiming {
   private runs = new Map<string, Run>();
-  private durations = new Map<string, number>();
+  private durations = new Map<string, Timing>();
   private healthy = true;
   constructor(private storage?: { path: string; cipher: Cipher }) {
     if (!storage || !existsSync(storage.path)) return;
     try {
       const entries: unknown = JSON.parse(storage.cipher.decrypt(readFileSync(storage.path)));
-      if (!Array.isArray(entries) || entries.length > 2000 || !entries.every(e => Array.isArray(e) && /^[a-f0-9]{64}$/.test(e[0]) && typeof e[1] === 'number' && Number.isFinite(e[1]) && e[1] >= 0)) throw new Error('INVALID_TIMING');
-      this.durations = new Map(entries);
+      if (!Array.isArray(entries) || entries.length > 2000 || !entries.every(e => Array.isArray(e) && /^[a-f0-9]{64}$/.test(e[0]) && (typeof e[1] === 'number' && Number.isFinite(e[1]) && e[1] >= 0 || e[1] && typeof e[1] === 'object' && typeof e[1].duration === 'number' && Number.isFinite(e[1].duration) && e[1].duration >= 0 && typeof e[1].completed === 'boolean'))) throw new Error('INVALID_TIMING');
+      this.durations = new Map(entries.map(([key, value]) => [key, typeof value === 'number' ? { duration: value, completed: false } : value]));
     } catch { this.healthy = false; } // Preserve unreadable data; timing is non-critical.
   }
   begin(id: string, scope: string, session: string, message: ChatMessage, history: ChatMessage[], started = Date.now()) {
@@ -28,7 +29,7 @@ export class RunTiming {
   rename(before: string, after: string) { const run = this.runs.get(before); if (run && before !== after) { this.runs.set(after, run); this.runs.delete(before); } }
   get(id: string | null) { return id ? this.runs.get(id) : undefined; }
   phase(id: string, phase: RunPhase) { const run = this.runs.get(id); if (run && run.phase !== 'working') run.phase = phase; }
-  finish(id: string, finished = Date.now()) { const run = this.runs.get(id); if (run && run.duration === undefined) { run.duration = Math.max(0, finished - run.started); this.save(run); } }
+  finish(id: string, finished = Date.now(), completed = true) { const run = this.runs.get(id); if (run && run.duration === undefined) { run.duration = Math.max(0, finished - run.started); run.completed = completed; this.save(run); } }
   clearActive() { this.runs.clear(); }
   apply(scope: string, session: string, messages: ChatMessage[]) {
     for (const run of this.runs.values()) {
@@ -40,18 +41,19 @@ export class RunTiming {
     for (const message of messages) {
       if (message.role !== 'assistant') continue;
       const liveRun = message.runId ? this.runs.get(message.runId) : undefined;
-      const duration = liveRun?.scope === scope && liveRun.session === session
-        ? liveRun.duration
+      const timing = liveRun?.scope === scope && liveRun.session === session
+        ? liveRun.duration === undefined ? undefined : { duration: liveRun.duration, completed: liveRun.completed === true }
         : message.turnKey ? this.durations.get(hash([scope, session, message.turnKey])) : undefined;
-      if (duration !== undefined) message.durationMs = duration;
+      if (timing) { message.durationMs = timing.duration; if (timing.completed) message.runCompleted = true; }
     }
     return messages;
   }
   private save(run: Run) {
     if (!run.turnKey || run.duration === undefined) return;
     const key = hash([run.scope, run.session, run.turnKey]);
-    if (this.durations.get(key) === run.duration) return;
-    this.durations.set(key, run.duration);
+    const timing = { duration: run.duration, completed: run.completed === true };
+    if (this.durations.get(key)?.duration === timing.duration && this.durations.get(key)?.completed === timing.completed) return;
+    this.durations.set(key, timing);
     while (this.durations.size > 2000) this.durations.delete(this.durations.keys().next().value!);
     if (!this.storage || !this.healthy) return;
     try {
