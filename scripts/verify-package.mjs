@@ -10,7 +10,7 @@ const expected = platform === 'win'
   ? [`Pincer-Setup-${version}-x64.exe`, `Pincer-Setup-${version}-x64.exe.blockmap`, 'latest.yml']
   : platform === 'mac'
     ? ['x64', 'arm64'].flatMap((arch) => [`Pincer-${version}-mac-${arch}.dmg`, `Pincer-${version}-mac-${arch}.zip`]).concat('latest-mac.yml')
-    : [`Pincer-${version}-linux-x64.AppImage`, 'latest-linux.yml'];
+    : [`Pincer-${version}-linux-x86_64.AppImage`, 'latest-linux.yml'];
 for (const name of expected) {
   if (!names.includes(name) || statSync(join('release', name)).size === 0) throw new Error(`Missing or empty ${platform} artifact: ${name}`);
 }
