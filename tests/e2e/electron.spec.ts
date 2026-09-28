@@ -1671,6 +1671,10 @@ test('a running chat stays marked while another session is selected', async () =
   await expect(page.getByTestId(`sidebar-session-${running}`).getByTestId('sidebar-session-activity').locator('svg')).toHaveClass(/animate-spin/);
   await page.getByTestId(`sidebar-session-${running}`).hover();
   await expect(page.getByTestId('sidebar-chat-preview')).toContainText('Выполняется');
+  const previewBeforeRefresh = await page.getByTestId('sidebar-chat-preview').elementHandle();
+  await page.evaluate(() => window.pincer.chat.refresh());
+  await expect(page.getByTestId('sidebar-chat-preview')).toContainText('Выполняется');
+  expect(await previewBeforeRefresh?.evaluate((element) => element.isConnected)).toBe(true);
   await expect(page.getByTestId(`sidebar-session-${running}`).getByTestId('sidebar-session-activity')).toHaveCSS('opacity', '0');
   await page.mouse.move(500, 400);
   await page.getByTestId('chat-composer-input').fill('Другой чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect.poll(() => mock.sessions.length).toBe(2);

@@ -179,7 +179,6 @@ export function Sidebar({ active = true }: { active?: boolean }) {
   const renameSession = useChatStore((state) => state.renameSession);
   const deleteSession = useChatStore((state) => state.deleteSession);
   const sessionLastActivity = useChatStore((state) => state.sessionLastActivity);
-  const attention = useSessionAttentionStore((state) => state.bySessionKey);
   const markRead = useSessionAttentionStore((state) => state.markRead);
   const organization = useChatOrganizationStore();
   const loadOrganization = organization.load;
@@ -606,10 +605,9 @@ export function Sidebar({ active = true }: { active?: boolean }) {
     const runState = projectSessionRunState(session);
     const busy = runState === 'busy';
     const completed = runState === 'completed';
-    const unread = attention[session.key]?.unread;
     const pinned = organization.pinnedChatKeys.includes(session.key);
     return (
-      <Tooltip delayDuration={0}>
+      <Tooltip key={session.key} delayDuration={0}>
       <TooltipTrigger asChild>
       <div
         role="button"
@@ -707,8 +705,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         <OverflowMarqueeText fadeTail>{getSessionDisplayTitle(session, labels)}</OverflowMarqueeText>
         {busy && currentKey !== session.key && <SidebarActivity />}
         {completed && currentKey !== session.key && <SidebarActivity completed />}
-        {!busy && !completed && unread && currentKey !== session.key && <span className="h-1.5 w-1.5 shrink-0 bg-primary" title={t('newMessage')} />}
-        {sessionList && !busy && !completed && !unread && (
+        {sessionList && !busy && !completed && (
           <span
             draggable={false}
             className="shrink-0 select-none tabular-nums text-2xs text-muted-foreground/75 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
@@ -751,7 +748,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
       .sort((a, b) => a.order - b.order);
     const rows = sessionsForNode(project, folder.id);
     return (
-      <div style={{ marginLeft: depth * 10 }}>
+      <div key={folder.id} style={{ marginLeft: depth * 10 }}>
         <div
           data-testid={`sidebar-folder-${folder.id}`}
           role="button"
@@ -801,8 +798,8 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         </div>
         <AnimatedSectionContent collapsed={isCollapsed}>
           <div>
-            {children.map((child) => <FolderNode key={child.id} folder={child} project={project} depth={depth + 1} />)}
-            <div className="pl-8">{rows.map((session) => <ChatRow key={session.key} session={session} project={project} folderId={folder.id} />)}</div>
+            {children.map((child) => FolderNode({ folder: child, project, depth: depth + 1 }))}
+            <div className="pl-8">{rows.map((session) => ChatRow({ session, project, folderId: folder.id }))}</div>
           </div>
         </AnimatedSectionContent>
       </div>
@@ -820,6 +817,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
     const rows = sessionsForNode(project, null);
     return (
       <section
+        key={project.id}
         data-testid={`sidebar-project-${project.id}`}
         className="relative mb-2 rounded-lg last:mb-0"
         onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); setDraggedChat(draggedChatRef.current); setDropTargetId(`project:${project.id}`); }}
@@ -859,8 +857,8 @@ export function Sidebar({ active = true }: { active?: boolean }) {
         </div>
         <AnimatedSectionContent collapsed={isCollapsed}>
           <div>
-            {folders.map((folder) => <FolderNode key={folder.id} folder={folder} project={project} depth={0} />)}
-            <div className="pl-8">{rows.map((session) => <ChatRow key={session.key} session={session} project={project} folderId={null} />)}</div>
+            {folders.map((folder) => FolderNode({ folder, project, depth: 0 }))}
+            <div className="pl-8">{rows.map((session) => ChatRow({ session, project, folderId: null }))}</div>
           </div>
         </AnimatedSectionContent>
       </section>
@@ -1006,12 +1004,12 @@ export function Sidebar({ active = true }: { active?: boolean }) {
           <SectionHeader title={t('pinned')} collapsed={organization.pinnedCollapsed} onToggle={() => void organization.setCollapsed('pinned', !organization.pinnedCollapsed)} />
           <AnimatedSectionContent collapsed={organization.pinnedCollapsed}>
             <div>
-              {pinnedProjects.map((project) => <ProjectNode key={project.id} project={project} />)}
+              {pinnedProjects.map((project) => ProjectNode({ project }))}
               {pinnedFolders.map((folder) => {
                 const project = organization.projects.find((candidate) => candidate.id === folder.projectId);
-                return project ? <FolderNode key={folder.id} folder={folder} project={project} depth={0} /> : null;
+                return project ? FolderNode({ folder, project, depth: 0 }) : null;
               })}
-              {pinnedSessions.map((session) => <ChatRow key={session.key} session={session} />)}
+              {pinnedSessions.map((session) => ChatRow({ session }))}
             </div>
           </AnimatedSectionContent>
         </section>
@@ -1027,7 +1025,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
             <div>{[...organization.projects]
               .filter((project) => !organization.pinnedProjectIds.includes(project.id))
               .sort((a, b) => a.order - b.order)
-              .map((project) => <ProjectNode key={project.id} project={project} />)}</div>
+              .map((project) => ProjectNode({ project }))}</div>
           </AnimatedSectionContent>
         </section>
 
@@ -1065,7 +1063,7 @@ export function Sidebar({ active = true }: { active?: boolean }) {
                     <span className="min-w-0 flex-1 truncate text-left">{group.label}</span>
                     <span className="text-2xs font-normal text-muted-foreground">{group.sessions.length}</span>
                   </button>
-                  {!workspaceCollapsed && group.sessions.map(({ session }) => <ChatRow key={session.key} session={session} sessionList />)}
+                  {!workspaceCollapsed && group.sessions.map(({ session }) => ChatRow({ session, sessionList: true }))}
                 </div>
               );
             })}
