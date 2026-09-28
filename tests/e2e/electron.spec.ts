@@ -19,6 +19,7 @@ test('settings share the main sidebar width and bounded chat surface; preference
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
   await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeGreaterThan(1100);
+  await expect(page.getByTestId('sidebar-layout-slot')).toHaveCSS('width', '320px');
   const sidebar = await page.getByTestId('sidebar-layout-slot').boundingBox();
   const chatSurface = page.getByTestId('chat-workspace-surface');
   await expect(chatSurface).toHaveCSS('border-top-left-radius', '16px');
