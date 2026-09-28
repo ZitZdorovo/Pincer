@@ -18,6 +18,7 @@ async function chooseSelect(control: ReturnType<Page['locator']>, option: string
 test('settings share the main sidebar width and bounded chat surface; preferences really apply', async () => {
   await connect();
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeGreaterThan(1100);
   const sidebar = await page.getByTestId('sidebar-layout-slot').boundingBox();
   const chatSurface = page.getByTestId('chat-workspace-surface');
   await expect(chatSurface).toHaveCSS('border-top-left-radius', '16px');
@@ -700,6 +701,8 @@ test('validates in Main, rejects unsafe URLs and keeps controls usable at minimu
 test('donor sidebar resizing, search and real rename/pin/delete', async () => {
 
  await connect(); await page.getByTestId('sidebar-new-chat').click();
+ await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 850));
+ await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeGreaterThan(1100);
  await page.getByTestId('chat-composer-input').fill('Создай чат'); await page.getByRole('button', { name: 'Отправить', exact: true }).click(); await expect(page.getByTestId('acp-assistant-message')).toBeVisible();
  const handle = page.getByTestId('sidebar-resize-handle'); await handle.focus(); await page.keyboard.press('ArrowRight');
  await expect.poll(() => page.getByTestId('sidebar-layout-slot').evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(330);
